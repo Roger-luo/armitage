@@ -1,0 +1,12 @@
+---
+source: src/cli/node.rs
+expression: out
+---
+proj [active]
+  A project
+└─ sub [active]
+   A sub-project with a very long description that
+   should wrap when the terminal is narrow enough
+   to trigger the wrapping logic
+   └─ leaf [active]
+      Leaf node

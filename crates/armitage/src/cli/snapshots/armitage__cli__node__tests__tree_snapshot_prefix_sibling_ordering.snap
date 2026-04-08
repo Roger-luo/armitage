@@ -1,0 +1,24 @@
+---
+source: src/cli/node.rs
+expression: out
+---
+atlas [active]
+  Top
+├─ python [active]
+│  Python side
+│  ├─ bindings [active]
+│  │  Bindings
+│  └─ old [active]
+│     Legacy
+│     ├─ compiler [active]
+│     │  Compiler
+│     └─ ir [completed]
+│        IR core
+├─ rust [active]
+│  Rust rewrite
+│  ├─ interpreter [active]
+│  │  Interpreter
+│  └─ vm [active]
+│     VM
+└─ rust-ext [paused]
+   Extension

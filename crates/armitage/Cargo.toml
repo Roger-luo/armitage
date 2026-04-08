@@ -1,0 +1,35 @@
+[package]
+name = "armitage"
+version = "0.1.0"
+edition.workspace = true
+description = "CLI for project management across GitHub repositories"
+
+[dependencies]
+armitage-core = { workspace = true }
+armitage-labels = { workspace = true }
+armitage-milestones = { workspace = true }
+armitage-github = { workspace = true }
+armitage-sync = { workspace = true }
+armitage-triage = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+ionem = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+rustyline = { workspace = true }
+console = { workspace = true }
+dialoguer = { workspace = true }
+termimad = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rusqlite = { workspace = true }
+
+[build-dependencies]
+ionem = { version = "0.2.0" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+insta = { workspace = true }
+armitage-core = { workspace = true }

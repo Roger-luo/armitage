@@ -1,0 +1,9 @@
+---
+source: src/cli/node.rs
+expression: out
+---
+alpha [active]
+  First project
+beta [completed]
+  Second project
+gamma [paused]

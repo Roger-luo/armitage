@@ -1,0 +1,15 @@
+---
+source: crates/armitage/src/cli/node.rs
+assertion_line: 1838
+expression: out
+---
+alpha [active]
+  First root
+├─ sub1 [active]
+│  Sub 1
+└─ sub2 [completed]
+   Sub 2
+beta [paused]
+  Second root
+└─ child [active]
+   Beta child

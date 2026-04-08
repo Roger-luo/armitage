@@ -1,0 +1,11 @@
+---
+source: crates/armitage/src/cli/node.rs
+assertion_line: 1812
+expression: out
+---
+root [active]
+  Root
+└─ a [active]
+   Child A
+   └─ deep [active]
+      Deep under A

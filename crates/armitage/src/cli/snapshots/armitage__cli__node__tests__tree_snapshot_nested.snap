@@ -1,0 +1,12 @@
+---
+source: src/cli/node.rs
+expression: out
+---
+root [active]
+  Top-level initiative
+├─ child-a [active]
+│  First child
+│  └─ grandchild [completed]
+│     Deep node
+└─ child-b [paused]
+   Second child

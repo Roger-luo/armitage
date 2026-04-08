@@ -1,0 +1,45 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/armitage-core",
+    "crates/armitage-labels",
+    "crates/armitage-milestones",
+    "crates/armitage-github",
+    "crates/armitage-sync",
+    "crates/armitage-triage",
+    "crates/armitage",
+]
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+# Internal crates
+armitage-core = { path = "crates/armitage-core" }
+armitage-labels = { path = "crates/armitage-labels" }
+armitage-milestones = { path = "crates/armitage-milestones" }
+armitage-github = { path = "crates/armitage-github" }
+armitage-sync = { path = "crates/armitage-sync" }
+armitage-triage = { path = "crates/armitage-triage" }
+
+# External crates
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+ionem = { version = "0.2.0", features = ["gh", "git", "self-update"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+hex = "0.4"
+thiserror = "2"
+toml = "1.1"
+rusqlite = { version = "0.39", features = ["bundled"] }
+rustyline = "18"
+console = "0.16"
+dialoguer = "0.12"
+indicatif = "0.18"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ureq = "3"
+tempfile = "3"
+termimad = "0.34.1"
+insta = "1"
