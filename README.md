@@ -2,13 +2,25 @@
 
 CLI for project management across GitHub repositories. Track initiatives, projects, and tasks as a local directory tree with bidirectional GitHub issue sync and LLM-powered triage.
 
-## Install
-
-Requires Rust (edition 2024) and the [GitHub CLI](https://cli.github.com/) (`gh`) authenticated.
+## Installation
 
 ```bash
-cargo install --path .
+curl -fsSL https://raw.githubusercontent.com/Roger-luo/armitage/main/install.sh | sh
 ```
+
+To install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Roger-luo/armitage/main/install.sh | sh -s -- 0.1.0
+```
+
+Or install from source (requires Rust edition 2024):
+
+```bash
+cargo install --git https://github.com/Roger-luo/armitage
+```
+
+Armitage requires the [GitHub CLI](https://cli.github.com/) (`gh`) installed and authenticated.
 
 ## Quick Start
 
@@ -216,8 +228,8 @@ The LLM classifies issues based on your existing node hierarchy. To get started:
 
 - **Node**: A directory containing `node.toml` (metadata) and optionally `issue.md` (body) and `milestones.toml`. Hierarchy is defined by directory nesting — parent is never stored in the TOML.
 - **Milestone**: A dated checkpoint or OKR attached to a node. OKR milestones include an `expected_progress` (0.0-1.0).
-- **Sync state**: Stored in `.armitage/sync-state.toml` (gitignored). Tracks per-node hashes and timestamps for change detection.
-- **Triage database**: SQLite at `.armitage/triage.db` (gitignored). Stores fetched issues, LLM suggestions, and review decisions.
+- **Sync state**: Stored in `.armitage/sync/state.toml` (gitignored). Tracks per-node hashes and timestamps for change detection.
+- **Triage database**: SQLite at `.armitage/triage/triage.db` (gitignored). Stores fetched issues, LLM suggestions, and review decisions.
 
 ## Directory Structure
 
@@ -225,9 +237,16 @@ The LLM classifies issues based on your existing node hierarchy. To get started:
 my-org/
   armitage.toml              # org config
   .armitage/                 # local state (gitignored)
-    sync-state.toml
-    conflicts/
-    triage.db
+    sync/
+      state.toml
+      conflicts/
+    triage/
+      triage.db
+      examples.toml
+      repo-cache/
+    labels/
+      renames.toml
+    secrets.toml
   .gitignore
   backend/
     node.toml
