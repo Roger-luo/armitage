@@ -1,6 +1,7 @@
 /target
 /quera
 /.worktrees
+.claude/worktrees
 
 # Managed by ion
 .agents/skills/ion-cli
