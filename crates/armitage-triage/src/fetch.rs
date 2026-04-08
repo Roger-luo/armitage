@@ -248,17 +248,11 @@ mod tests {
 
     #[test]
     fn strip_repo_qualifier_removes_at_suffix() {
-        assert_eq!(
-            strip_repo_qualifier("acme/atlas@rust"),
-            "acme/atlas"
-        );
+        assert_eq!(strip_repo_qualifier("acme/atlas@rust"), "acme/atlas");
     }
 
     #[test]
     fn strip_repo_qualifier_no_op_without_at() {
-        assert_eq!(
-            strip_repo_qualifier("acme/atlas"),
-            "acme/atlas"
-        );
+        assert_eq!(strip_repo_qualifier("acme/atlas"), "acme/atlas");
     }
 }
