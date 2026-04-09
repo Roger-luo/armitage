@@ -82,6 +82,8 @@ confidence = 0.92
 
 ```
 armitage init <name> [--github-org <org>...] [--default-repo <owner/repo>]
+# after init, set up AGENTS.md for AI workflows:
+# ion agents init Roger-luo/armitage/templates/org-agents.md
 armitage node new [<path>] [--name ...] [--description ...] [--repos ...]
 armitage node list [<path>] [-r]
 armitage node tree

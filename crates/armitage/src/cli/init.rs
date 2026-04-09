@@ -79,6 +79,9 @@ pub fn init_at(
     std::fs::write(gitignore, ".armitage/\n")?;
 
     println!("Initialized org '{}' at {}", name, org_dir.display());
+    println!();
+    println!("Tip: set up an AGENTS.md for AI-assisted workflows:");
+    println!("  ion agents init Roger-luo/armitage/templates/org-agents.md");
     Ok(())
 }
 
