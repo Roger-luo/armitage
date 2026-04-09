@@ -275,6 +275,21 @@ my-org/
         node.toml
 ```
 
+## Development
+
+To work on armitage locally while using it via ion, switch to dev mode:
+
+```bash
+ion add ./path/to/armitage --dev
+ion run armitage node tree    # runs from source via cargo run
+```
+
+This forwards every `ion run armitage` to `cargo run` in the source directory, so changes are picked up immediately. To switch back to the release version:
+
+```bash
+ion add --bin Roger-luo/armitage
+```
+
 ## License
 
 MIT
