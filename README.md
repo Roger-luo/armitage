@@ -4,6 +4,20 @@ CLI for project management across GitHub repositories. Track initiatives, projec
 
 ## Installation
 
+Install via [ion](https://github.com/Roger-luo/ion):
+
+```bash
+ion add --bin Roger-luo/armitage
+```
+
+Then run with:
+
+```bash
+ion run armitage <command>
+```
+
+Alternatively, install via the standalone install script:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Roger-luo/armitage/main/install.sh | sh
 ```
@@ -24,10 +38,12 @@ Armitage requires the [GitHub CLI](https://cli.github.com/) (`gh`) installed and
 
 ## Quick Start
 
+> **Note:** Examples below use `ion run armitage`. If you installed the standalone binary (via curl or cargo), use `armitage` directly.
+
 ### Initialize an org
 
 ```bash
-armitage init my-org --github-org my-github-org --default-repo my-github-org/main-repo
+ion run armitage init my-org --github-org my-github-org --default-repo my-github-org/main-repo
 cd my-org
 ```
 
@@ -38,23 +54,23 @@ This creates a directory with `armitage.toml` and a `.armitage/` folder (gitigno
 Nodes are the building blocks — initiatives, projects, and tasks arranged in a directory hierarchy:
 
 ```bash
-armitage node new backend --name "Backend" --description "Backend services"
-armitage node new backend/auth --name "Auth" --description "Authentication system"
-armitage node new backend/auth/oauth --name "OAuth" --description "OAuth2 provider support"
+ion run armitage node new backend --name "Backend" --description "Backend services"
+ion run armitage node new backend/auth --name "Auth" --description "Authentication system"
+ion run armitage node new backend/auth/oauth --name "OAuth" --description "OAuth2 provider support"
 ```
 
 Or use interactive mode:
 
 ```bash
-armitage node new
+ion run armitage node new
 ```
 
 ### Browse the roadmap
 
 ```bash
-armitage node tree         # full hierarchy
-armitage node list         # top-level nodes
-armitage node show backend/auth  # details for a node
+ion run armitage node tree         # full hierarchy
+ion run armitage node list         # top-level nodes
+ion run armitage node show backend/auth  # details for a node
 ```
 
 ### Sync with GitHub
@@ -62,40 +78,40 @@ armitage node show backend/auth  # details for a node
 Each node can be linked to a GitHub issue via the `github_issue` field in its `node.toml` (format: `owner/repo#123`).
 
 ```bash
-armitage pull              # pull changes from GitHub issues
-armitage push              # push local changes to GitHub
-armitage push --dry-run    # preview what would change
+ion run armitage pull              # pull changes from GitHub issues
+ion run armitage push              # push local changes to GitHub
+ion run armitage push --dry-run    # preview what would change
 ```
 
 Pull uses three-way merge with conflict detection. If conflicts arise:
 
 ```bash
-armitage resolve --list    # see conflicts
-armitage resolve           # resolve interactively
+ion run armitage resolve --list    # see conflicts
+ion run armitage resolve           # resolve interactively
 ```
 
 ### Milestones
 
 ```bash
-armitage milestone add backend/auth \
+ion run armitage milestone add backend/auth \
   --name "Auth MVP" \
   --date 2026-06-01 \
   --description "Core auth flows working"
 
-armitage milestone add backend/auth \
+ion run armitage milestone add backend/auth \
   --name "Q2 Auth Coverage" \
   --date 2026-06-30 \
   --milestone-type okr \
   --expected-progress 0.7
 
-armitage milestone list
-armitage milestone list --quarter 2026-Q2
+ion run armitage milestone list
+ion run armitage milestone list --quarter 2026-Q2
 ```
 
 ### Check status
 
 ```bash
-armitage status            # org sync overview + triage pipeline
+ion run armitage status            # org sync overview + triage pipeline
 ```
 
 ## LLM-Powered Issue Triage
@@ -131,9 +147,9 @@ effort = "medium"     # optional
 Or set values individually:
 
 ```bash
-armitage config set triage.backend claude
-armitage config set triage.model sonnet
-armitage config show
+ion run armitage config set triage.backend claude
+ion run armitage config set triage.model sonnet
+ion run armitage config show
 ```
 
 ### 1. Fetch issues
@@ -141,9 +157,9 @@ armitage config show
 Pull GitHub issues into a local SQLite database (`.armitage/triage.db`):
 
 ```bash
-armitage triage fetch                        # from default_repo
-armitage triage fetch --repo owner/repo      # specific repo
-armitage triage fetch --since 2026-03-01     # only recent issues
+ion run armitage triage fetch                        # from default_repo
+ion run armitage triage fetch --repo owner/repo      # specific repo
+ion run armitage triage fetch --since 2026-03-01     # only recent issues
 ```
 
 ### 2. Classify with LLM
@@ -151,10 +167,10 @@ armitage triage fetch --since 2026-03-01     # only recent issues
 The LLM receives your roadmap tree, label schema, curated labels from `labels.toml`, and each issue. It returns a suggested node placement, labels, confidence score, and reasoning.
 
 ```bash
-armitage triage classify                     # uses config defaults
-armitage triage classify --backend claude --model opus
-armitage triage classify --batch-size 10     # batch multiple issues per call
-armitage triage classify --repo owner/repo   # classify issues from one repo
+ion run armitage triage classify                     # uses config defaults
+ion run armitage triage classify --backend claude --model opus
+ion run armitage triage classify --batch-size 10     # batch multiple issues per call
+ion run armitage triage classify --repo owner/repo   # classify issues from one repo
 ```
 
 CLI flags override `armitage.toml` defaults.
@@ -164,21 +180,21 @@ CLI flags override `armitage.toml` defaults.
 Use `labels.toml` as the curated label catalog shared across repos. Import labels from GitHub into a staged session first, then selectively merge them into the curated file.
 
 ```bash
-armitage triage labels fetch --repo owner/repo --repo owner/infra
-armitage triage labels merge
-armitage triage labels merge --all-new --update-drifted --yes
+ion run armitage triage labels fetch --repo owner/repo --repo owner/infra
+ion run armitage triage labels merge
+ion run armitage triage labels merge --all-new --update-drifted --yes
 ```
 
-`armitage triage labels merge` is interactive by default. The non-interactive flags let you script imports when you already know which categories you want to accept.
+`ion run armitage triage labels merge` is interactive by default. The non-interactive flags let you script imports when you already know which categories you want to accept.
 
-`armitage triage classify` uses the curated label catalog from `labels.toml` as part of the LLM prompt, passing only label names and descriptions.
+`ion run armitage triage classify` uses the curated label catalog from `labels.toml` as part of the LLM prompt, passing only label names and descriptions.
 
 ### 3. Review suggestions
 
 ```bash
-armitage triage review --list                # see all pending suggestions
-armitage triage review --interactive         # walk through each (approve/reject/modify)
-armitage triage review --auto-approve 0.8    # auto-approve suggestions with >=80% confidence
+ion run armitage triage review --list                # see all pending suggestions
+ion run armitage triage review --interactive         # walk through each (approve/reject/modify)
+ion run armitage triage review --auto-approve 0.8    # auto-approve suggestions with >=80% confidence
 ```
 
 ### 4. Apply to GitHub
@@ -186,14 +202,14 @@ armitage triage review --auto-approve 0.8    # auto-approve suggestions with >=8
 Push approved label changes back to GitHub:
 
 ```bash
-armitage triage apply                        # apply approved changes
-armitage triage apply --dry-run              # preview first
+ion run armitage triage apply                        # apply approved changes
+ion run armitage triage apply --dry-run              # preview first
 ```
 
 ### 5. Check pipeline status
 
 ```bash
-armitage triage status
+ion run armitage triage status
 ```
 
 Shows counts across the pipeline: fetched -> untriaged -> pending review -> approved -> applied.

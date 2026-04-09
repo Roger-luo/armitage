@@ -14,6 +14,19 @@ description: >
 Project management CLI that tracks initiatives, projects, and tasks as a recursive directory
 hierarchy backed by a local git repo, with bidirectional GitHub issue sync and LLM-powered triage.
 
+## Invocation
+
+How to invoke `armitage` depends on how the user installed it. Check the user's CLAUDE.md or
+AGENTS.md for guidance — they should specify one of these patterns:
+
+| Installation method | Command pattern |
+|---|---|
+| `ion add --bin Roger-luo/armitage` | `ion run armitage <subcommand>` |
+| Standalone binary (curl install or cargo install) | `armitage <subcommand>` |
+
+All command examples below use bare `armitage` for brevity. Prefix with `ion run` when the user's
+setup requires it.
+
 ## Core Concepts
 
 **Org** — a git repository containing `armitage.toml` at its root. This config file defines the
@@ -124,7 +137,7 @@ armitage triage decisions [--status <s>] [--unapplied] [--node <prefix>] [--repo
     runs (see Examples below).
   - `--list` — show all pending suggestions as a table (default when neither `-i` nor `--auto-approve` is given)
   - `--auto-approve <threshold>` — auto-approve all suggestions with confidence >= threshold
-  
+
   **Label handling in review:** Existing issue labels are human-applied and authoritative. Approving
   a suggestion merges existing labels with suggested additions (never removes). The modify prompt
   shows the full merged label set so the reviewer can edit freely — including removing existing
