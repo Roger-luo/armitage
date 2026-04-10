@@ -17,7 +17,7 @@ pub fn run(path: Option<String>, dry_run: bool) -> Result<()> {
                 if translated != entry.node.labels {
                     let mut node = entry.node.clone();
                     node.labels = translated;
-                    let content = toml::to_string(&node)?;
+                    let content = node.to_toml()?;
                     std::fs::write(entry.dir.join("node.toml"), content)?;
                 }
             }

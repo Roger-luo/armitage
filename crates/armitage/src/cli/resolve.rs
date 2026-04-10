@@ -80,7 +80,7 @@ fn resolve_conflict_interactive(
     if !conflict.field_conflicts.is_empty() {
         let ledger = read_rename_ledger(org_root)?;
         node.labels = translate_labels(&node.labels, &ledger);
-        let content = toml::to_string(&node)?;
+        let content = node.to_toml()?;
         std::fs::write(entry.dir.join("node.toml"), content)?;
     }
 
