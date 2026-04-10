@@ -676,6 +676,108 @@ function renderBar(
     });
   }
 
+  // Issue tick marks for leaf nodes (no children, has issues)
+  if (node.children.length === 0 && node.issues.length > 0) {
+    const outerStart = api.value(0) as number;
+    const outerEnd = api.value(1) as number;
+    const outerRange = outerEnd - outerStart;
+
+    const clusters = clusterTicks(node.issues, outerStart, outerRange, 0.02);
+
+    for (const cluster of clusters) {
+      const clampedX = Math.max(0, Math.min(1, cluster.relX));
+      const tickX = x + clampedX * width;
+      const tickW = cluster.count > 1 ? 6 : 3;
+      const tickH = 14;
+      const tickY = y + (height - tickH) / 2;
+      const tickColor = cluster.overdue ? "#f85149" : "#58a6ff";
+      const tickOpacity = cluster.overdue ? 0.9 : 0.7;
+
+      children.push({
+        type: "rect",
+        shape: {
+          x: tickX - tickW / 2,
+          y: tickY,
+          width: tickW,
+          height: tickH,
+          r: 1,
+        },
+        style: {
+          fill: tickColor,
+          opacity: tickOpacity,
+        },
+      });
+
+      // Show count above clustered ticks
+      if (cluster.count > 1) {
+        children.push({
+          type: "text",
+          style: {
+            text: `${cluster.count}`,
+            x: tickX,
+            y: tickY - 2,
+            fill: tickColor,
+            fontSize: 8,
+            textAlign: "center",
+            textVerticalAlign: "bottom",
+            opacity: 0.8,
+          },
+        });
+      }
+    }
+
+    // Summary badge
+    const overdueCount = node.issues.filter(
+      (i) => i.target_date && node.end && i.target_date > node.end,
+    ).length;
+    const badgeX = x + width - 8;
+    const badgeY = y + height / 2;
+
+    // Use a rich text label to color the overdue part differently
+    if (overdueCount > 0) {
+      children.push({
+        type: "text",
+        style: {
+          text: `${node.issues.length} issues · {overdue|${overdueCount} overdue}`,
+          x: badgeX,
+          y: badgeY,
+          fill: "#8b949e",
+          fontSize: 11,
+          fontWeight: 600,
+          textAlign: "right",
+          textVerticalAlign: "middle",
+          backgroundColor: "rgba(13, 17, 23, 0.7)",
+          borderRadius: 3,
+          padding: [2, 6],
+          rich: {
+            overdue: {
+              fill: "#f85149",
+              fontSize: 11,
+              fontWeight: 600,
+            },
+          },
+        },
+      });
+    } else {
+      children.push({
+        type: "text",
+        style: {
+          text: `${node.issues.length} issues`,
+          x: badgeX,
+          y: badgeY,
+          fill: "#8b949e",
+          fontSize: 11,
+          fontWeight: 600,
+          textAlign: "right",
+          textVerticalAlign: "middle",
+          backgroundColor: "rgba(13, 17, 23, 0.7)",
+          borderRadius: 3,
+          padding: [2, 6],
+        },
+      });
+    }
+  }
+
   // Checkpoint markers (diamonds + dashed vertical line within this row)
   // Only show per-row markers at the root level. When drilled in,
   // checkpoints are already displayed as full-height project-wide lines.

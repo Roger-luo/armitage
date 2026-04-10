@@ -87,6 +87,41 @@
     const pad = 30 * 24 * 3600 * 1e3;
     return [min - pad, max + pad];
   }
+  function clusterTicks(issues, parentStart, parentRange, threshold) {
+    const dated = issues.filter((i) => i.target_date);
+    if (dated.length === 0) return [];
+    const sorted = [...dated].sort(
+      (a, b) => a.target_date.localeCompare(b.target_date)
+    );
+    const clusters = [];
+    let curCluster = {
+      relXs: [],
+      overdueCount: 0
+    };
+    for (const issue of sorted) {
+      const relX = (parseDate(issue.target_date) - parentStart) / parentRange;
+      if (curCluster.relXs.length > 0 && relX - curCluster.relXs[curCluster.relXs.length - 1] > threshold) {
+        const avg = curCluster.relXs.reduce((a, b) => a + b, 0) / curCluster.relXs.length;
+        clusters.push({
+          relX: avg,
+          count: curCluster.relXs.length,
+          overdue: curCluster.overdueCount > 0
+        });
+        curCluster = { relXs: [], overdueCount: 0 };
+      }
+      curCluster.relXs.push(relX);
+      if (relX > 1) curCluster.overdueCount++;
+    }
+    if (curCluster.relXs.length > 0) {
+      const avg = curCluster.relXs.reduce((a, b) => a + b, 0) / curCluster.relXs.length;
+      clusters.push({
+        relX: avg,
+        count: curCluster.relXs.length,
+        overdue: curCluster.overdueCount > 0
+      });
+    }
+    return clusters;
+  }
   function updateBreadcrumb() {
     const parts = [
       { label: data.org_name || "Root", path: "" }
@@ -445,6 +480,97 @@
           padding: [2, 6]
         }
       });
+    }
+    if (node.children.length === 0 && node.issues.length > 0) {
+      const outerStart = api.value(0);
+      const outerEnd = api.value(1);
+      const outerRange = outerEnd - outerStart;
+      const clusters = clusterTicks(node.issues, outerStart, outerRange, 0.02);
+      for (const cluster of clusters) {
+        const clampedX = Math.max(0, Math.min(1, cluster.relX));
+        const tickX = x + clampedX * width;
+        const tickW = cluster.count > 1 ? 6 : 3;
+        const tickH = 14;
+        const tickY = y + (height - tickH) / 2;
+        const tickColor = cluster.overdue ? "#f85149" : "#58a6ff";
+        const tickOpacity = cluster.overdue ? 0.9 : 0.7;
+        children.push({
+          type: "rect",
+          shape: {
+            x: tickX - tickW / 2,
+            y: tickY,
+            width: tickW,
+            height: tickH,
+            r: 1
+          },
+          style: {
+            fill: tickColor,
+            opacity: tickOpacity
+          }
+        });
+        if (cluster.count > 1) {
+          children.push({
+            type: "text",
+            style: {
+              text: `${cluster.count}`,
+              x: tickX,
+              y: tickY - 2,
+              fill: tickColor,
+              fontSize: 8,
+              textAlign: "center",
+              textVerticalAlign: "bottom",
+              opacity: 0.8
+            }
+          });
+        }
+      }
+      const overdueCount = node.issues.filter(
+        (i) => i.target_date && node.end && i.target_date > node.end
+      ).length;
+      const badgeX = x + width - 8;
+      const badgeY = y + height / 2;
+      if (overdueCount > 0) {
+        children.push({
+          type: "text",
+          style: {
+            text: `${node.issues.length} issues \xB7 {overdue|${overdueCount} overdue}`,
+            x: badgeX,
+            y: badgeY,
+            fill: "#8b949e",
+            fontSize: 11,
+            fontWeight: 600,
+            textAlign: "right",
+            textVerticalAlign: "middle",
+            backgroundColor: "rgba(13, 17, 23, 0.7)",
+            borderRadius: 3,
+            padding: [2, 6],
+            rich: {
+              overdue: {
+                fill: "#f85149",
+                fontSize: 11,
+                fontWeight: 600
+              }
+            }
+          }
+        });
+      } else {
+        children.push({
+          type: "text",
+          style: {
+            text: `${node.issues.length} issues`,
+            x: badgeX,
+            y: badgeY,
+            fill: "#8b949e",
+            fontSize: 11,
+            fontWeight: 600,
+            textAlign: "right",
+            textVerticalAlign: "middle",
+            backgroundColor: "rgba(13, 17, 23, 0.7)",
+            borderRadius: 3,
+            padding: [2, 6]
+          }
+        });
+      }
     }
     const nodeMilestones = currentPath === "" ? allCheckpoints(node) : [];
     if (nodeMilestones.length > 0) {
