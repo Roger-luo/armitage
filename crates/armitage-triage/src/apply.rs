@@ -1,12 +1,14 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use rusqlite::Connection;
 
+use crate::TriageDomain;
 use crate::db;
 use crate::error::Result;
 use armitage_core::issues::IssuesFile;
 use armitage_core::node::IssueRef;
+use armitage_core::org::Org;
 use armitage_core::tree::walk_nodes;
 use armitage_labels::rename::LabelRenameLedger;
 
@@ -46,15 +48,22 @@ pub fn apply_all(
     // Inject node labels into each decision's final_labels before applying.
     // Node labels are additive: they are merged with the decision's final_labels
     // (which already include the issue's existing labels from the approve step).
+    // Skip labels that the repo already implies (configured in armitage.toml
+    // under [triage.repo_labels]).
+    let repo_labels = read_repo_implied_labels(org_root);
     for (issue, decision) in &mut decisions {
         if let Some(node_path) = &decision.final_node
             && let Some(labels) = node_labels.get(node_path.as_str())
         {
+            let implied = repo_labels.get(issue.repo.as_str());
             // Start with what's already in final_labels + current issue labels
             let mut all: BTreeSet<String> = decision.final_labels.iter().cloned().collect();
             all.extend(issue.labels.iter().cloned());
-            // Add node labels
+            // Add node labels, skipping those implied by the repo
             for label in labels {
+                if implied.is_some_and(|set| set.contains(label.as_str())) {
+                    continue;
+                }
                 all.insert(label.clone());
             }
             decision.final_labels = all.into_iter().collect();
@@ -262,6 +271,28 @@ pub fn compute_label_diff(
         add,
         remove: remove.into_iter().map(|s| s.to_string()).collect(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Repo-implied labels (from [triage.repo_labels] in armitage.toml)
+// ---------------------------------------------------------------------------
+
+/// Read the `[triage.repo_labels]` config: a map from repo to labels that
+/// the repo already implies. Returns an empty map on any config error.
+fn read_repo_implied_labels(org_root: &Path) -> HashMap<String, HashSet<String>> {
+    let org = match Org::open(org_root) {
+        Ok(o) => o,
+        Err(_) => return HashMap::new(),
+    };
+    let config = match org.domain_config::<TriageDomain>() {
+        Ok(c) => c,
+        Err(_) => return HashMap::new(),
+    };
+    config
+        .repo_labels
+        .into_iter()
+        .map(|(repo, labels)| (repo, labels.into_iter().collect()))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
