@@ -31,6 +31,14 @@ commit = "eafe962b18f6c5dc70fb7c8cc7e83e61f4cdde06"
 checksum = "sha256:9edba9a38684c060fdc38290f640e1dc0c37de286723ac9be73bacacf7cd6f3d"
 
 [[skill]]
+name = "frontend-design"
+source = "https://github.com/anthropics/skills.git"
+kind = "git"
+path = "frontend-design"
+commit = "98669c11ca63e9c81c11501e1437e5c47b556621"
+checksum = "sha256:063a0e6448123cd359ad0044cc46b0e490cc7964d45ef4bb9fd842bd2ffbca67"
+
+[[skill]]
 name = "receiving-code-review"
 source = "https://github.com/obra/superpowers.git"
 kind = "git"
@@ -93,6 +101,15 @@ kind = "git"
 path = "skills/verification-before-completion"
 commit = "eafe962b18f6c5dc70fb7c8cc7e83e61f4cdde06"
 checksum = "sha256:9b446f0c7fe1cfb560b1d34439523b1a76d5f177290007b2c053a1c749a4a8ba"
+
+[[skill]]
+name = "web-design-guidelines"
+source = "https://github.com/vercel-labs/agent-skills.git"
+kind = "git"
+path = "web-design-guidelines"
+version = "1.0.0"
+commit = "64484e9a6022c81e3af59f5dcee6fb6d631bf53e"
+checksum = "sha256:a6a44d5498f7e8f68289902f3dedfc6f38ae0cee1e96527c80724cf27f727c2a"
 
 [[skill]]
 name = "writing-plans"
