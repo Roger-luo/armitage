@@ -452,11 +452,15 @@
     // from any descendant. Falls back to the node's own end / eff_end.
     const issueDeadline = node.overflow_start || node.end || node.eff_end;
     for (const issue of node.issues) {
+      const label = issue.title || issue.issue_ref;
       if (issue.start_date || issue.target_date) {
         const iStart = issue.start_date || issue.target_date;
         const iEnd = issue.target_date || issue.start_date;
         const overflows = issueDeadline && iEnd > issueDeadline;
-        subBars.push({ type: "issue", start: iStart, end: iEnd, overflows, label: issue.title || issue.issue_ref, issueRef: issue.issue_ref });
+        subBars.push({ type: "issue", start: iStart, end: iEnd, overflows, label, issueRef: issue.issue_ref });
+      } else {
+        // No timeline: gray bar spanning full width
+        subBars.push({ type: "issue-no-date", label, issueRef: issue.issue_ref });
       }
     }
     if (subBars.length > 0) {
@@ -473,6 +477,25 @@
       const outerRange = outerEnd - outerStart;
       for (let i = 0; i < maxBars; i++) {
         const sub = subBars[i];
+        const cy = barAreaTop + gap + i * (barH + gap);
+        const opacity = 0.6 + 0.3 * (1 - i / maxBars);
+
+        if (sub.type === "issue-no-date") {
+          // Gray dashed bar spanning full parent width
+          children.push({
+            type: "rect",
+            shape: { x, y: cy, width, height: barH, r: barH / 2 },
+            style: {
+              fill: tc.noTlFill,
+              stroke: tc.noTlBorder,
+              lineWidth: 1,
+              lineDash: [4, 3],
+              opacity
+            }
+          });
+          continue;
+        }
+
         const cStart = parseDate(sub.start);
         const cEnd = parseDate(sub.end);
         const relStart = Math.max(0, (cStart - outerStart) / outerRange);
@@ -482,8 +505,6 @@
           : Math.min(1, (cEnd - outerStart) / outerRange);
         const cx = x + relStart * width;
         const cw = Math.max((relEnd - relStart) * width, 2);
-        const cy = barAreaTop + gap + i * (barH + gap);
-        const opacity = 0.6 + 0.3 * (1 - i / maxBars);
         if (sub.type === "issue") {
           if (sub.overflows && issueDeadline) {
             // Split bar: green up to deadline, purple in overflow

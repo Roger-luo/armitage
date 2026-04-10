@@ -213,30 +213,32 @@ fn build_issue_dates_map(org_root: &Path) -> HashMap<String, IssueDates> {
     let Ok(conn) = armitage_triage::db::open_db(org_root) else {
         return map;
     };
+    // Query all issues with their state, LEFT JOIN project items for dates
     let Ok(mut stmt) = conn.prepare(
-        "SELECT i.repo, i.number, p.start_date, p.target_date
-         FROM issue_project_items p
-         JOIN issues i ON i.id = p.issue_id
-         WHERE p.start_date IS NOT NULL OR p.target_date IS NOT NULL",
+        "SELECT i.repo, i.number, i.state, p.start_date, p.target_date
+         FROM issues i
+         LEFT JOIN issue_project_items p ON p.issue_id = i.id",
     ) else {
         return map;
     };
     let Ok(rows) = stmt.query_map([], |row| {
         let repo: String = row.get(0)?;
         let number: i64 = row.get(1)?;
-        let start_date: Option<String> = row.get(2)?;
-        let target_date: Option<String> = row.get(3)?;
-        Ok((format!("{repo}#{number}"), start_date, target_date))
+        let state: String = row.get(2)?;
+        let start_date: Option<String> = row.get(3)?;
+        let target_date: Option<String> = row.get(4)?;
+        Ok((format!("{repo}#{number}"), state, start_date, target_date))
     }) else {
         return map;
     };
     for row in rows.flatten() {
-        let (issue_ref, start_date, target_date) = row;
+        let (issue_ref, state, start_date, target_date) = row;
         map.insert(
             issue_ref,
             IssueDates {
                 start_date,
                 target_date,
+                state: Some(state),
             },
         );
     }
