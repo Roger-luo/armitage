@@ -21,8 +21,10 @@ pub enum LlmBackend {
     GeminiApi,
 }
 
-impl LlmBackend {
-    pub fn parse(s: &str) -> Result<Self> {
+impl std::str::FromStr for LlmBackend {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
             "claude" => Ok(Self::Claude),
             "codex" => Ok(Self::Codex),
@@ -33,7 +35,15 @@ impl LlmBackend {
             ))),
         }
     }
+}
 
+impl std::fmt::Display for LlmBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+impl LlmBackend {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Claude => "claude",
@@ -159,15 +169,18 @@ pub fn generate_stale_question(
 // Prompt building
 // ---------------------------------------------------------------------------
 
-fn is_parent_node(path: &str, all_nodes: &[NodeEntry]) -> bool {
-    let prefix = format!("{path}/");
-    all_nodes.iter().any(|n| n.path.starts_with(&prefix))
-}
-
 fn build_roadmap_section(nodes: &[NodeEntry]) -> String {
+    use std::collections::HashSet;
+
+    // Pre-compute parent set in O(N) instead of O(N²) per-entry scanning.
+    let parent_set: HashSet<&str> = nodes
+        .iter()
+        .filter_map(|e| e.path.rsplit_once('/').map(|(parent, _)| parent))
+        .collect();
+
     let mut s = String::from("## Roadmap Tree\n");
     for entry in nodes {
-        let kind = if is_parent_node(&entry.path, nodes) {
+        let kind = if parent_set.contains(entry.path.as_str()) {
             "parent"
         } else {
             "leaf"
@@ -1790,13 +1803,13 @@ mod tests {
 
     #[test]
     fn parse_accepts_gemini_backend() {
-        let backend = LlmBackend::parse("gemini").unwrap();
+        let backend: LlmBackend = "gemini".parse().unwrap();
         assert_eq!(backend.name(), "gemini");
     }
 
     #[test]
     fn parse_unknown_backend_lists_gemini() {
-        let err = LlmBackend::parse("other").unwrap_err().to_string();
+        let err = "other".parse::<LlmBackend>().unwrap_err().to_string();
         assert!(err.contains("claude"));
         assert!(err.contains("codex"));
         assert!(err.contains("gemini"));

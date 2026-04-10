@@ -9,8 +9,15 @@ use crate::error::Result;
 use armitage_core::issues::IssuesFile;
 use armitage_core::node::IssueRef;
 use armitage_core::org::Org;
-use armitage_core::tree::walk_nodes;
+use armitage_core::tree::{NodeEntry, walk_nodes};
 use armitage_labels::rename::LabelRenameLedger;
+
+// ---------------------------------------------------------------------------
+// Decision type constants
+// ---------------------------------------------------------------------------
+
+const DECISION_STALE: &str = "stale";
+const DECISION_INQUIRED: &str = "inquired";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,6 +33,27 @@ pub struct ApplyStats {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/// Mark a decision as applied and record the issue in the target node's
+/// `issues.toml`. Logs a warning (but does not fail) if the write fails.
+fn finalize_decision(
+    conn: &Connection,
+    decision: &db::ReviewDecision,
+    all_nodes: &[NodeEntry],
+    org_root: &Path,
+    issue_ref_str: &str,
+    title: &str,
+    now: &str,
+) -> Result<()> {
+    db::mark_applied(conn, decision.id, now)?;
+    if let Some(node_path) = &decision.final_node
+        && let Err(e) =
+            record_issue_in_node(all_nodes, org_root, node_path, issue_ref_str, Some(title))
+    {
+        eprintln!("  {issue_ref_str}: warning: issues.toml write failed: {e}");
+    }
+    Ok(())
+}
 
 /// Push all approved, unapplied label changes to GitHub.
 pub fn apply_all(
@@ -80,12 +108,12 @@ pub fn apply_all(
     }
 
     // Pre-create any labels that decisions need but don't exist on the repos yet.
-    // This avoids per-issue "label not found" failures and is much cheaper than
-    // pushing the entire labels.toml catalog to every repo.
     if !dry_run {
         ensure_labels_exist(gh, &decisions)?;
     }
 
+    // Walk the org tree once for all record_issue_in_node calls.
+    let all_nodes = walk_nodes(org_root)?;
     let mut stats = ApplyStats::default();
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -94,10 +122,10 @@ pub fn apply_all(
         let issue_ref = IssueRef::parse(&issue_ref_str)?;
 
         // Inquired / stale-with-question decisions: post question as a comment
-        if decision.decision == "inquired"
-            || (decision.decision == "stale" && !decision.question.is_empty())
+        if decision.decision == DECISION_INQUIRED
+            || (decision.decision == DECISION_STALE && !decision.question.is_empty())
         {
-            let label = if decision.decision == "stale" {
+            let label = if decision.decision == DECISION_STALE {
                 "staleness inquiry"
             } else {
                 "question"
@@ -112,17 +140,15 @@ pub fn apply_all(
             }
             match armitage_github::issue::add_comment(gh, &issue_ref, &decision.question) {
                 Ok(()) => {
-                    db::mark_applied(conn, decision.id, &now)?;
-                    if let Some(node_path) = &decision.final_node
-                        && let Err(e) = record_issue_in_node(
-                            org_root,
-                            node_path,
-                            &issue_ref_str,
-                            Some(&issue.title),
-                        )
-                    {
-                        eprintln!("  {issue_ref_str}: warning: issues.toml write failed: {e}");
-                    }
+                    finalize_decision(
+                        conn,
+                        decision,
+                        &all_nodes,
+                        org_root,
+                        &issue_ref_str,
+                        &issue.title,
+                        &now,
+                    )?;
                     println!("  {issue_ref_str}: posted {label}");
                     stats.applied += 1;
                 }
@@ -135,19 +161,17 @@ pub fn apply_all(
         }
 
         // Stale without question: just mark as applied (internal-only)
-        if decision.decision == "stale" {
+        if decision.decision == DECISION_STALE {
             if !dry_run {
-                db::mark_applied(conn, decision.id, &now)?;
-                if let Some(node_path) = &decision.final_node
-                    && let Err(e) = record_issue_in_node(
-                        org_root,
-                        node_path,
-                        &issue_ref_str,
-                        Some(&issue.title),
-                    )
-                {
-                    eprintln!("  {issue_ref_str}: warning: issues.toml write failed: {e}");
-                }
+                finalize_decision(
+                    conn,
+                    decision,
+                    &all_nodes,
+                    org_root,
+                    &issue_ref_str,
+                    &issue.title,
+                    &now,
+                )?;
             }
             println!("  {issue_ref_str}: stale (no action)");
             stats.skipped += 1;
@@ -162,17 +186,15 @@ pub fn apply_all(
 
         if add_labels.is_empty() && remove_labels.is_empty() {
             if !dry_run {
-                db::mark_applied(conn, decision.id, &now)?;
-                if let Some(node_path) = &decision.final_node
-                    && let Err(e) = record_issue_in_node(
-                        org_root,
-                        node_path,
-                        &issue_ref_str,
-                        Some(&issue.title),
-                    )
-                {
-                    eprintln!("  {issue_ref_str}: warning: issues.toml write failed: {e}");
-                }
+                finalize_decision(
+                    conn,
+                    decision,
+                    &all_nodes,
+                    org_root,
+                    &issue_ref_str,
+                    &issue.title,
+                    &now,
+                )?;
             }
             println!("  {issue_ref_str}: no label changes needed");
             stats.skipped += 1;
@@ -200,17 +222,15 @@ pub fn apply_all(
             &remove_labels,
         ) {
             Ok(()) => {
-                db::mark_applied(conn, decision.id, &now)?;
-                if let Some(node_path) = &decision.final_node
-                    && let Err(e) = record_issue_in_node(
-                        org_root,
-                        node_path,
-                        &issue_ref_str,
-                        Some(&issue.title),
-                    )
-                {
-                    eprintln!("  {issue_ref_str}: warning: issues.toml write failed: {e}");
-                }
+                finalize_decision(
+                    conn,
+                    decision,
+                    &all_nodes,
+                    org_root,
+                    &issue_ref_str,
+                    &issue.title,
+                    &now,
+                )?;
                 println!("  {issue_ref_str}: applied");
                 if !add_labels.is_empty() {
                     println!("    + {}", add_labels.join(", "));
@@ -361,6 +381,7 @@ fn build_node_label_map(org_root: &Path) -> HashMap<String, Vec<String>> {
 /// Record an issue in the target node's `issues.toml`, removing it from any
 /// other node that may have previously claimed it (e.g. after re-classification).
 fn record_issue_in_node(
+    all_nodes: &[NodeEntry],
     org_root: &Path,
     node_path: &str,
     issue_ref_str: &str,
@@ -368,15 +389,12 @@ fn record_issue_in_node(
 ) -> Result<()> {
     let target_dir = org_root.join(node_path);
     if !target_dir.join("node.toml").exists() {
-        // Node directory doesn't exist or isn't a valid node — skip silently
-        // rather than failing the whole apply.
         eprintln!("  warning: node '{node_path}' has no node.toml, skipping issues.toml write");
         return Ok(());
     }
 
     // Remove from any other node that currently contains this issue.
-    let all_nodes = walk_nodes(org_root)?;
-    for entry in &all_nodes {
+    for entry in all_nodes {
         if entry.path == node_path {
             continue;
         }
@@ -388,7 +406,7 @@ fn record_issue_in_node(
 
     // Add to the target node.
     let mut file = IssuesFile::read(&target_dir)?;
-    file.add(issue_ref_str.to_string(), title.map(|s| s.to_string()));
+    file.add(issue_ref_str.to_string(), title.map(str::to_owned));
     file.write(&target_dir)?;
 
     Ok(())
@@ -409,8 +427,7 @@ fn ensure_labels_exist(
     // Collect needed labels per repo (only additions -- labels to be added).
     let mut needed_per_repo: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for (issue, decision) in decisions {
-        // Skip stale/inquired -- they don't change labels
-        if decision.decision == "stale" || decision.decision == "inquired" {
+        if decision.decision == DECISION_STALE || decision.decision == DECISION_INQUIRED {
             continue;
         }
         let current: BTreeSet<&str> = issue.labels.iter().map(|s| s.as_str()).collect();
@@ -430,14 +447,15 @@ fn ensure_labels_exist(
         let remote = armitage_github::issue::fetch_repo_labels(gh, repo)?;
         let existing: BTreeSet<&str> = remote.iter().map(|l| l.name.as_str()).collect();
 
-        let missing: Vec<&&str> = needed_labels
+        let missing: Vec<&str> = needed_labels
             .iter()
-            .filter(|l| !existing.contains(**l))
+            .copied()
+            .filter(|l| !existing.contains(l))
             .collect();
 
         if !missing.is_empty() {
             println!("  Creating {} missing label(s) on {repo}...", missing.len());
-            for label_name in missing {
+            for label_name in &missing {
                 armitage_github::issue::create_label(gh, repo, label_name, "", None)?;
             }
         }
@@ -577,8 +595,6 @@ mod tests {
     /// Helper: create a minimal org tree in a temp dir with given node paths.
     fn make_test_org(node_paths: &[&str]) -> tempfile::TempDir {
         let tmp = tempfile::tempdir().unwrap();
-        // write a minimal armitage.toml (not strictly needed by walk_nodes, but
-        // mirrors real org structure)
         std::fs::write(tmp.path().join("armitage.toml"), "[org]\nname = \"test\"\n").unwrap();
         for p in node_paths {
             let dir = tmp.path().join(p);
@@ -598,7 +614,15 @@ mod tests {
     #[test]
     fn record_adds_issue_to_target_node() {
         let tmp = make_test_org(&["alpha", "beta"]);
-        record_issue_in_node(tmp.path(), "alpha", "acme/repo#1", Some("First issue")).unwrap();
+        let nodes = walk_nodes(tmp.path()).unwrap();
+        record_issue_in_node(
+            &nodes,
+            tmp.path(),
+            "alpha",
+            "acme/repo#1",
+            Some("First issue"),
+        )
+        .unwrap();
 
         let f = IssuesFile::read(&tmp.path().join("alpha")).unwrap();
         assert_eq!(f.len(), 1);
@@ -612,9 +636,10 @@ mod tests {
     #[test]
     fn record_moves_issue_on_reclassification() {
         let tmp = make_test_org(&["alpha", "beta"]);
+        let nodes = walk_nodes(tmp.path()).unwrap();
 
         // Initially classify to alpha
-        record_issue_in_node(tmp.path(), "alpha", "acme/repo#1", Some("Issue")).unwrap();
+        record_issue_in_node(&nodes, tmp.path(), "alpha", "acme/repo#1", Some("Issue")).unwrap();
         assert!(
             IssuesFile::read(&tmp.path().join("alpha"))
                 .unwrap()
@@ -622,7 +647,7 @@ mod tests {
         );
 
         // Re-classify to beta
-        record_issue_in_node(tmp.path(), "beta", "acme/repo#1", Some("Issue")).unwrap();
+        record_issue_in_node(&nodes, tmp.path(), "beta", "acme/repo#1", Some("Issue")).unwrap();
 
         // Should be in beta, removed from alpha
         assert!(
@@ -640,8 +665,9 @@ mod tests {
     #[test]
     fn record_deduplicates_same_node() {
         let tmp = make_test_org(&["alpha"]);
-        record_issue_in_node(tmp.path(), "alpha", "acme/repo#1", Some("A")).unwrap();
-        record_issue_in_node(tmp.path(), "alpha", "acme/repo#1", Some("A")).unwrap();
+        let nodes = walk_nodes(tmp.path()).unwrap();
+        record_issue_in_node(&nodes, tmp.path(), "alpha", "acme/repo#1", Some("A")).unwrap();
+        record_issue_in_node(&nodes, tmp.path(), "alpha", "acme/repo#1", Some("A")).unwrap();
 
         let f = IssuesFile::read(&tmp.path().join("alpha")).unwrap();
         assert_eq!(f.len(), 1);
@@ -650,8 +676,9 @@ mod tests {
     #[test]
     fn record_skips_invalid_node_path() {
         let tmp = make_test_org(&["alpha"]);
+        let nodes = walk_nodes(tmp.path()).unwrap();
         // "nonexistent" has no node.toml — should not error
-        let result = record_issue_in_node(tmp.path(), "nonexistent", "acme/repo#1", None);
+        let result = record_issue_in_node(&nodes, tmp.path(), "nonexistent", "acme/repo#1", None);
         assert!(result.is_ok());
     }
 
@@ -719,6 +746,6 @@ mod tests {
     fn node_label_map_no_labels_no_entry() {
         let tmp = make_test_org_with_labels(&[("plain", &[])]);
         let map = build_node_label_map(tmp.path());
-        assert!(map.get("plain").is_none());
+        assert!(!map.contains_key("plain"));
     }
 }

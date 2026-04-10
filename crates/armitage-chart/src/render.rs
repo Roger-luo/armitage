@@ -10,7 +10,7 @@ const CHART_JS: &str = include_str!("../js/chart.js");
 struct ChartTemplate {
     title: String,
     chart_data_json: String,
-    chart_js: String,
+    chart_js: &'static str,
     inline_js: bool,
     echart_js: String,
 }
@@ -26,7 +26,7 @@ pub fn render_chart(data: &ChartData, offline: bool) -> Result<String> {
     let template = ChartTemplate {
         title: data.org_name.clone(),
         chart_data_json,
-        chart_js: CHART_JS.to_string(),
+        chart_js: CHART_JS,
         inline_js: offline,
         echart_js: String::new(), // TODO: support inlining echarts.min.js
     };

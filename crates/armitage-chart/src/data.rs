@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 use serde::Serialize;
 
 use armitage_core::tree::NodeEntry;
-use armitage_milestones::milestone::{MilestoneFile, MilestoneType};
+use armitage_milestones::milestone::MilestoneFile;
 
 use crate::error::Result;
 
@@ -65,10 +65,7 @@ fn read_milestones(node_dir: &Path) -> Vec<ChartMilestone> {
             name: m.name,
             date: date_to_str(&m.date),
             description: m.description,
-            milestone_type: match m.milestone_type {
-                MilestoneType::Checkpoint => "checkpoint".to_string(),
-                MilestoneType::Okr => "okr".to_string(),
-            },
+            milestone_type: m.milestone_type.to_string(),
         })
         .collect()
 }
@@ -130,11 +127,7 @@ fn build_node(entry: &NodeEntry, children_map: &HashMap<String, Vec<&NodeEntry>>
 /// Walks the flat `NodeEntry` list, reconstructs the tree hierarchy, reads
 /// milestones, computes effective timelines, and returns the full `ChartData`
 /// for embedding in the HTML template.
-pub fn build_chart_data(
-    entries: &[NodeEntry],
-    org_root: &Path,
-    org_name: &str,
-) -> Result<ChartData> {
+pub fn build_chart_data(entries: &[NodeEntry], org_name: &str) -> Result<ChartData> {
     // Group entries by parent path.
     let mut children_map: HashMap<String, Vec<&NodeEntry>> = HashMap::new();
     let mut root_entries: Vec<&NodeEntry> = Vec::new();
@@ -150,8 +143,6 @@ pub fn build_chart_data(
             root_entries.push(entry);
         }
     }
-
-    let _ = org_root; // reserved for future use (e.g. reading additional config)
 
     // Build the tree from root entries.
     let nodes: Vec<ChartNode> = root_entries
@@ -233,7 +224,7 @@ mod tests {
         write_node(&root.join("init/proj"), &proj_node);
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, root, "test").unwrap();
+        let data = build_chart_data(&entries, "test").unwrap();
 
         assert_eq!(data.nodes.len(), 1);
         let init = &data.nodes[0];
@@ -270,7 +261,7 @@ mod tests {
         write_node(&root.join("parent/b"), &child_b);
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, root, "test").unwrap();
+        let data = build_chart_data(&entries, "test").unwrap();
 
         let parent = &data.nodes[0];
         assert_eq!(parent.eff_start.as_deref(), Some("2026-01-15"));
@@ -295,7 +286,7 @@ mod tests {
         write_node(&root.join("b"), &b);
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, root, "test").unwrap();
+        let data = build_chart_data(&entries, "test").unwrap();
 
         assert_eq!(data.global_start.as_deref(), Some("2026-01-01"));
         assert_eq!(data.global_end.as_deref(), Some("2026-12-31"));
@@ -333,7 +324,7 @@ type = "okr"
         .unwrap();
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, root, "test").unwrap();
+        let data = build_chart_data(&entries, "test").unwrap();
 
         let proj = &data.nodes[0];
         assert_eq!(proj.milestones.len(), 2);
@@ -358,7 +349,7 @@ type = "okr"
         write_node(&root.join("lonely"), &node);
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, root, "test").unwrap();
+        let data = build_chart_data(&entries, "test").unwrap();
 
         let lonely = &data.nodes[0];
         assert!(!lonely.has_timeline);

@@ -966,7 +966,7 @@ pub fn get_new_category_votes(conn: &Connection, repo: Option<&str>) -> Result<V
             issue_refs,
         })
         .collect();
-    votes.sort_by(|a, b| b.vote_count.cmp(&a.vote_count));
+    votes.sort_by_key(|v| std::cmp::Reverse(v.vote_count));
     Ok(votes)
 }
 
