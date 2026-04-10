@@ -441,58 +441,82 @@
         lineDash: hasTimeline || isSelected ? null : [4, 3]
       }
     });
-    const childrenWithTimeline = node.children.filter(
-      (c) => c.eff_start && c.eff_end
-    );
-    if (childrenWithTimeline.length > 0) {
+    // Build sub-bars: child nodes + issues with dates
+    const subBars = [];
+    for (const c of node.children) {
+      if (c.eff_start && c.eff_end) {
+        subBars.push({ type: "node", start: c.eff_start, end: c.eff_end, color: STATUS_COLORS[c.status] || STATUS_COLORS.active, overflowStart: c.overflow_start, overflowEnd: c.overflow_end, label: c.name });
+      }
+    }
+    for (const issue of node.issues) {
+      if (issue.start_date || issue.target_date) {
+        const iStart = issue.start_date || issue.target_date;
+        const iEnd = issue.target_date || issue.start_date;
+        subBars.push({ type: "issue", start: iStart, end: iEnd, color: "#8b5cf6", label: issue.title || issue.issue_ref, issueRef: issue.issue_ref });
+      }
+    }
+    if (subBars.length > 0) {
       const barAreaTop = y + 4;
       const barAreaHeight = height - 8;
-      const maxBars = Math.min(childrenWithTimeline.length, 5);
+      const maxBars = Math.min(subBars.length, 8);
       const barH = Math.max(
-        4,
+        3,
         Math.min(10, (barAreaHeight - (maxBars - 1) * 2) / maxBars)
       );
-      const gap = Math.max(2, (barAreaHeight - maxBars * barH) / (maxBars + 1));
+      const gap = Math.max(1, (barAreaHeight - maxBars * barH) / (maxBars + 1));
       const outerStart = api.value(0);
       const outerEnd = api.value(1);
       const outerRange = outerEnd - outerStart;
       for (let i = 0; i < maxBars; i++) {
-        const child = childrenWithTimeline[i];
-        const cStart = parseDate(child.eff_start);
-        const cEnd = parseDate(child.eff_end);
+        const sub = subBars[i];
+        const cStart = parseDate(sub.start);
+        const cEnd = parseDate(sub.end);
         const relStart = Math.max(0, (cStart - outerStart) / outerRange);
         const relEnd = Math.min(1, (cEnd - outerStart) / outerRange);
         const cx = x + relStart * width;
-        const cw = (relEnd - relStart) * width;
+        const cw = Math.max((relEnd - relStart) * width, 2);
         const cy = barAreaTop + gap + i * (barH + gap);
-        const childColor = STATUS_COLORS[child.status] || STATUS_COLORS.active;
         const opacity = 0.6 + 0.3 * (1 - i / maxBars);
-        children.push({
-          type: "rect",
-          shape: { x: cx, y: cy, width: Math.max(cw, 2), height: barH, r: 2 },
-          style: {
-            fill: childColor,
-            opacity
-          }
-        });
-        if (child.overflow_end && child.overflow_start) {
-          const oStart = parseDate(child.overflow_start);
-          const oEnd = parseDate(child.overflow_end);
-          const relOStart = (oStart - outerStart) / outerRange;
-          const relOEnd = (oEnd - outerStart) / outerRange;
-          const ox = x + relOStart * width;
-          const ow = (relOEnd - relOStart) * width;
-          if (ow > 0) {
-            children.push({
-              type: "rect",
-              shape: { x: ox, y: cy, width: ow, height: barH, r: [0, 2, 2, 0] },
-              style: {
-                fill: "rgba(239, 68, 68, 0.3)",
-                stroke: "rgba(239, 68, 68, 0.6)",
-                lineWidth: 1,
-                lineDash: [3, 2]
-              }
-            });
+        if (sub.type === "issue") {
+          // Issue bar: distinct style (purple, rounded, dotted border)
+          children.push({
+            type: "rect",
+            shape: { x: cx, y: cy, width: cw, height: barH, r: barH / 2 },
+            style: {
+              fill: `${sub.color}44`,
+              stroke: `${sub.color}88`,
+              lineWidth: 1,
+              lineDash: [2, 2],
+              opacity
+            }
+          });
+        } else {
+          // Child node bar
+          children.push({
+            type: "rect",
+            shape: { x: cx, y: cy, width: cw, height: barH, r: 2 },
+            style: { fill: sub.color, opacity }
+          });
+          // Overflow extension for child nodes
+          if (sub.overflowEnd && sub.overflowStart) {
+            const oStart = parseDate(sub.overflowStart);
+            const oEnd = parseDate(sub.overflowEnd);
+            const relOStart = (oStart - outerStart) / outerRange;
+            const relOEnd = (oEnd - outerStart) / outerRange;
+            const ox = x + relOStart * width;
+            const ow = (relOEnd - relOStart) * width;
+            if (ow > 0) {
+              children.push({
+                type: "rect",
+                shape: { x: ox, y: cy, width: ow, height: barH, r: [0, 2, 2, 0] },
+                style: {
+                  fill: "rgba(239, 68, 68, 0.3)",
+                  stroke: "rgba(239, 68, 68, 0.6)",
+                  lineWidth: 1,
+                  lineDash: [3, 2]
+                }
+              });
+            }
           }
         }
       }
