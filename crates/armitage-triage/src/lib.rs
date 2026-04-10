@@ -8,6 +8,7 @@ pub mod examples;
 pub mod fetch;
 pub mod label_import;
 pub mod llm;
+pub mod project;
 pub mod review;
 
 use armitage_core::domain::Domain;
