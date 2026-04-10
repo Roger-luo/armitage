@@ -119,6 +119,115 @@ function computeTimeRange(nodes: ChartNode[]): [number, number] {
 }
 
 // ---------------------------------------------------------------------------
+// Issue helpers
+// ---------------------------------------------------------------------------
+
+interface SortedIssues {
+  overdue: ChartIssue[];
+  onTrack: ChartIssue[];
+  noDates: ChartIssue[];
+}
+
+/** Sort issues into overdue / on-track / no-dates buckets. */
+function sortIssues(issues: ChartIssue[], nodeEnd: string | null): SortedIssues {
+  const overdue: ChartIssue[] = [];
+  const onTrack: ChartIssue[] = [];
+  const noDates: ChartIssue[] = [];
+
+  for (const issue of issues) {
+    if (!issue.target_date) {
+      noDates.push(issue);
+    } else if (nodeEnd && issue.target_date > nodeEnd) {
+      overdue.push(issue);
+    } else {
+      onTrack.push(issue);
+    }
+  }
+
+  // Overdue: most overdue first (latest target_date first, since all exceed nodeEnd)
+  overdue.sort((a, b) => b.target_date!.localeCompare(a.target_date!));
+  // On-track: nearest deadline first
+  onTrack.sort((a, b) => a.target_date!.localeCompare(b.target_date!));
+
+  return { overdue, onTrack, noDates };
+}
+
+interface TickCluster {
+  /** X position as fraction of bar width (0-1). */
+  relX: number;
+  count: number;
+  overdue: boolean;
+}
+
+/** Cluster issue ticks that are within `threshold` fraction of each other. */
+function clusterTicks(
+  issues: ChartIssue[],
+  parentStart: number,
+  parentRange: number,
+  threshold: number,
+): TickCluster[] {
+  const dated = issues.filter((i) => i.target_date);
+  if (dated.length === 0) return [];
+
+  // Sort by target_date
+  const sorted = [...dated].sort((a, b) =>
+    a.target_date!.localeCompare(b.target_date!),
+  );
+
+  const clusters: TickCluster[] = [];
+  let curCluster: { relXs: number[]; overdueCount: number } = {
+    relXs: [],
+    overdueCount: 0,
+  };
+
+  for (const issue of sorted) {
+    const relX = (parseDate(issue.target_date!) - parentStart) / parentRange;
+    if (
+      curCluster.relXs.length > 0 &&
+      relX - curCluster.relXs[curCluster.relXs.length - 1] > threshold
+    ) {
+      // Flush current cluster
+      const avg =
+        curCluster.relXs.reduce((a, b) => a + b, 0) / curCluster.relXs.length;
+      clusters.push({
+        relX: avg,
+        count: curCluster.relXs.length,
+        overdue: curCluster.overdueCount > 0,
+      });
+      curCluster = { relXs: [], overdueCount: 0 };
+    }
+    curCluster.relXs.push(relX);
+    // Mark overdue if tick is beyond parent bar end (relX > 1.0)
+    if (relX > 1.0) curCluster.overdueCount++;
+  }
+
+  // Flush last cluster
+  if (curCluster.relXs.length > 0) {
+    const avg =
+      curCluster.relXs.reduce((a, b) => a + b, 0) / curCluster.relXs.length;
+    clusters.push({
+      relX: avg,
+      count: curCluster.relXs.length,
+      overdue: curCluster.overdueCount > 0,
+    });
+  }
+
+  return clusters;
+}
+
+/** Format an overdue duration as "+N days" or "+N wks". */
+function formatOverdue(targetDate: string, nodeEnd: string): string {
+  const target = parseDate(targetDate);
+  const end = parseDate(nodeEnd);
+  const diffMs = target - end;
+  if (diffMs <= 0) return "";
+  const diffDays = Math.ceil(diffMs / (24 * 3600 * 1000));
+  if (diffDays < 14) return `+${diffDays} days`;
+  const diffWeeks = Math.round(diffDays / 7);
+  return `+${diffWeeks} wks`;
+}
+
+// ---------------------------------------------------------------------------
 // Breadcrumb
 // ---------------------------------------------------------------------------
 
