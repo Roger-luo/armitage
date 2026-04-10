@@ -42,6 +42,8 @@ pub struct ChartIssue {
     pub title: Option<String>,
     pub start_date: Option<String>,
     pub target_date: Option<String>,
+    /// "OPEN" or "CLOSED"
+    pub state: Option<String>,
 }
 
 /// A milestone or OKR marker on the timeline.
@@ -67,6 +69,7 @@ pub struct ChartData {
 pub struct IssueDates {
     pub start_date: Option<String>,
     pub target_date: Option<String>,
+    pub state: Option<String>,
 }
 
 fn date_to_str(d: &NaiveDate) -> String {
@@ -79,14 +82,20 @@ fn read_issues(node_dir: &Path, dates_map: &HashMap<String, IssueDates>) -> Vec<
     };
     file.issues
         .into_iter()
-        .map(|e| {
+        .filter_map(|e| {
             let dates = dates_map.get(&e.issue_ref);
-            ChartIssue {
+            let state = dates.and_then(|d| d.state.clone());
+            // Skip closed issues
+            if state.as_deref() == Some("CLOSED") {
+                return None;
+            }
+            Some(ChartIssue {
                 issue_ref: e.issue_ref,
                 title: e.title,
                 start_date: dates.and_then(|d| d.start_date.clone()),
                 target_date: dates.and_then(|d| d.target_date.clone()),
-            }
+                state,
+            })
         })
         .collect()
 }
