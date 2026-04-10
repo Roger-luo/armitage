@@ -118,6 +118,22 @@ function computeTimeRange(nodes: ChartNode[]): [number, number] {
     if (e) max = Math.max(max, parseDate(e));
   }
 
+  // Extend range to include expanded issue dates (overdue issues may exceed eff_end)
+  if (expandedNode) {
+    const expNode = nodes.find((n) => n.path === expandedNode);
+    if (expNode) {
+      for (const issue of expNode.issues) {
+        if (issue.start_date) min = Math.min(min, parseDate(issue.start_date));
+        if (issue.target_date) max = Math.max(max, parseDate(issue.target_date));
+      }
+      // Also include today if there are overdue issues (red extension goes to today)
+      const todayMs = new Date().setHours(0, 0, 0, 0);
+      if (expNode.overflow_end) {
+        max = Math.max(max, todayMs);
+      }
+    }
+  }
+
   if (min === Infinity || max === -Infinity) {
     const now = new Date();
     min = new Date(now.getFullYear(), 0, 1).getTime();
@@ -1158,8 +1174,10 @@ chart.on("click", (params: any) => {
   }
   if (entry && entry.type === "show-more") {
     // Click on "show more" row — expand all issues
-    expandedShowAll = true;
-    renderChart();
+    if (expandedNode === entry.parentNode.path) {
+      expandedShowAll = true;
+      renderChart();
+    }
     return;
   }
   const node: ChartNode | undefined =
@@ -1187,7 +1205,8 @@ chart.on("click", (params: any) => {
 
 // Double click: drill into node
 chart.on("dblclick", (params: any) => {
-  const node: ChartNode | undefined = visibleNodes[params.dataIndex];
+  const entry = seriesEntries[params.dataIndex];
+  const node = entry?.type === "node" ? entry.node : undefined;
   if (node && node.children.length > 0) {
     navigateTo(node.path);
   }

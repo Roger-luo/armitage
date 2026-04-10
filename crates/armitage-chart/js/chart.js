@@ -82,6 +82,19 @@
       if (s) min = Math.min(min, parseDate(s));
       if (e) max = Math.max(max, parseDate(e));
     }
+    if (expandedNode) {
+      const expNode = nodes.find((n) => n.path === expandedNode);
+      if (expNode) {
+        for (const issue of expNode.issues) {
+          if (issue.start_date) min = Math.min(min, parseDate(issue.start_date));
+          if (issue.target_date) max = Math.max(max, parseDate(issue.target_date));
+        }
+        const todayMs = (/* @__PURE__ */ new Date()).setHours(0, 0, 0, 0);
+        if (expNode.overflow_end) {
+          max = Math.max(max, todayMs);
+        }
+      }
+    }
     if (min === Infinity || max === -Infinity) {
       const now = /* @__PURE__ */ new Date();
       min = new Date(now.getFullYear(), 0, 1).getTime();
@@ -877,8 +890,10 @@
       return;
     }
     if (entry && entry.type === "show-more") {
-      expandedShowAll = true;
-      renderChart();
+      if (expandedNode === entry.parentNode.path) {
+        expandedShowAll = true;
+        renderChart();
+      }
       return;
     }
     const node = entry?.type === "node" ? entry.node : void 0;
@@ -900,7 +915,8 @@
     }
   });
   chart.on("dblclick", (params) => {
-    const node = visibleNodes[params.dataIndex];
+    const entry = seriesEntries[params.dataIndex];
+    const node = entry?.type === "node" ? entry.node : void 0;
     if (node && node.children.length > 0) {
       navigateTo(node.path);
     }
