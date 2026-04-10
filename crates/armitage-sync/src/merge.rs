@@ -93,6 +93,15 @@ pub fn merge_nodes(base: &Node, local: &Node, remote: &Node) -> MergeResult {
         &mut conflicts,
     );
 
+    // --- owners ---
+    let owners = merge_string_vec_field(
+        "owners",
+        &base.owners,
+        &local.owners,
+        &remote.owners,
+        &mut conflicts,
+    );
+
     // --- timeline ---
     let timeline = merge_timeline_field(
         "timeline",
@@ -108,6 +117,7 @@ pub fn merge_nodes(base: &Node, local: &Node, remote: &Node) -> MergeResult {
         github_issue,
         labels,
         repos,
+        owners,
         timeline,
         status,
     };
@@ -404,6 +414,7 @@ mod tests {
             github_issue: Some("owner/repo#1".to_string()),
             labels: vec!["team:alpha".to_string(), "priority:low".to_string()],
             repos: vec!["owner/repo".to_string()],
+            owners: vec![],
             timeline: None,
             status: NodeStatus::Active,
         }

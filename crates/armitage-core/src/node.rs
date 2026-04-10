@@ -13,6 +13,8 @@ pub struct Node {
     pub labels: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub owners: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeline: Option<Timeline>,
     #[serde(default)]
@@ -100,6 +102,7 @@ mod tests {
             github_issue = "owner/repo#42"
             labels = ["team:alpha", "priority:high"]
             repos = ["owner/repo1", "owner/repo2"]
+            owners = ["alice", "bob"]
             status = "completed"
 
             [timeline]
@@ -112,6 +115,7 @@ mod tests {
         assert_eq!(node.github_issue.as_deref(), Some("owner/repo#42"));
         assert_eq!(node.labels, vec!["team:alpha", "priority:high"]);
         assert_eq!(node.repos, vec!["owner/repo1", "owner/repo2"]);
+        assert_eq!(node.owners, vec!["alice", "bob"]);
         assert_eq!(node.status, NodeStatus::Completed);
         let tl = node.timeline.expect("timeline present");
         assert_eq!(tl.start, NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
@@ -130,6 +134,7 @@ mod tests {
         assert!(node.github_issue.is_none());
         assert!(node.labels.is_empty());
         assert!(node.repos.is_empty());
+        assert!(node.owners.is_empty());
         assert!(node.timeline.is_none());
         assert_eq!(node.status, NodeStatus::Active);
     }
@@ -142,6 +147,7 @@ mod tests {
             github_issue: Some("acme/widget#7".to_string()),
             labels: vec!["area:core".to_string()],
             repos: vec!["acme/widget".to_string()],
+            owners: vec!["alice".to_string()],
             timeline: Some(Timeline {
                 start: NaiveDate::from_ymd_opt(2025, 3, 1).unwrap(),
                 end: NaiveDate::from_ymd_opt(2025, 9, 30).unwrap(),
@@ -155,6 +161,7 @@ mod tests {
         assert_eq!(deserialized.github_issue, original.github_issue);
         assert_eq!(deserialized.labels, original.labels);
         assert_eq!(deserialized.repos, original.repos);
+        assert_eq!(deserialized.owners, original.owners);
         assert_eq!(deserialized.status, original.status);
         let tl = deserialized
             .timeline

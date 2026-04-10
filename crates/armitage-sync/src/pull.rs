@@ -122,7 +122,8 @@ pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNode
                 .iter()
                 .map(|l| l.name.clone())
                 .collect::<Vec<_>>(),
-            repos: local_node.repos.clone(), // not in GitHub issue
+            repos: local_node.repos.clone(),   // not in GitHub issue
+            owners: local_node.owners.clone(), // not in GitHub issue
             timeline: local_node.timeline.clone(), // not in GitHub issue
             status: if remote_issue.state.to_uppercase() == "OPEN" {
                 NodeStatus::Active

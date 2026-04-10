@@ -359,6 +359,7 @@ pub fn create_node(
         github_issue,
         labels,
         &[],
+        &[],
         status,
         None,
     )
@@ -391,6 +392,7 @@ pub fn run_create(
     github_issue: Option<String>,
     labels: Option<String>,
     repos: Option<String>,
+    owners: Option<String>,
     status: Option<String>,
     timeline: Option<String>,
 ) -> Result<()> {
@@ -400,6 +402,7 @@ pub fn run_create(
         || github_issue.is_some()
         || labels.is_some()
         || repos.is_some()
+        || owners.is_some()
         || status.is_some()
         || timeline.is_some();
 
@@ -411,6 +414,7 @@ pub fn run_create(
             github_issue,
             labels,
             repos,
+            owners,
             status,
             timeline,
         )
@@ -427,6 +431,7 @@ fn run_create_noninteractive(
     github_issue: Option<String>,
     labels: Option<String>,
     repos: Option<String>,
+    owners: Option<String>,
     status: Option<String>,
     timeline: Option<String>,
 ) -> Result<()> {
@@ -438,6 +443,15 @@ fn run_create_noninteractive(
     let repos_vec: Vec<String> = repos
         .map(|r| {
             r.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let owners_vec: Vec<String> = owners
+        .map(|o| {
+            o.split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect()
@@ -457,6 +471,7 @@ fn run_create_noninteractive(
         github_issue.as_deref(),
         labels.as_deref(),
         &repos_vec,
+        &owners_vec,
         &status.unwrap_or_else(|| "active".to_string()),
         tl,
     )
@@ -500,11 +515,12 @@ fn run_create_interactive() -> Result<()> {
     let mut status = String::new();
     let mut repos_str: Option<String> = None;
     let mut labels_str: Option<String> = None;
+    let mut owners_str: Option<String> = None;
     let mut github_issue: Option<String> = None;
     let mut tl: Option<armitage_core::node::Timeline> = None;
 
     let mut step: usize = 0;
-    const LAST_STEP: usize = 6;
+    const LAST_STEP: usize = 7;
 
     while step <= LAST_STEP {
         match step {
@@ -620,6 +636,20 @@ fn run_create_interactive() -> Result<()> {
                 }
             }
             5 => {
+                match rl_field_optional(
+                    &mut rl,
+                    "Owners (comma-separated GitHub usernames, or blank): ",
+                )? {
+                    Input::Value(v) => {
+                        owners_str = v;
+                        step += 1;
+                    }
+                    Input::Back => {
+                        step -= 1;
+                    }
+                }
+            }
+            6 => {
                 match rl_field_optional(&mut rl, "GitHub issue (owner/repo#number, or blank): ")? {
                     Input::Value(v) => {
                         github_issue = v;
@@ -630,7 +660,7 @@ fn run_create_interactive() -> Result<()> {
                     }
                 }
             }
-            6 => {
+            7 => {
                 let parent_tl = parent_node.and_then(|e| e.node.timeline.as_ref());
 
                 // Timeline uses its own sub-prompts; support back to skip it entirely
@@ -711,6 +741,15 @@ fn run_create_interactive() -> Result<()> {
         })
         .unwrap_or_default();
 
+    let owners: Vec<String> = owners_str
+        .map(|o| {
+            o.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
     create_node_full(
         &org_root,
         &path,
@@ -719,6 +758,7 @@ fn run_create_interactive() -> Result<()> {
         github_issue.as_deref(),
         labels_str.as_deref(),
         &repos,
+        &owners,
         &status,
         tl,
     )
@@ -734,6 +774,7 @@ pub(crate) fn create_node_full(
     github_issue: Option<&str>,
     labels: Option<&str>,
     repos: &[String],
+    owners: &[String],
     status: &str,
     timeline: Option<armitage_core::node::Timeline>,
 ) -> Result<()> {
@@ -810,6 +851,7 @@ pub(crate) fn create_node_full(
         github_issue: github_issue.map(|s| s.to_string()),
         labels: labels_vec,
         repos: repos.to_vec(),
+        owners: owners.to_vec(),
         timeline,
         status: node_status,
     };
@@ -909,6 +951,9 @@ pub fn run_show(path: String) -> Result<()> {
     if !entry.node.labels.is_empty() {
         println!("labels:      {}", entry.node.labels.join(", "));
     }
+    if !entry.node.owners.is_empty() {
+        println!("owners:      {}", entry.node.owners.join(", "));
+    }
     if let Some(ref tl) = entry.node.timeline {
         println!("timeline:    {} — {}", tl.start, tl.end);
     }
@@ -961,6 +1006,7 @@ pub fn run_edit(path: String) -> Result<()> {
 
     let repos_default = node.repos.join(", ");
     let labels_default = node.labels.join(", ");
+    let owners_default = node.owners.join(", ");
     let gh_default = node.github_issue.as_deref().unwrap_or("").to_string();
 
     let mut name = node.name.clone();
@@ -968,11 +1014,12 @@ pub fn run_edit(path: String) -> Result<()> {
     let mut status = node.status.clone();
     let mut repos: Vec<String> = node.repos.clone();
     let mut labels: Vec<String> = node.labels.clone();
+    let mut owners: Vec<String> = node.owners.clone();
     let mut github_issue: Option<String> = node.github_issue.clone();
     let mut timeline: Option<armitage_core::node::Timeline> = node.timeline.clone();
 
     let mut step: usize = 0;
-    const LAST_STEP: usize = 6;
+    const LAST_STEP: usize = 7;
 
     while step <= LAST_STEP {
         match step {
@@ -1077,6 +1124,23 @@ pub fn run_edit(path: String) -> Result<()> {
             }
             5 => match rl_field(
                 &mut rl,
+                "Owners (comma-separated GitHub usernames)",
+                &owners_default,
+            )? {
+                Input::Value(v) => {
+                    owners = v
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    step += 1;
+                }
+                Input::Back => {
+                    step -= 1;
+                }
+            },
+            6 => match rl_field(
+                &mut rl,
                 "GitHub issue (owner/repo#number, or 'none')",
                 &gh_default,
             )? {
@@ -1091,7 +1155,7 @@ pub fn run_edit(path: String) -> Result<()> {
                     step -= 1;
                 }
             },
-            6 => {
+            7 => {
                 let has = timeline.is_some();
                 match rl_field(
                     &mut rl,
@@ -1174,6 +1238,7 @@ pub fn run_edit(path: String) -> Result<()> {
         github_issue,
         labels,
         repos,
+        owners,
         timeline,
         status,
     };
@@ -1734,6 +1799,7 @@ mod tests {
                 github_issue: None,
                 labels: vec![],
                 repos: vec![],
+                owners: vec![],
                 timeline: None,
             },
         }

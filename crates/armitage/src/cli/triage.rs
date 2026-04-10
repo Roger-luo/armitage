@@ -2612,6 +2612,7 @@ pub fn run_categories_apply(
         None,
         None,
         &[],
+        &[],
         "active",
         None,
     )?;
@@ -2871,6 +2872,7 @@ fn apply_refined_group(
         None,
         None,
         &[],
+        &[],
         "active",
         None,
     )?;
@@ -2934,6 +2936,7 @@ fn ensure_ancestors_exist(org_root: &Path, node_path: &str, auto_accept: bool) -
             Some(&description),
             None,
             None,
+            &[],
             &[],
             "active",
             None,
