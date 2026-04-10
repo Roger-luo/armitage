@@ -1,3 +1,4 @@
+pub mod chart;
 pub mod complete;
 pub mod config;
 pub mod init;
@@ -77,6 +78,18 @@ enum Commands {
     Triage {
         #[command(subcommand)]
         command: TriageCommands,
+    },
+    /// Generate an interactive HTML roadmap chart
+    Chart {
+        /// Output file path (default: .armitage/chart.html)
+        #[arg(long, short)]
+        output: Option<String>,
+        /// Don't open the chart in the browser after generating
+        #[arg(long)]
+        no_open: bool,
+        /// Embed ECharts JS inline for offline viewing
+        #[arg(long)]
+        offline: bool,
     },
     /// Self-management commands
     #[command(name = "self")]
@@ -733,6 +746,11 @@ pub fn run() -> Result<()> {
         Commands::Push { path, dry_run } => push::run(path, dry_run)?,
         Commands::Resolve { path, list } => resolve::run(path, list)?,
         Commands::Status => status::run()?,
+        Commands::Chart {
+            output,
+            no_open,
+            offline,
+        } => chart::run_chart(output, no_open, offline)?,
         Commands::Config { command } => match command {
             ConfigCommands::Set { key, value } => {
                 config::run_set(key, value)?;

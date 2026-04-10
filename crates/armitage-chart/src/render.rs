@@ -1,0 +1,80 @@
+use askama::Template;
+
+use crate::data::ChartData;
+use crate::error::Result;
+
+const CHART_JS: &str = include_str!("../js/chart.js");
+
+#[derive(Template)]
+#[template(path = "chart.html")]
+struct ChartTemplate {
+    title: String,
+    chart_data_json: String,
+    chart_js: String,
+    inline_js: bool,
+    echart_js: String,
+}
+
+/// Render chart data into a standalone HTML string.
+///
+/// When `offline` is true, ECharts JS is not available to inline (the user
+/// would need to supply it separately). For now, offline mode is a placeholder
+/// that still uses the CDN link.
+pub fn render_chart(data: &ChartData, offline: bool) -> Result<String> {
+    let chart_data_json = serde_json::to_string(data)?;
+
+    let template = ChartTemplate {
+        title: data.org_name.clone(),
+        chart_data_json,
+        chart_js: CHART_JS.to_string(),
+        inline_js: offline,
+        echart_js: String::new(), // TODO: support inlining echarts.min.js
+    };
+
+    Ok(template.render()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::{ChartData, ChartNode};
+
+    fn sample_data() -> ChartData {
+        ChartData {
+            nodes: vec![ChartNode {
+                path: "alpha".to_string(),
+                name: "Alpha".to_string(),
+                description: "Test initiative".to_string(),
+                status: "active".to_string(),
+                start: Some("2026-01-01".to_string()),
+                end: Some("2026-06-30".to_string()),
+                eff_start: Some("2026-01-01".to_string()),
+                eff_end: Some("2026-06-30".to_string()),
+                has_timeline: true,
+                owners: vec!["alice".to_string()],
+                team: Some("core".to_string()),
+                children: vec![],
+                milestones: vec![],
+            }],
+            org_name: "TestOrg".to_string(),
+            global_start: Some("2026-01-01".to_string()),
+            global_end: Some("2026-06-30".to_string()),
+        }
+    }
+
+    #[test]
+    fn renders_valid_html() {
+        let html = render_chart(&sample_data(), false).unwrap();
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("TestOrg"));
+        assert!(html.contains("cdn.jsdelivr.net/npm/echarts"));
+        assert!(html.contains("__CHART_DATA__"));
+        assert!(html.contains("Alpha"));
+    }
+
+    #[test]
+    fn cdn_mode_includes_script_tag() {
+        let html = render_chart(&sample_data(), false).unwrap();
+        assert!(html.contains("cdn.jsdelivr.net/npm/echarts@5"));
+    }
+}

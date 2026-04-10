@@ -1,0 +1,17 @@
+[package]
+name = "armitage-chart"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+armitage-core = { workspace = true }
+armitage-milestones = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+askama = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
