@@ -613,49 +613,67 @@ function renderBar(
     },
   });
 
-  // Nested child bars
-  const childrenWithTimeline = node.children.filter(
-    (c) => c.eff_start && c.eff_end,
-  );
-  if (childrenWithTimeline.length > 0) {
-    const barAreaTop = y + 4;
-    const barAreaHeight = height - 8;
-    const maxBars = Math.min(childrenWithTimeline.length, 5);
-    const barH = Math.max(
-      4,
-      Math.min(10, (barAreaHeight - (maxBars - 1) * 2) / maxBars),
+  // Heat bar fill for non-leaf nodes
+  if (node.children.length > 0) {
+    const childrenWithTimeline = node.children.filter(
+      (c) => c.eff_start && c.eff_end,
     );
-    const gap = Math.max(2, (barAreaHeight - maxBars * barH) / (maxBars + 1));
 
-    const outerStart = api.value(0) as number;
-    const outerEnd = api.value(1) as number;
-    const outerRange = outerEnd - outerStart;
+    if (childrenWithTimeline.length > 0) {
+      const outerStart = api.value(0) as number;
+      const outerEnd = api.value(1) as number;
+      const outerRange = outerEnd - outerStart;
 
-    for (let i = 0; i < maxBars; i++) {
-      const child = childrenWithTimeline[i];
-      const cStart = parseDate(child.eff_start!);
-      const cEnd = parseDate(child.eff_end!);
+      const childStarts = childrenWithTimeline.map((c) =>
+        parseDate(c.eff_start!),
+      );
+      const childEnds = childrenWithTimeline.map((c) =>
+        parseDate(c.eff_end!),
+      );
+      const spanStart = Math.min(...childStarts);
+      const spanEnd = Math.max(...childEnds);
 
-      const relStart = Math.max(0, (cStart - outerStart) / outerRange);
-      const relEnd = Math.min(1, (cEnd - outerStart) / outerRange);
+      const relStart = Math.max(0, (spanStart - outerStart) / outerRange);
+      const relEnd = Math.min(1, (spanEnd - outerStart) / outerRange);
 
-      const cx = x + relStart * width;
-      const cw = (relEnd - relStart) * width;
-      const cy = barAreaTop + gap + i * (barH + gap);
+      const fillX = x + relStart * width;
+      const fillW = (relEnd - relStart) * width;
 
-      const childColor =
-        STATUS_COLORS[child.status] || STATUS_COLORS.active;
-      const opacity = 0.6 + 0.3 * (1 - i / maxBars);
-
+      // Gradient fill rectangle
       children.push({
         type: "rect",
-        shape: { x: cx, y: cy, width: Math.max(cw, 2), height: barH, r: 2 },
+        shape: { x: fillX, y: y + 1, width: fillW, height: height - 2, r: 4 },
         style: {
-          fill: childColor,
-          opacity,
+          fill: new (echarts.graphic as any).LinearGradient(0, 0, 1, 0, [
+            { offset: 0, color: "rgba(88, 166, 255, 0.35)" },
+            { offset: 1, color: "rgba(88, 166, 255, 0.15)" },
+          ]),
         },
       });
     }
+
+    // Count badge
+    const badgeText = `×${node.children.length} children`;
+    // Position badge to the left of the drillable arrow (arrow is at x+width-12)
+    const badgeX = x + width - 20;
+    const badgeY = y + height / 2;
+
+    children.push({
+      type: "text",
+      style: {
+        text: badgeText,
+        x: badgeX,
+        y: badgeY,
+        fill: "#58a6ff",
+        fontSize: 11,
+        fontWeight: 600,
+        textAlign: "right",
+        textVerticalAlign: "middle",
+        backgroundColor: "rgba(13, 17, 23, 0.7)",
+        borderRadius: 3,
+        padding: [2, 6],
+      },
+    });
   }
 
   // Checkpoint markers (diamonds + dashed vertical line within this row)
