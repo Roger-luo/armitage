@@ -447,6 +447,36 @@ pub fn lookup_issue_id(conn: &Connection, repo: &str, number: u64) -> Result<Opt
     Ok(result)
 }
 
+/// Get project metadata for an issue by repo and number.
+pub fn get_project_items_for_issue(
+    conn: &Connection,
+    repo: &str,
+    number: u64,
+) -> Result<Vec<IssueProjectItem>> {
+    let issue_id = match lookup_issue_id(conn, repo, number)? {
+        Some(id) => id,
+        None => return Ok(vec![]),
+    };
+    let mut stmt = conn.prepare(
+        "SELECT id, issue_id, project_url, target_date, start_date, status, fetched_at
+         FROM issue_project_items WHERE issue_id = ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![issue_id], |row| {
+            Ok(IssueProjectItem {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                project_url: row.get(2)?,
+                target_date: row.get(3)?,
+                start_date: row.get(4)?,
+                status: row.get(5)?,
+                fetched_at: row.get(6)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 // ---------------------------------------------------------------------------
 // Triage Suggestion CRUD
 // ---------------------------------------------------------------------------
