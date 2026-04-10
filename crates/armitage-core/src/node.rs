@@ -28,8 +28,21 @@ const MULTILINE_THRESHOLD: usize = 80;
 
 impl Node {
     /// Serialize to TOML, using multi-line strings for long values.
+    /// Normalizes newlines in the description to spaces before wrapping,
+    /// so re-formatting is idempotent.
     pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
-        let raw = toml::to_string(self)?;
+        let mut normalized = self.clone();
+        // Collapse any existing newlines in description to spaces
+        if normalized.description.contains('\n') {
+            normalized.description = normalized
+                .description
+                .lines()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .trim()
+                .to_string();
+        }
+        let raw = toml::to_string(&normalized)?;
         Ok(to_multiline_toml(&raw))
     }
 }
