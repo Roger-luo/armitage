@@ -117,6 +117,13 @@
     if (!match) return "#";
     return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
   }
+  function allIssues(node) {
+    const result = [...node.issues];
+    for (const c of node.children) {
+      result.push(...allIssues(c));
+    }
+    return result;
+  }
   function showPanel(node) {
     selectedNode = node;
     let html = "";
@@ -164,16 +171,12 @@
       }
       html += `</ul></div>`;
     }
-    if (node.issues.length > 0) {
-      html += `<div class="panel-section">`;
-      html += `<h3>Issues (${node.issues.length})</h3>`;
-      html += `<ul class="panel-issues">`;
-      for (const issue of node.issues) {
-        const url = issueUrl(issue.issue_ref);
-        const label = issue.title ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>` : escapeHtml(issue.issue_ref);
-        html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
-      }
-      html += `</ul></div>`;
+    if (node.overflow_end) {
+      html += `<div class="panel-section panel-overflow">`;
+      html += `<h3>⚠ Timeline Overflow</h3>`;
+      html += `<div class="panel-meta">Issues target as late as <b>${node.overflow_end}</b>`;
+      if (node.end) html += `, but node ends <b>${node.end}</b>`;
+      html += `</div></div>`;
     }
     if (node.children.length > 0) {
       html += `<div class="panel-section">`;
@@ -191,6 +194,31 @@
       html += `</ul>`;
       html += `<button class="btn-drill" onclick="window.__nav('${node.path}')">Drill into ${escapeHtml(node.name)} &rsaquo;</button>`;
       html += `</div>`;
+    }
+    const issues = allIssues(node);
+    if (issues.length > 0) {
+      html += `<div class="panel-section">`;
+      html += `<h3>Issues (${issues.length})</h3>`;
+      if (node.issue_start || node.issue_end) {
+        html += `<div class="panel-meta" style="margin-bottom:8px">`;
+        if (node.issue_start) html += `<span class="label">Earliest start:</span> ${node.issue_start}<br/>`;
+        if (node.issue_end) html += `<span class="label">Latest target:</span> ${node.issue_end}`;
+        html += `</div>`;
+      }
+      html += `<ul class="panel-issues">`;
+      for (const issue of issues) {
+        const url = issueUrl(issue.issue_ref);
+        let label = issue.title ? escapeHtml(issue.title) : escapeHtml(issue.issue_ref);
+        let meta = `<span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>`;
+        if (issue.target_date) {
+          const isOverflow = node.end && issue.target_date > node.end;
+          meta += isOverflow
+            ? ` <span class="issue-overflow">&rarr; ${issue.target_date}</span>`
+            : ` <span class="issue-date">&rarr; ${issue.target_date}</span>`;
+        }
+        html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a><br/>${meta}</li>`;
+      }
+      html += `</ul></div>`;
     }
     panelContentEl.innerHTML = html;
     panelEl.classList.add("open");
@@ -469,6 +497,36 @@
             fontSize: 9,
             textAlign: "center",
             textVerticalAlign: "bottom",
+            opacity: 0.8
+          }
+        });
+      }
+    }
+    if (node.overflow_end) {
+      const overflowX = end[0];
+      const overflowEnd = api.coord([parseDate(node.overflow_end), yIdx]);
+      const overflowWidth = overflowEnd[0] - overflowX;
+      if (overflowWidth > 0) {
+        children.push({
+          type: "rect",
+          shape: { x: overflowX, y: y + 2, width: overflowWidth, height: height - 4, r: [0, 4, 4, 0] },
+          style: {
+            fill: "rgba(239, 68, 68, 0.15)",
+            stroke: "rgba(239, 68, 68, 0.5)",
+            lineWidth: 1,
+            lineDash: [4, 2]
+          }
+        });
+        children.push({
+          type: "text",
+          style: {
+            text: "\u26a0",
+            x: overflowX + overflowWidth / 2,
+            y: y + height / 2,
+            fill: "#ef4444",
+            fontSize: 12,
+            textAlign: "center",
+            textVerticalAlign: "middle",
             opacity: 0.8
           }
         });
