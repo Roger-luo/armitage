@@ -28,7 +28,8 @@ let seriesEntries: SeriesEntry[] = [];
 
 const chartEl = document.getElementById("chart")!;
 const breadcrumbEl = document.getElementById("breadcrumb")!;
-const toggleBtn = document.getElementById("toggle-range")!;
+const btnFitted = document.getElementById("btn-fitted");
+const btnGlobal = document.getElementById("btn-global");
 const panelEl = document.getElementById("panel")!;
 const panelContentEl = document.getElementById("panel-content")!;
 const chart = echarts.init(chartEl);
@@ -940,10 +941,14 @@ function renderBar(
         type: "rect",
         shape: { x: fillX, y: y + 1, width: fillW, height: height - 2, r: 4 },
         style: {
-          fill: new (echarts.graphic as any).LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: "rgba(88, 166, 255, 0.35)" },
-            { offset: 1, color: "rgba(88, 166, 255, 0.15)" },
-          ]),
+          fill: {
+            type: "linear",
+            x: 0, y: 0, x2: 1, y2: 0,
+            colorStops: [
+              { offset: 0, color: "rgba(88, 166, 255, 0.35)" },
+              { offset: 1, color: "rgba(88, 166, 255, 0.15)" },
+            ],
+          } as any,
         },
       });
     }
@@ -1141,7 +1146,18 @@ function renderBar(
     });
   }
 
-  return { type: "group", children, style: { opacity: groupOpacity } };
+  // Apply dimming opacity to each child (groups don't support style.opacity)
+  if (isDimmed) {
+    for (const child of children) {
+      if (child.style) {
+        child.style.opacity = (child.style.opacity ?? 1) * groupOpacity;
+      } else {
+        child.style = { opacity: groupOpacity };
+      }
+    }
+  }
+
+  return { type: "group", children };
 }
 
 // ---------------------------------------------------------------------------
@@ -1220,12 +1236,14 @@ function renderChart(): void {
   chart.setOption(buildOption(), true);
 }
 
-// Toggle range button
-toggleBtn.addEventListener("click", () => {
-  useGlobalRange = !useGlobalRange;
-  toggleBtn.textContent = useGlobalRange ? "Show Fitted Range" : "Show Global Range";
+// Toggle range — called from HTML inline onclick via window.__setRange
+function setRange(global: boolean): void {
+  useGlobalRange = global;
+  btnFitted?.classList.toggle("active", !global);
+  btnGlobal?.classList.toggle("active", global);
   renderChart();
-});
+}
+(window as any).__setRange = setRange;
 
 // Responsive resize
 window.addEventListener("resize", () => chart.resize());

@@ -11,7 +11,8 @@
   var seriesEntries = [];
   var chartEl = document.getElementById("chart");
   var breadcrumbEl = document.getElementById("breadcrumb");
-  var toggleBtn = document.getElementById("toggle-range");
+  var btnFitted = document.getElementById("btn-fitted");
+  var btnGlobal = document.getElementById("btn-global");
   var panelEl = document.getElementById("panel");
   var panelContentEl = document.getElementById("panel-content");
   var chart = echarts.init(chartEl);
@@ -694,10 +695,17 @@
           type: "rect",
           shape: { x: fillX, y: y + 1, width: fillW, height: height - 2, r: 4 },
           style: {
-            fill: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-              { offset: 0, color: "rgba(88, 166, 255, 0.35)" },
-              { offset: 1, color: "rgba(88, 166, 255, 0.15)" }
-            ])
+            fill: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 1,
+              y2: 0,
+              colorStops: [
+                { offset: 0, color: "rgba(88, 166, 255, 0.35)" },
+                { offset: 1, color: "rgba(88, 166, 255, 0.15)" }
+              ]
+            }
           }
         });
       }
@@ -869,7 +877,16 @@
         }
       });
     }
-    return { type: "group", children, style: { opacity: groupOpacity } };
+    if (isDimmed) {
+      for (const child of children) {
+        if (child.style) {
+          child.style.opacity = (child.style.opacity ?? 1) * groupOpacity;
+        } else {
+          child.style = { opacity: groupOpacity };
+        }
+      }
+    }
+    return { type: "group", children };
   }
   function navigateTo(path) {
     currentPath = path;
@@ -924,11 +941,13 @@
   function renderChart() {
     chart.setOption(buildOption(), true);
   }
-  toggleBtn.addEventListener("click", () => {
-    useGlobalRange = !useGlobalRange;
-    toggleBtn.textContent = useGlobalRange ? "Show Fitted Range" : "Show Global Range";
+  function setRange(global) {
+    useGlobalRange = global;
+    btnFitted?.classList.toggle("active", !global);
+    btnGlobal?.classList.toggle("active", global);
     renderChart();
-  });
+  }
+  window.__setRange = setRange;
   window.addEventListener("resize", () => chart.resize());
   updateBreadcrumb();
   renderChart();
