@@ -86,17 +86,26 @@ confidence = 0.92
 armitage init <name> [--github-org <org>...] [--default-repo <owner/repo>]
 # after init, set up AGENTS.md for AI workflows:
 # ion agents init Roger-luo/armitage/templates/org-agents.md
-armitage node new [<path>] [--name ...] [--description ...] [--repos ...] [--owners ...] [--team ...]
+armitage node new [<path>] [--name ...] [--description ...] [--repos ...] [--owners ...] [--team ...] [--timeline "START END"]
 armitage node list [<path>] [-r]
 armitage node tree [--depth N]         # -d N for short; omit for full tree
 armitage node show <path>
 armitage node edit <path>
-armitage node set <path> [--name ...] [--description ...] [--owners ...] [--team ...] [--repos ...] [--labels ...] [--status ...]
+armitage node set <path> [--name ...] [--description ...] [--triage-hint ...] [--owners ...] [--team ...] [--repos ...] [--labels ...] [--status ...]
 armitage node move <from> <to>
 armitage node merge <from> <to> [-y]   # merge source into target
 armitage node remove <path> [-y]
-armitage node check                    # timeline violations, etc.
+armitage node check                    # timeline violations + issue date validation
+armitage node fmt [<path>...]          # re-serialize node.toml files
 ```
+
+Note: `node set` does not support `--timeline`. To set or change a timeline, use `node edit`
+(interactive) or edit the `[timeline]` section in `node.toml` directly. `node new` supports
+`--timeline "2026-01-01 2026-12-31"` for setting it at creation time.
+
+`node check` validates: (1) parent-child timeline containment, (2) issue start/target dates
+from the GitHub Project board against node timelines. Requires `triage fetch` to have run with
+`[triage.project]` configured.
 
 ### GitHub Sync
 
@@ -216,15 +225,33 @@ After the LLM pass, a deterministic sweep catches remote labels whose bare name 
 prefixed label (e.g. remote `stim` → local `area: STIM`). This ensures the LLM's blind spots
 are covered for obvious prefix-match duplicates.
 
+### Milestones
+
+Milestones are modeled as **child nodes** with their own timeline and issues. For example,
+`gemini/logical/mvp` is a milestone node under `gemini/logical` with a tight deadline and
+MVP-critical issues. This is the recommended approach for bounded deliverables.
+
+For lightweight date markers on the chart (OKR targets, checkpoints), use `milestones.toml`:
+
+```
+armitage milestone add <node_path> --name <name> --date <YYYY-MM-DD> [--description ...] [--milestone-type checkpoint|okr]
+armitage milestone list [<node_path>] [--milestone-type ...] [--quarter ...]
+armitage milestone remove <node_path> <name>
+```
+
 ### Roadmap Chart
 
 ```
-armitage chart [--output PATH] [--no-open] [--offline]
-# Generates an interactive HTML roadmap timeline at .armitage/chart.html
-# --output PATH   custom output path
-# --no-open       don't auto-open in browser
-# --offline       inline ECharts JS for offline viewing
+armitage chart [--output PATH] [--no-open] [--offline] [--watch|-w]
 ```
+
+- Default: generates `.armitage/chart.html` and opens it
+- `--watch` / `-w`: starts a live-reload dev server on `http://127.0.0.1:<port>`, watches for
+  changes to node.toml, issues.toml, milestones.toml, armitage.toml, labels.toml, team.toml,
+  and triage.db, and auto-rebuilds with browser refresh
+- `--offline`: embeds ECharts JS inline for offline/GitHub Pages deployment
+- The chart shows red overflow bars when issue target dates exceed node timelines, with the
+  overflow visible at every drill-down level
 
 ### Configuration
 
