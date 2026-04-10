@@ -103,6 +103,8 @@ enum NodeCommands {
         #[arg(long)]
         repos: Option<String>,
         #[arg(long)]
+        owners: Option<String>,
+        #[arg(long)]
         status: Option<String>,
         /// Timeline (e.g. "2025-01-01 to 2025-12-31")
         #[arg(long)]
@@ -600,6 +602,7 @@ pub fn run() -> Result<()> {
                 github_issue,
                 labels,
                 repos,
+                owners,
                 status,
                 timeline,
             } => {
@@ -610,6 +613,7 @@ pub fn run() -> Result<()> {
                     github_issue,
                     labels,
                     repos,
+                    owners,
                     status,
                     timeline,
                 )?;
