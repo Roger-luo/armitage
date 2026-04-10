@@ -476,7 +476,10 @@
         const cStart = parseDate(sub.start);
         const cEnd = parseDate(sub.end);
         const relStart = Math.max(0, (cStart - outerStart) / outerRange);
-        const relEnd = Math.min(1, (cEnd - outerStart) / outerRange);
+        // Don't cap issue bars at parent edge — let them extend into overflow
+        const relEnd = sub.type === "issue"
+          ? (cEnd - outerStart) / outerRange
+          : Math.min(1, (cEnd - outerStart) / outerRange);
         const cx = x + relStart * width;
         const cw = Math.max((relEnd - relStart) * width, 2);
         const cy = barAreaTop + gap + i * (barH + gap);
