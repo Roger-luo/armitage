@@ -1517,11 +1517,18 @@ pub fn run_merge(from: String, to: String, yes: bool) -> Result<()> {
 }
 
 /// CLI entry point: armitage node tree
-pub fn run_tree() -> Result<()> {
+pub fn run_tree(max_depth: Option<usize>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
     let all = walk_nodes(&org_root)?;
-    print_tree(&all);
+    let filtered: Vec<_> = match max_depth {
+        Some(d) => all
+            .into_iter()
+            .filter(|e| e.path.matches('/').count() < d)
+            .collect(),
+        None => all,
+    };
+    print_tree(&filtered);
     Ok(())
 }
 

@@ -138,7 +138,11 @@ enum NodeCommands {
         yes: bool,
     },
     /// Display indented tree of all nodes
-    Tree,
+    Tree {
+        /// Maximum depth to display (0 = top-level only, omit for unlimited)
+        #[arg(long, short)]
+        depth: Option<usize>,
+    },
     /// Check for timeline violations and other issues
     Check,
 }
@@ -636,8 +640,8 @@ pub fn run() -> Result<()> {
             NodeCommands::Remove { path, yes } => {
                 node::run_remove(path, yes)?;
             }
-            NodeCommands::Tree => {
-                node::run_tree()?;
+            NodeCommands::Tree { depth } => {
+                node::run_tree(depth)?;
             }
             NodeCommands::Check => {
                 node::run_check()?;
