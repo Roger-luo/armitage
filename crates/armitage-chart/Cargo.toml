@@ -13,5 +13,8 @@ thiserror = { workspace = true }
 askama = { workspace = true }
 toml = { workspace = true }
 
+[build-dependencies]
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
 [dev-dependencies]
 tempfile = { workspace = true }

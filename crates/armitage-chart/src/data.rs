@@ -92,6 +92,20 @@ fn read_milestones(node_dir: &Path) -> Vec<ChartMilestone> {
         .collect()
 }
 
+fn read_issues(node_dir: &Path) -> Vec<ChartIssue> {
+    let Ok(issues_file) = IssuesFile::read(node_dir) else {
+        return vec![];
+    };
+    issues_file
+        .issues
+        .into_iter()
+        .map(|e| ChartIssue {
+            issue_ref: e.issue_ref,
+            title: e.title,
+        })
+        .collect()
+}
+
 /// Build a `ChartNode` tree recursively from a parent-to-children map.
 fn build_node(entry: &NodeEntry, children_map: &HashMap<String, Vec<&NodeEntry>>) -> ChartNode {
     // Recursively build children first (bottom-up for effective timeline).

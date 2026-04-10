@@ -4,6 +4,7 @@ use crate::data::ChartData;
 use crate::error::Result;
 
 const CHART_JS: &str = include_str!("../js/chart.js");
+const ECHARTS_JS: &str = include_str!("../js/echarts.min.js");
 
 #[derive(Template)]
 #[template(path = "chart.html")]
@@ -17,9 +18,8 @@ struct ChartTemplate {
 
 /// Render chart data into a standalone HTML string.
 ///
-/// When `offline` is true, ECharts JS is not available to inline (the user
-/// would need to supply it separately). For now, offline mode is a placeholder
-/// that still uses the CDN link.
+/// When `offline` is true, ECharts JS is embedded inline so the chart works
+/// without network access.
 pub fn render_chart(data: &ChartData, offline: bool) -> Result<String> {
     let chart_data_json = serde_json::to_string(data)?;
 
@@ -28,7 +28,11 @@ pub fn render_chart(data: &ChartData, offline: bool) -> Result<String> {
         chart_data_json,
         chart_js: CHART_JS,
         inline_js: offline,
-        echart_js: String::new(), // TODO: support inlining echarts.min.js
+        echart_js: if offline {
+            ECHARTS_JS.to_string()
+        } else {
+            String::new()
+        },
     };
 
     Ok(template.render()?)
