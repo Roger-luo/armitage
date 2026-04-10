@@ -34,7 +34,8 @@ impl Node {
     }
 }
 
-/// Post-process serialized TOML to convert long string values to multi-line (`"""`).
+/// Post-process serialized TOML to convert long string values to multi-line (`"""`)
+/// with word-wrapped content.
 fn to_multiline_toml(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for line in input.lines() {
@@ -48,10 +49,21 @@ fn to_multiline_toml(input: &str) -> String {
             {
                 // Strip outer quotes to get the raw escaped content
                 let inner = &trimmed[1..trimmed.len() - 1];
+                let lines = wrap_str(inner, MULTILINE_THRESHOLD);
                 out.push_str(key);
                 out.push_str(" = \"\"\"\n");
-                out.push_str(inner);
-                out.push_str("\"\"\"\n");
+                for (i, wrapped) in lines.iter().enumerate() {
+                    out.push_str(wrapped);
+                    if i + 1 < lines.len() {
+                        // Trailing backslash joins lines in TOML multi-line strings
+                        out.push_str(" \\\n");
+                    } else {
+                        out.push_str("\"\"\"\n");
+                    }
+                }
+                if lines.is_empty() {
+                    out.push_str("\"\"\"\n");
+                }
                 continue;
             }
         }
@@ -59,6 +71,39 @@ fn to_multiline_toml(input: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+/// Word-wrap a string at `width`, breaking on spaces.
+fn wrap_str(text: &str, width: usize) -> Vec<&str> {
+    if width == 0 || text.is_empty() {
+        return vec![text];
+    }
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let mut last_space = 0;
+    let mut col = 0;
+    for (i, ch) in text.char_indices() {
+        if ch == ' ' {
+            last_space = i;
+        }
+        col += 1;
+        if col > width {
+            if last_space > start {
+                lines.push(&text[start..last_space]);
+                start = last_space + 1;
+            } else {
+                // No space found — hard break
+                lines.push(&text[start..i]);
+                start = i;
+            }
+            col = text[start..=i].chars().count();
+            last_space = start;
+        }
+    }
+    if start < text.len() {
+        lines.push(&text[start..]);
+    }
+    lines
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -270,10 +315,11 @@ mod tests {
     }
 
     #[test]
-    fn to_toml_uses_multiline_for_long_description() {
+    fn to_toml_uses_multiline_with_wrapping_for_long_description() {
+        let desc = "Quantum circuit development: the bloqade-circuit Python SDK for neutral atom quantum computing. Core IR (squin), QEC, and more.";
         let node = Node {
             name: "test".to_string(),
-            description: "A".repeat(100),
+            description: desc.to_string(),
             github_issue: None,
             labels: vec![],
             repos: vec![],
@@ -287,9 +333,24 @@ mod tests {
             toml_str.contains("\"\"\""),
             "long description should use multi-line string"
         );
+        // The content inside """ should have line breaks from word-wrapping
+        let inside_quotes: &str = toml_str.split("\"\"\"").nth(1).expect("multi-line content");
+        let lines: Vec<&str> = inside_quotes.lines().filter(|l| !l.is_empty()).collect();
+        assert!(
+            lines.len() > 1,
+            "multi-line content should be word-wrapped into multiple lines, got: {lines:?}"
+        );
+        // Each line should be <= threshold (allow some slack for words)
+        for line in &lines {
+            assert!(
+                line.len() <= 120,
+                "line too long ({} chars): {line}",
+                line.len()
+            );
+        }
         // Verify it roundtrips correctly
         let parsed: Node = toml::from_str(&toml_str).expect("deserialize");
-        assert_eq!(parsed.description, node.description);
+        assert_eq!(parsed.description, desc);
     }
 
     #[test]
