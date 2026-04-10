@@ -10,6 +10,10 @@ pub struct TeamMember {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub teams: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -74,6 +78,8 @@ mod tests {
             github = "alice"
             name = "Alice Smith"
             role = "Engineer"
+            teams = ["flair", "kirin"]
+            site = "boston"
 
             [[members]]
             github = "bob"
@@ -83,8 +89,12 @@ mod tests {
         assert_eq!(tf.members.len(), 2);
         assert_eq!(tf.members[0].github, "alice");
         assert_eq!(tf.members[0].role.as_deref(), Some("Engineer"));
+        assert_eq!(tf.members[0].teams, vec!["flair", "kirin"]);
+        assert_eq!(tf.members[0].site.as_deref(), Some("boston"));
         assert_eq!(tf.members[1].github, "bob");
         assert!(tf.members[1].role.is_none());
+        assert!(tf.members[1].teams.is_empty());
+        assert!(tf.members[1].site.is_none());
     }
 
     #[test]
@@ -101,11 +111,15 @@ mod tests {
                     github: "alice".to_string(),
                     name: "Alice".to_string(),
                     role: Some("Lead".to_string()),
+                    teams: vec!["circuit".to_string()],
+                    site: Some("boston".to_string()),
                 },
                 TeamMember {
                     github: "bob".to_string(),
                     name: "Bob".to_string(),
                     role: None,
+                    teams: vec![],
+                    site: None,
                 },
             ],
         };
@@ -121,6 +135,8 @@ mod tests {
                 github: "alice".to_string(),
                 name: "Alice".to_string(),
                 role: None,
+                teams: vec![],
+                site: None,
             }],
         };
         assert!(tf.has("alice"));
@@ -135,11 +151,15 @@ mod tests {
                     github: "alice".to_string(),
                     name: "Alice".to_string(),
                     role: None,
+                    teams: vec![],
+                    site: None,
                 },
                 TeamMember {
                     github: "alice".to_string(),
                     name: "Alice 2".to_string(),
                     role: None,
+                    teams: vec![],
+                    site: None,
                 },
             ],
         };

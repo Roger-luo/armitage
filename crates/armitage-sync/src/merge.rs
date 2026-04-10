@@ -102,6 +102,15 @@ pub fn merge_nodes(base: &Node, local: &Node, remote: &Node) -> MergeResult {
         &mut conflicts,
     );
 
+    // --- team ---
+    let team = merge_option_string_field(
+        "team",
+        base.team.as_deref(),
+        local.team.as_deref(),
+        remote.team.as_deref(),
+        &mut conflicts,
+    );
+
     // --- timeline ---
     let timeline = merge_timeline_field(
         "timeline",
@@ -118,6 +127,7 @@ pub fn merge_nodes(base: &Node, local: &Node, remote: &Node) -> MergeResult {
         labels,
         repos,
         owners,
+        team,
         timeline,
         status,
     };
@@ -415,6 +425,7 @@ mod tests {
             labels: vec!["team:alpha".to_string(), "priority:low".to_string()],
             repos: vec!["owner/repo".to_string()],
             owners: vec![],
+            team: None,
             timeline: None,
             status: NodeStatus::Active,
         }
