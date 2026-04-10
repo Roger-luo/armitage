@@ -130,7 +130,7 @@ pub struct Timeline {
 }
 
 impl Timeline {
-    pub fn contains(&self, other: &Timeline) -> bool {
+    pub fn contains(&self, other: &Self) -> bool {
         self.start <= other.start && other.end <= self.end
     }
 }
@@ -148,10 +148,10 @@ pub enum NodeStatus {
 impl fmt::Display for NodeStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NodeStatus::Active => write!(f, "active"),
-            NodeStatus::Completed => write!(f, "completed"),
-            NodeStatus::Paused => write!(f, "paused"),
-            NodeStatus::Cancelled => write!(f, "cancelled"),
+            Self::Active => write!(f, "active"),
+            Self::Completed => write!(f, "completed"),
+            Self::Paused => write!(f, "paused"),
+            Self::Cancelled => write!(f, "cancelled"),
         }
     }
 }

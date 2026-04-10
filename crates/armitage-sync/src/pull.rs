@@ -37,7 +37,7 @@ pub enum PullNodeResult {
 fn apply_remote_to_local(entry: &NodeEntry, issue: &GitHubIssue) -> Result<()> {
     // Build the updated node
     let mut node = entry.node.clone();
-    node.name = issue.title.clone();
+    node.name.clone_from(&issue.title);
     node.labels = issue.labels.iter().map(|l| l.name.clone()).collect();
     node.status = if issue.state.to_uppercase() == "OPEN" {
         NodeStatus::Active
@@ -63,9 +63,8 @@ fn apply_remote_to_local(entry: &NodeEntry, issue: &GitHubIssue) -> Result<()> {
 
 pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNodeResult> {
     // 1. Skip if no github_issue
-    let issue_ref_str = match entry.node.github_issue.as_deref() {
-        Some(s) => s,
-        None => return Ok(PullNodeResult::Skipped),
+    let Some(issue_ref_str) = entry.node.github_issue.as_deref() else {
+        return Ok(PullNodeResult::Skipped);
     };
     let issue_ref = IssueRef::parse(issue_ref_str)?;
 
@@ -83,17 +82,17 @@ pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNode
     let stored = sync_state.nodes.get(&entry.path).cloned();
 
     // 4. Check if remote changed (compare stored remote_updated_at with GitHub's updatedAt)
-    let remote_changed = match stored.as_ref().and_then(|s| s.remote_updated_at) {
-        Some(stored_remote_ts) => remote_updated_at > stored_remote_ts,
-        None => true, // No prior state — treat as remote changed
-    };
+    let remote_changed = stored
+        .as_ref()
+        .and_then(|s| s.remote_updated_at)
+        .is_none_or(|stored_remote_ts| remote_updated_at > stored_remote_ts);
 
     // 5. Check if local changed (compare stored local_hash with current hash)
     let current_hash = compute_node_hash(&entry.dir)?;
-    let local_changed = match stored.as_ref().and_then(|s| s.local_hash.as_deref()) {
-        Some(stored_hash) => stored_hash != current_hash,
-        None => true, // No prior state — treat as local changed
-    };
+    let local_changed = stored
+        .as_ref()
+        .and_then(|s| s.local_hash.as_deref())
+        .is_none_or(|stored_hash| stored_hash != current_hash);
 
     tracing::debug!(
         node = %entry.path,

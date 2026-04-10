@@ -273,7 +273,6 @@ fn classify_candidate(
     }
 
     match (local, remote_variants.first()) {
-        (None, Some(_)) => CandidateStatus::New,
         (Some(local), Some(remote)) => {
             if local.description == remote.description && local.color == remote.color {
                 CandidateStatus::Unchanged
@@ -281,7 +280,7 @@ fn classify_candidate(
                 CandidateStatus::MetadataDrift
             }
         }
-        (_, None) => CandidateStatus::New,
+        _ => CandidateStatus::New,
     }
 }
 

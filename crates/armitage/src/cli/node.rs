@@ -767,12 +767,14 @@ pub(crate) fn create_node_full(
         )));
     }
 
-    let derived_name = name.map(|s| s.to_string()).unwrap_or_else(|| {
-        Path::new(path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string())
-    });
+    let derived_name = name
+        .map(std::string::ToString::to_string)
+        .unwrap_or_else(|| {
+            Path::new(path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string())
+        });
 
     let labels_vec: Vec<String> = labels
         .map(|l| {
@@ -789,7 +791,7 @@ pub(crate) fn create_node_full(
         let undefined: Vec<&str> = labels_vec
             .iter()
             .filter(|l| !lf.has(l))
-            .map(|l| l.as_str())
+            .map(std::string::String::as_str)
             .collect();
         if !undefined.is_empty() {
             return Err(Error::Other(format!(
@@ -806,7 +808,7 @@ pub(crate) fn create_node_full(
         name: derived_name,
         description: description.unwrap_or("").to_string(),
         triage_hint: None,
-        github_issue: github_issue.map(|s| s.to_string()),
+        github_issue: github_issue.map(std::string::ToString::to_string),
         labels: labels_vec,
         repos: repos.to_vec(),
         owners: owners.to_vec(),
@@ -1205,7 +1207,7 @@ pub fn run_edit(path: String) -> Result<()> {
         labels,
         repos,
         owners,
-        team: node.team.clone(),
+        team: node.team,
         timeline,
         status,
     };
@@ -1364,7 +1366,7 @@ pub fn run_remove(path: String, yes: bool) -> Result<()> {
 
     let node_dir = org_root.join(&path);
     if !node_dir.join("node.toml").exists() {
-        return Err(armitage_core::error::Error::NodeNotFound(path.clone()).into());
+        return Err(armitage_core::error::Error::NodeNotFound(path).into());
     }
 
     if !yes {
@@ -1393,10 +1395,10 @@ pub fn run_merge(from: String, to: String, yes: bool) -> Result<()> {
     let to_dir = org_root.join(&to);
 
     if !from_dir.join("node.toml").exists() {
-        return Err(armitage_core::error::Error::NodeNotFound(from.clone()).into());
+        return Err(armitage_core::error::Error::NodeNotFound(from).into());
     }
     if !to_dir.join("node.toml").exists() {
-        return Err(armitage_core::error::Error::NodeNotFound(to.clone()).into());
+        return Err(armitage_core::error::Error::NodeNotFound(to).into());
     }
     if from == to {
         return Err(Error::Other("cannot merge a node into itself".to_string()));
@@ -1459,7 +1461,7 @@ pub fn run_merge(from: String, to: String, yes: bool) -> Result<()> {
     }
 
     // 2. Move children from source to target (deepest first to avoid path conflicts)
-    let mut sorted_children = children.clone();
+    let mut sorted_children = children;
     sorted_children.sort_by_key(|b| std::cmp::Reverse(b.len()));
     for child in &sorted_children {
         let new_path = child.replacen(&from, &to, 1);

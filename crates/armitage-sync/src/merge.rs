@@ -199,17 +199,15 @@ fn merge_string_field(
         (true, false) => local.to_string(),
         (false, true) => remote.to_string(),
         (true, true) => {
-            if local == remote {
-                local.to_string()
-            } else {
+            if local != remote {
                 conflicts.push(FieldConflict {
                     field: field.to_string(),
                     local_value: local.to_string(),
                     remote_value: remote.to_string(),
                 });
-                // Use local as provisional
-                local.to_string()
             }
+            // Use local as provisional (or agreed value)
+            local.to_string()
         }
     }
 }
@@ -225,21 +223,18 @@ fn merge_option_string_field(
     let remote_changed = remote != base;
 
     match (local_changed, remote_changed) {
-        (false, false) => base.map(|s| s.to_string()),
-        (true, false) => local.map(|s| s.to_string()),
-        (false, true) => remote.map(|s| s.to_string()),
+        (false, false) => base.map(std::string::ToString::to_string),
+        (true, false) => local.map(std::string::ToString::to_string),
+        (false, true) => remote.map(std::string::ToString::to_string),
         (true, true) => {
-            if local == remote {
-                local.map(|s| s.to_string())
-            } else {
+            if local != remote {
                 conflicts.push(FieldConflict {
                     field: field.to_string(),
                     local_value: local.unwrap_or("(none)").to_string(),
                     remote_value: remote.unwrap_or("(none)").to_string(),
                 });
-                // Use local as provisional
-                local.map(|s| s.to_string())
             }
+            local.map(std::string::ToString::to_string)
         }
     }
 }
@@ -259,16 +254,14 @@ fn merge_status_field(
         (true, false) => local.clone(),
         (false, true) => remote.clone(),
         (true, true) => {
-            if local == remote {
-                local.clone()
-            } else {
+            if local != remote {
                 conflicts.push(FieldConflict {
                     field: field.to_string(),
                     local_value: local.to_string(),
                     remote_value: remote.to_string(),
                 });
-                local.clone()
             }
+            local.clone()
         }
     }
 }
@@ -288,16 +281,14 @@ fn merge_string_vec_field(
         (true, false) => local.to_vec(),
         (false, true) => remote.to_vec(),
         (true, true) => {
-            if local == remote {
-                local.to_vec()
-            } else {
+            if local != remote {
                 conflicts.push(FieldConflict {
                     field: field.to_string(),
                     local_value: local.join(", "),
                     remote_value: remote.join(", "),
                 });
-                local.to_vec()
             }
+            local.to_vec()
         }
     }
 }
@@ -323,20 +314,20 @@ fn merge_timeline_field(
         (true, false) => local.cloned(),
         (false, true) => remote.cloned(),
         (true, true) => {
-            if timeline_eq(local, remote) {
-                local.cloned()
-            } else {
-                let fmt_tl = |t: Option<&Timeline>| match t {
-                    None => "(none)".to_string(),
-                    Some(tl) => format!("{} — {}", tl.start, tl.end),
+            if !timeline_eq(local, remote) {
+                let fmt_tl = |t: Option<&Timeline>| {
+                    t.map_or_else(
+                        || "(none)".to_string(),
+                        |tl| format!("{} — {}", tl.start, tl.end),
+                    )
                 };
                 conflicts.push(FieldConflict {
                     field: field.to_string(),
                     local_value: fmt_tl(local),
                     remote_value: fmt_tl(remote),
                 });
-                local.cloned()
             }
+            local.cloned()
         }
     }
 }
@@ -354,9 +345,9 @@ fn merge_labels(
     remote: &[String],
     conflicts: &mut Vec<FieldConflict>,
 ) -> Vec<String> {
-    let base_set: BTreeSet<&str> = base.iter().map(|s| s.as_str()).collect();
-    let local_set: BTreeSet<&str> = local.iter().map(|s| s.as_str()).collect();
-    let remote_set: BTreeSet<&str> = remote.iter().map(|s| s.as_str()).collect();
+    let base_set: BTreeSet<&str> = base.iter().map(std::string::String::as_str).collect();
+    let local_set: BTreeSet<&str> = local.iter().map(std::string::String::as_str).collect();
+    let remote_set: BTreeSet<&str> = remote.iter().map(std::string::String::as_str).collect();
 
     // Compute changes
     let local_added: BTreeSet<&str> = local_set.difference(&base_set).copied().collect();
@@ -417,7 +408,10 @@ fn merge_labels(
         result.insert(*label);
     }
 
-    result.into_iter().map(|s| s.to_string()).collect()
+    result
+        .into_iter()
+        .map(std::string::ToString::to_string)
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

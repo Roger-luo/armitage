@@ -100,7 +100,7 @@ pub fn create_issue(
         .iter()
         .flat_map(|l| vec!["--label".to_string(), l.clone()])
         .collect();
-    let label_refs: Vec<&str> = label_args.iter().map(|s| s.as_str()).collect();
+    let label_refs: Vec<&str> = label_args.iter().map(std::string::String::as_str).collect();
     args.extend_from_slice(&label_refs);
 
     let json = gh.run(&args)?;
@@ -145,14 +145,20 @@ pub fn update_issue(
         .iter()
         .flat_map(|l| vec!["--add-label".to_string(), l.clone()])
         .collect();
-    let add_label_refs: Vec<&str> = add_label_args.iter().map(|s| s.as_str()).collect();
+    let add_label_refs: Vec<&str> = add_label_args
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     args.extend_from_slice(&add_label_refs);
 
     let remove_label_args: Vec<String> = remove_labels
         .iter()
         .flat_map(|l| vec!["--remove-label".to_string(), l.clone()])
         .collect();
-    let remove_label_refs: Vec<&str> = remove_label_args.iter().map(|s| s.as_str()).collect();
+    let remove_label_refs: Vec<&str> = remove_label_args
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     args.extend_from_slice(&remove_label_refs);
 
     gh.run(&args)?;

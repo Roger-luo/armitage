@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::io::Write;
 
 use rusqlite::Connection;
@@ -145,7 +146,7 @@ fn build_stale_question_prompt(issue: &StoredIssue, reasoning: &str) -> String {
          relevant?\". If the issue might still be useful as backlog, acknowledge that.\n\n",
     );
     prompt.push_str(&build_issue_section(issue));
-    prompt.push_str(&format!("\n## Triage reasoning\n{reasoning}\n"));
+    let _ = writeln!(prompt, "\n## Triage reasoning\n{reasoning}");
     prompt.push_str(
         "\n## Task\n\
          Respond with ONLY the comment text to post on the issue. \
@@ -185,15 +186,16 @@ fn build_roadmap_section(nodes: &[NodeEntry]) -> String {
         } else {
             "leaf"
         };
-        s.push_str(&format!(
+        let _ = write!(
+            s,
             "- {} [{}] ({}) — {}: {}",
             entry.path, entry.node.status, kind, entry.node.name, entry.node.description
-        ));
+        );
         if !entry.node.repos.is_empty() {
-            s.push_str(&format!("  [repos: {}]", entry.node.repos.join(", ")));
+            let _ = write!(s, "  [repos: {}]", entry.node.repos.join(", "));
         }
         if let Some(ref hint) = entry.node.triage_hint {
-            s.push_str(&format!("  [hint: {}]", hint));
+            let _ = write!(s, "  [hint: {hint}]");
         }
         s.push('\n');
     }
@@ -206,12 +208,13 @@ fn build_label_schema_section(schema: &LabelSchema) -> String {
         s.push_str("No label prefixes defined.\n");
     } else {
         for prefix in &schema.prefixes {
-            s.push_str(&format!(
-                "- \"{}\" ({}): {}\n",
+            let _ = writeln!(
+                s,
+                "- \"{}\" ({}): {}",
                 prefix.prefix,
                 prefix.category,
                 prefix.examples.join(", "),
-            ));
+            );
         }
     }
     s
@@ -223,7 +226,7 @@ fn build_curated_labels_section(labels: &LabelsFile) -> String {
         s.push_str("No curated labels defined.\n");
     } else {
         for label in &labels.labels {
-            s.push_str(&format!("- {}: {}\n", label.name, label.description));
+            let _ = writeln!(s, "- {}: {}", label.name, label.description);
         }
     }
     s
@@ -252,12 +255,13 @@ fn build_issue_section(issue: &StoredIssue) -> String {
         issue.repo, issue.number, issue.state, issue.title, labels,
     );
     if issue.sub_issues_count > 0 {
-        section.push_str(&format!(
-            "Sub-issues: {} (this is likely a tracking/epic issue)\n",
+        let _ = writeln!(
+            section,
+            "Sub-issues: {} (this is likely a tracking/epic issue)",
             issue.sub_issues_count,
-        ));
+        );
     }
-    section.push_str(&format!("Body:\n{}\n", body));
+    let _ = writeln!(section, "Body:\n{body}");
     section
 }
 
@@ -370,7 +374,7 @@ fn build_batch_prompt(
     }
 
     for (i, issue) in issues.iter().enumerate() {
-        prompt.push_str(&format!("## Issue {}\n", i + 1));
+        let _ = writeln!(prompt, "## Issue {}", i + 1);
         prompt.push_str(&build_issue_section(issue));
         prompt.push('\n');
     }
@@ -403,7 +407,7 @@ thread_local! {
 /// Create a spinner for LLM wait time. Returns `None` if stderr is not a terminal,
 /// in non-interactive mode, or when an outer progress bar is managing the display.
 fn llm_spinner(backend: &str) -> Option<indicatif::ProgressBar> {
-    if SUPPRESS_SPINNER.with(|s| s.get()) {
+    if SUPPRESS_SPINNER.with(std::cell::Cell::get) {
         return None;
     }
     if !std::io::IsTerminal::is_terminal(&std::io::stderr()) {
@@ -510,7 +514,11 @@ fn invoke_gemini_api(config: &LlmConfig, prompt: &str) -> Result<String> {
 
     let text: String = parts
         .iter()
-        .filter(|p| !p.get("thought").and_then(|t| t.as_bool()).unwrap_or(false))
+        .filter(|p| {
+            !p.get("thought")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        })
         .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
         .collect::<Vec<_>>()
         .join("");
@@ -663,7 +671,7 @@ fn unwrap_cli_output(backend: &LlmBackend, raw: &str) -> Result<String> {
             wrapper
                 .get("response")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .ok_or_else(|| {
                     Error::LlmInvocation(
                         "Gemini CLI returned JSON without a response field".to_string(),
@@ -1090,23 +1098,23 @@ pub fn refine_label_suggestions(
         suggestions: Vec<crate::label_import::LabelSuggestion>,
     }
 
-    if let Ok(r) = serde_json::from_str::<RefineResponseInner>(trimmed) {
-        return Ok(r.suggestions);
-    }
-    if let Some(json) = extract_json_block(trimmed)
-        && let Ok(r) = serde_json::from_str::<RefineResponseInner>(&json)
-    {
-        return Ok(r.suggestions);
-    }
-    if let Some(json) = extract_json_object(trimmed)
-        && let Ok(r) = serde_json::from_str::<RefineResponseInner>(&json)
-    {
-        return Ok(r.suggestions);
-    }
+    let parsed = serde_json::from_str::<RefineResponseInner>(trimmed)
+        .ok()
+        .or_else(|| {
+            extract_json_block(trimmed)
+                .and_then(|j| serde_json::from_str::<RefineResponseInner>(&j).ok())
+        })
+        .or_else(|| {
+            extract_json_object(trimmed)
+                .and_then(|j| serde_json::from_str::<RefineResponseInner>(&j).ok())
+        });
 
-    Err(Error::LlmParse(format!(
-        "could not parse refinement response: {trimmed}"
-    )))
+    match parsed {
+        Some(r) => Ok(r.suggestions),
+        None => Err(Error::LlmParse(format!(
+            "could not parse refinement response: {trimmed}"
+        ))),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1258,7 +1266,12 @@ fn build_refine_prompt(nodes: &[NodeEntry], votes: &[db::CategoryVote]) -> Strin
     )
     .unwrap();
     for vote in votes {
-        let refs: Vec<&str> = vote.issue_refs.iter().take(5).map(|s| s.as_str()).collect();
+        let refs: Vec<&str> = vote
+            .issue_refs
+            .iter()
+            .take(5)
+            .map(std::string::String::as_str)
+            .collect();
         writeln!(
             prompt,
             "  {:<40} {} votes  {}",
@@ -1396,26 +1409,24 @@ pub fn refine_category_group(
     let raw = invoke_llm(config, &prompt)?;
     let trimmed = raw.trim();
 
-    if let Ok(mut g) = serde_json::from_str::<RefinedGroup>(trimmed) {
-        g.raw_suggestions = group.raw_suggestions.clone();
-        return Ok(g);
-    }
-    if let Some(json) = extract_json_block(trimmed)
-        && let Ok(mut g) = serde_json::from_str::<RefinedGroup>(&json)
-    {
-        g.raw_suggestions = group.raw_suggestions.clone();
-        return Ok(g);
-    }
-    if let Some(json) = extract_json_object(trimmed)
-        && let Ok(mut g) = serde_json::from_str::<RefinedGroup>(&json)
-    {
-        g.raw_suggestions = group.raw_suggestions.clone();
-        return Ok(g);
-    }
+    let parsed = serde_json::from_str::<RefinedGroup>(trimmed)
+        .ok()
+        .or_else(|| {
+            extract_json_block(trimmed).and_then(|j| serde_json::from_str::<RefinedGroup>(&j).ok())
+        })
+        .or_else(|| {
+            extract_json_object(trimmed).and_then(|j| serde_json::from_str::<RefinedGroup>(&j).ok())
+        });
 
-    Err(Error::LlmParse(format!(
-        "could not parse category refinement response: {trimmed}"
-    )))
+    match parsed {
+        Some(mut g) => {
+            g.raw_suggestions.clone_from(&group.raw_suggestions);
+            Ok(g)
+        }
+        None => Err(Error::LlmParse(format!(
+            "could not parse category refinement response: {trimmed}"
+        ))),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1494,13 +1505,14 @@ pub fn triage_issues(
         }
     }
 
-    let backend_desc = match &config.model {
-        Some(m) => format!("{} (model: {m})", config.backend.name()),
-        None => config.backend.name().to_string(),
-    };
     use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
     use std::sync::{Arc, Mutex};
     use std::thread;
+
+    let backend_desc = config.model.as_ref().map_or_else(
+        || config.backend.name().to_string(),
+        |m| format!("{} (model: {m})", config.backend.name()),
+    );
 
     let parallel = parallel.max(1);
     let batch_size = batch_size.min(issues.len()).max(1);

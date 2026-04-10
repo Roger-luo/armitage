@@ -54,7 +54,7 @@ pub fn add_milestone(
         name: name.to_string(),
         date: parsed_date,
         description: description.to_string(),
-        github_issue: github_issue.map(|s| s.to_string()),
+        github_issue: github_issue.map(std::string::ToString::to_string),
         milestone_type: mt,
         expected_progress,
     });

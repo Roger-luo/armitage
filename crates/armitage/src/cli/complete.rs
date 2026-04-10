@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use rustyline::completion::{Completer, Pair};
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
@@ -75,7 +77,7 @@ impl Hinter for NodePathHelper {
             .paths
             .iter()
             .filter(|p| p.starts_with(input) && p.as_str() != input)
-            .map(|p| p.as_str())
+            .map(std::string::String::as_str)
             .collect();
 
         if matches.is_empty() {
@@ -119,10 +121,9 @@ impl Completer for CommaCompleteHelper {
         _ctx: &Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Pair>)> {
         let input = &line[..pos];
-        let (prefix_before, current_token) = match input.rfind(',') {
-            Some(i) => (i + 1, input[i + 1..].trim_start()),
-            None => (0, input),
-        };
+        let (prefix_before, current_token) = input
+            .rfind(',')
+            .map_or((0, input), |i| (i + 1, input[i + 1..].trim_start()));
         let start = if prefix_before == 0 {
             0
         } else {
@@ -154,10 +155,9 @@ impl Hinter for CommaCompleteHelper {
 
     fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
         let input = &line[..pos];
-        let current_token = match input.rfind(',') {
-            Some(i) => input[i + 1..].trim_start(),
-            None => input,
-        };
+        let current_token = input
+            .rfind(',')
+            .map_or(input, |i| input[i + 1..].trim_start());
         if current_token.is_empty() {
             return None;
         }
@@ -166,7 +166,7 @@ impl Hinter for CommaCompleteHelper {
             .items
             .iter()
             .filter(|l| l.starts_with(current_token) && l.as_str() != current_token)
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect();
 
         if matches.is_empty() {
@@ -203,7 +203,7 @@ pub fn format_columns(items: &[&str], width: usize) -> String {
         if i > 0 && i % num_cols == 0 {
             out.push('\n');
         }
-        out.push_str(&format!("{:<col_width$}", item));
+        let _ = write!(out, "{:<col_width$}", item);
     }
     out
 }
@@ -211,9 +211,7 @@ pub fn format_columns(items: &[&str], width: usize) -> String {
 /// Render hint text: inline suffix in dim, options list below in dim.
 fn highlight_hint_dim(hint: &str) -> std::borrow::Cow<'_, str> {
     if let Some((inline, options)) = hint.split_once('\n') {
-        let mut out = format!("\x1b[90m{inline}\x1b[0m\n");
-        out.push_str(&format!("\x1b[90m{options}\x1b[0m"));
-        std::borrow::Cow::Owned(out)
+        std::borrow::Cow::Owned(format!("\x1b[90m{inline}\x1b[0m\n\x1b[90m{options}\x1b[0m"))
     } else {
         std::borrow::Cow::Owned(format!("\x1b[90m{hint}\x1b[0m"))
     }

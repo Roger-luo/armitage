@@ -203,8 +203,8 @@ mod tests {
     #[test]
     fn names_returns_sorted_list() {
         let mut lf = LabelsFile::default();
-        lf.add("c-label".to_string(), "".to_string());
-        lf.add("a-label".to_string(), "".to_string());
+        lf.add("c-label".to_string(), String::new());
+        lf.add("a-label".to_string(), String::new());
         let names = lf.names();
         assert_eq!(names, vec!["c-label", "a-label"]);
     }
