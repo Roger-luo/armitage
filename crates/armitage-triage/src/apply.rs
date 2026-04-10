@@ -44,16 +44,20 @@ pub fn apply_all(
     let node_labels = build_node_label_map(org_root);
 
     // Inject node labels into each decision's final_labels before applying.
-    for (_, decision) in &mut decisions {
+    // Node labels are additive: they are merged with the decision's final_labels
+    // (which already include the issue's existing labels from the approve step).
+    for (issue, decision) in &mut decisions {
         if let Some(node_path) = &decision.final_node
             && let Some(labels) = node_labels.get(node_path.as_str())
         {
-            let existing: BTreeSet<String> = decision.final_labels.iter().cloned().collect();
+            // Start with what's already in final_labels + current issue labels
+            let mut all: BTreeSet<String> = decision.final_labels.iter().cloned().collect();
+            all.extend(issue.labels.iter().cloned());
+            // Add node labels
             for label in labels {
-                if !existing.contains(label) {
-                    decision.final_labels.push(label.clone());
-                }
+                all.insert(label.clone());
             }
+            decision.final_labels = all.into_iter().collect();
         }
     }
 
