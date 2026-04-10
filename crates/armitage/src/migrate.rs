@@ -78,6 +78,13 @@ pub fn migrate_dotarmitage(org_root: &Path) -> std::io::Result<()> {
         std::fs::rename(&old_cache, new_triage_dir.join("repo-cache"))?;
     }
 
+    // Clean up stale root-level triage.db (created by older versions that
+    // placed the DB directly in .armitage/ before the namespaced layout).
+    let stale_root_db = armitage_dir.join("triage.db");
+    if stale_root_db.exists() && new_triage_dir.join("triage.db").exists() {
+        let _ = std::fs::remove_file(&stale_root_db);
+    }
+
     Ok(())
 }
 
@@ -153,6 +160,26 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(dot.join("labels").join("renames.toml")).unwrap(),
             "renames"
+        );
+    }
+
+    #[test]
+    fn migrate_removes_stale_root_triage_db() {
+        let tmp = TempDir::new().unwrap();
+        let dot = tmp.path().join(".armitage");
+        let triage_dir = dot.join("triage");
+        std::fs::create_dir_all(&triage_dir).unwrap();
+        // Stale empty DB at root level
+        std::fs::write(dot.join("triage.db"), "").unwrap();
+        // Real DB in triage/
+        std::fs::write(triage_dir.join("triage.db"), "real").unwrap();
+
+        migrate_dotarmitage(tmp.path()).unwrap();
+
+        assert!(!dot.join("triage.db").exists());
+        assert_eq!(
+            std::fs::read_to_string(triage_dir.join("triage.db")).unwrap(),
+            "real"
         );
     }
 
