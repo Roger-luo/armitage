@@ -457,6 +457,24 @@
             opacity
           }
         });
+        if (child.overflow_end) {
+          const oEnd = parseDate(child.overflow_end);
+          const relOEnd = (oEnd - outerStart) / outerRange;
+          const ox = cx + cw;
+          const ow = x + relOEnd * width - ox;
+          if (ow > 0) {
+            children.push({
+              type: "rect",
+              shape: { x: ox, y: cy, width: ow, height: barH, r: [0, 2, 2, 0] },
+              style: {
+                fill: "rgba(239, 68, 68, 0.3)",
+                stroke: "rgba(239, 68, 68, 0.6)",
+                lineWidth: 1,
+                lineDash: [3, 2]
+              }
+            });
+          }
+        }
       }
     }
     const nodeMilestones = currentPath === "" ? allCheckpoints(node) : [];
