@@ -319,7 +319,14 @@ function buildOption(): echarts.EChartsOption {
       }
     }
   }
-  const allVerticalLines = [...okrLines, ...parentCheckpointLines];
+  // "Today" marker
+  const todayLine = {
+    xAxis: new Date().setHours(0, 0, 0, 0),
+    name: "Today",
+    _okr: null as ChartMilestone | null,
+  };
+
+  const allVerticalLines = [todayLine, ...okrLines, ...parentCheckpointLines];
 
   return {
     tooltip: {
@@ -383,51 +390,63 @@ function buildOption(): echarts.EChartsOption {
         renderItem: renderBar,
         encode: { x: [0, 1], y: 2 },
         data: seriesData,
-        markLine:
-          allVerticalLines.length > 0
-            ? {
-                silent: false,
-                symbol: ["none", "none"],
-                label: {
-                  show: true,
-                  position: "start",
-                  formatter: (p: any) => p.name,
-                  fontSize: 10,
-                  color: "#8b949e",
-                },
+        markLine: {
+          silent: false,
+          symbol: ["none", "none"],
+          label: {
+            show: true,
+            position: "start",
+            formatter: (p: any) => p.name,
+            fontSize: 10,
+            color: "#8b949e",
+          },
+          lineStyle: {
+            type: "dashed",
+            width: 1,
+          },
+          data: allVerticalLines.map((line) => {
+            const isToday = line === todayLine;
+            const isOkr = okrLines.includes(line);
+            if (isToday) {
+              return {
+                ...line,
                 lineStyle: {
-                  type: "dashed",
-                  width: 1,
+                  color: "rgba(239, 68, 68, 0.7)",
+                  type: "solid" as const,
+                  width: 2,
                 },
-                data: allVerticalLines.map((line) => {
-                  const isOkr = okrLines.includes(line);
-                  return {
-                    ...line,
-                    lineStyle: {
-                      color: isOkr
-                        ? "rgba(167, 139, 250, 0.5)"
-                        : "rgba(245, 158, 11, 0.5)",
-                    },
-                    label: {
-                      color: isOkr ? "#a78bfa" : "#f59e0b",
-                    },
-                  };
-                }),
-                tooltip: {
-                  formatter: (p: any) => {
-                    const m = p.data?._okr as ChartMilestone | undefined;
-                    if (!m) return p.name;
-                    return [
-                      `<b>${m.name}</b>`,
-                      m.date,
-                      m.description || "",
-                    ]
-                      .filter(Boolean)
-                      .join("<br/>");
-                  },
+                label: {
+                  color: "#ef4444",
                 },
-              }
-            : undefined,
+              };
+            }
+            return {
+              ...line,
+              lineStyle: {
+                color: isOkr
+                  ? "rgba(167, 139, 250, 0.5)"
+                  : "rgba(245, 158, 11, 0.5)",
+              },
+              label: {
+                color: isOkr ? "#a78bfa" : "#f59e0b",
+              },
+            };
+          }),
+          tooltip: {
+            formatter: (p: any) => {
+              if (p.data === todayLine || p.name === "Today") return "Today";
+              const m = p.data?._okr as ChartMilestone | undefined;
+              if (!m) return p.name;
+              return [
+                `<b>${m.name}</b>`,
+                m.date,
+                m.description || "",
+              ]
+                .filter(Boolean)
+                .join("<br/>");
+            },
+          },
+        },
       },
     ],
     backgroundColor: "transparent",
