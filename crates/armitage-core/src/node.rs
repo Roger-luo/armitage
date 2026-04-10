@@ -47,7 +47,14 @@ impl Node {
 /// Collapse newlines in a string to spaces.
 fn normalize_newlines(s: &mut String) {
     if s.contains('\n') {
-        *s = s.lines().collect::<Vec<_>>().join(" ").trim().to_string();
+        let mut result = String::with_capacity(s.len());
+        for (i, line) in s.lines().enumerate() {
+            if i > 0 {
+                result.push(' ');
+            }
+            result.push_str(line.trim());
+        }
+        *s = result;
     }
 }
 
@@ -84,7 +91,7 @@ fn to_multiline_toml(input: &str) -> String {
 }
 
 /// Word-wrap a string at `width`, breaking on spaces.
-fn wrap_str(text: &str, width: usize) -> Vec<&str> {
+pub fn wrap_str(text: &str, width: usize) -> Vec<&str> {
     if width == 0 || text.is_empty() {
         return vec![text];
     }
@@ -145,6 +152,20 @@ impl fmt::Display for NodeStatus {
             NodeStatus::Completed => write!(f, "completed"),
             NodeStatus::Paused => write!(f, "paused"),
             NodeStatus::Cancelled => write!(f, "cancelled"),
+        }
+    }
+}
+
+impl std::str::FromStr for NodeStatus {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "active" => Ok(Self::Active),
+            "completed" => Ok(Self::Completed),
+            "paused" => Ok(Self::Paused),
+            "cancelled" => Ok(Self::Cancelled),
+            other => Err(Error::Other(format!("unknown status: '{other}'"))),
         }
     }
 }

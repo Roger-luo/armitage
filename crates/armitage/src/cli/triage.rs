@@ -27,8 +27,10 @@ pub enum OutputFormat {
     Refs,
 }
 
-impl OutputFormat {
-    pub fn parse(s: &str) -> Result<Self> {
+impl std::str::FromStr for OutputFormat {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
             "table" => Ok(Self::Table),
             "json" => Ok(Self::Json),
@@ -929,7 +931,7 @@ pub fn run_classify(
     repo: Option<String>,
     format: String,
 ) -> Result<()> {
-    let fmt = OutputFormat::parse(&format)?;
+    let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let conn = db::open_db(&org_root)?;
     let nodes = walk_nodes(&org_root)?;
@@ -1012,7 +1014,7 @@ fn resolve_labels_llm_config(
     let effort = effort
         .or_else(|| labels_cfg.and_then(|l| l.effort.clone()))
         .or_else(|| triage.effort.clone());
-    let backend = llm::LlmBackend::parse(&backend_str)?;
+    let backend = backend_str.parse::<llm::LlmBackend>()?;
 
     if matches!(backend, llm::LlmBackend::Gemini) && model.is_none() {
         return Err(Error::Other(
@@ -1053,7 +1055,7 @@ fn resolve_classify_config(
     })?;
     let model = model.or_else(|| triage.model.clone());
     let effort = effort.or_else(|| triage.effort.clone());
-    let backend = llm::LlmBackend::parse(&backend_str)?;
+    let backend = backend_str.parse::<llm::LlmBackend>()?;
 
     if matches!(backend, llm::LlmBackend::Gemini) && model.is_none() {
         return Err(Error::Other(
@@ -1079,7 +1081,7 @@ pub fn run_review(
     max_confidence: Option<f64>,
     format: String,
 ) -> Result<()> {
-    let fmt = OutputFormat::parse(&format)?;
+    let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let conn = db::open_db(&org_root)?;
 
@@ -1626,7 +1628,7 @@ fn generate_inquire_question(
     let backend_str = triage_config.backend.as_deref().ok_or_else(|| {
         Error::Other("[triage].backend must be set to generate questions".to_string())
     })?;
-    let backend = llm::LlmBackend::parse(backend_str)?;
+    let backend = backend_str.parse::<llm::LlmBackend>()?;
     let config = llm::LlmConfig {
         backend,
         model: triage_config.model.clone(),
@@ -1680,7 +1682,7 @@ fn prompt_stale_inquiry(
     let backend_str = triage_config.backend.as_deref().ok_or_else(|| {
         Error::Other("[triage].backend must be set to generate questions".to_string())
     })?;
-    let backend = llm::LlmBackend::parse(backend_str)?;
+    let backend = backend_str.parse::<llm::LlmBackend>()?;
     let config = llm::LlmConfig {
         backend,
         model: triage_config.model.clone(),
@@ -2171,7 +2173,7 @@ pub fn run_suggestions(
     format: String,
     body_max: usize,
 ) -> Result<()> {
-    let fmt = OutputFormat::parse(&format)?;
+    let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let conn = db::open_db(&org_root)?;
 
@@ -2342,7 +2344,7 @@ pub fn run_decisions(
     limit: usize,
     format: String,
 ) -> Result<()> {
-    let fmt = OutputFormat::parse(&format)?;
+    let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let conn = db::open_db(&org_root)?;
 
@@ -2520,7 +2522,7 @@ pub fn run_examples_remove(issue_ref: String) -> Result<()> {
 }
 
 pub fn run_summary(repo: Option<String>, format: String) -> Result<()> {
-    let fmt = OutputFormat::parse(&format)?;
+    let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let conn = db::open_db(&org_root)?;
 
@@ -2583,7 +2585,7 @@ pub fn run_summary(repo: Option<String>, format: String) -> Result<()> {
 }
 
 pub fn run_categories_list(min_votes: usize, format: String) -> Result<()> {
-    let fmt = OutputFormat::parse(&format)?;
+    let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let conn = db::open_db(&org_root)?;
 
@@ -2994,7 +2996,7 @@ fn print_refine_summary(applied: usize, dismissed: usize, skipped: usize) {
 }
 
 pub fn run_status(format: String) -> Result<()> {
-    let fmt = OutputFormat::parse(&format)?;
+    let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let conn = db::open_db(&org_root)?;
 

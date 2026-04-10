@@ -38,8 +38,10 @@ impl IssuesFile {
         let path = node_dir.join(ISSUES_FILE);
         if self.issues.is_empty() {
             // Don't write empty files; remove if exists
-            if path.exists() {
-                std::fs::remove_file(&path)?;
+            match std::fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
             }
             return Ok(());
         }

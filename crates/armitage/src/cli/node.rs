@@ -5,7 +5,7 @@ use rustyline::{DefaultEditor, Editor};
 
 use crate::cli::complete::{CommaCompleteHelper, NodePathHelper};
 use crate::error::{Error, Result};
-use armitage_core::node::{Node, NodeStatus};
+use armitage_core::node::{self, Node, NodeStatus};
 use armitage_core::org::Org;
 use armitage_core::tree::{NodeEntry, find_org_root, list_children, read_node, walk_nodes};
 use armitage_labels::def::LabelsFile;
@@ -38,40 +38,6 @@ fn status_color(status: &NodeStatus) -> &'static str {
 // Tree printing
 // ---------------------------------------------------------------------------
 
-/// Wrap text to fit within `max_width` columns, breaking on word boundaries.
-fn wrap_text(text: &str, max_width: usize) -> Vec<&str> {
-    if max_width == 0 || text.is_empty() {
-        return vec![text];
-    }
-    let mut lines: Vec<&str> = Vec::new();
-    let mut line_start = 0;
-    let mut last_break = 0; // byte index of last space we can break at
-    let mut col = 0;
-
-    for (i, ch) in text.char_indices() {
-        if ch == ' ' {
-            last_break = i;
-        }
-        col += 1;
-        if col > max_width {
-            if last_break > line_start {
-                lines.push(&text[line_start..last_break]);
-                line_start = last_break + 1;
-            } else {
-                // No space found — hard break at current position
-                lines.push(&text[line_start..i]);
-                line_start = i;
-            }
-            col = text[line_start..=i].chars().count();
-            last_break = line_start;
-        }
-    }
-    if line_start < text.len() {
-        lines.push(&text[line_start..]);
-    }
-    lines
-}
-
 /// Render a list of node entries as a formatted tree with box-drawing lines.
 ///
 /// When `colored` is true, ANSI escape codes are included.  `term_width`
@@ -92,10 +58,7 @@ fn render_tree(entries: &[NodeEntry], term_width: usize, colored: bool) -> Strin
 
     for (i, entry) in entries.iter().enumerate() {
         let depth = entry.path.matches('/').count();
-        let short_name = std::path::Path::new(&entry.path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| entry.path.clone());
+        let short_name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
 
         // Determine the parent path of this entry
         let parent = parent_of(&entry.path).unwrap_or("");
@@ -173,7 +136,7 @@ fn render_tree(entries: &[NodeEntry], term_width: usize, colored: bool) -> Strin
             } else {
                 0
             };
-            for line in wrap_text(&entry.node.description, avail) {
+            for line in node::wrap_str(&entry.node.description, avail) {
                 writeln!(out, "{desc_indent}{dim}{line}{reset}").unwrap();
             }
         }
@@ -372,14 +335,8 @@ fn parent_of(path: &str) -> Option<&str> {
         .map(|parent| parent.to_str().expect("path is valid utf-8"))
 }
 
-fn parse_status(s: &str) -> Result<NodeStatus> {
-    match s {
-        "active" => Ok(NodeStatus::Active),
-        "completed" => Ok(NodeStatus::Completed),
-        "paused" => Ok(NodeStatus::Paused),
-        "cancelled" => Ok(NodeStatus::Cancelled),
-        other => Err(Error::Other(format!("unknown status: '{other}'"))),
-    }
+fn parse_node_status(s: &str) -> Result<NodeStatus> {
+    Ok(s.parse::<NodeStatus>()?)
 }
 
 /// CLI entry point: armitage node create
@@ -546,7 +503,7 @@ fn run_create_interactive() -> Result<()> {
                 "active",
             )? {
                 Input::Value(v) => {
-                    if parse_status(&v).is_err() {
+                    if parse_node_status(&v).is_err() {
                         println!("  Invalid status. Choose: active, paused, completed, cancelled.");
                     } else {
                         status = v;
@@ -843,7 +800,7 @@ pub(crate) fn create_node_full(
         }
     }
 
-    let node_status = parse_status(status)?;
+    let node_status = parse_node_status(status)?;
 
     let node = Node {
         name: derived_name,
@@ -1052,7 +1009,7 @@ pub fn run_edit(path: String) -> Result<()> {
                 "Status (active/paused/completed/cancelled)",
                 &status.to_string(),
             )? {
-                Input::Value(v) => match parse_status(&v) {
+                Input::Value(v) => match parse_node_status(&v) {
                     Ok(s) => {
                         status = s;
                         step += 1;
@@ -1603,7 +1560,7 @@ pub fn run_set(
             .collect();
     }
     if let Some(s) = status {
-        node.status = parse_status(&s)?;
+        node.status = parse_node_status(&s)?;
     }
 
     let toml_content = node.to_toml()?;
@@ -1881,29 +1838,29 @@ mod tests {
 
     #[test]
     fn wrap_text_fits_in_one_line() {
-        assert_eq!(wrap_text("short text", 80), vec!["short text"]);
+        assert_eq!(node::wrap_str("short text", 80), vec!["short text"]);
     }
 
     #[test]
     fn wrap_text_breaks_on_words() {
-        let lines = wrap_text("hello world foo bar", 11);
+        let lines = node::wrap_str("hello world foo bar", 11);
         assert_eq!(lines, vec!["hello world", "foo bar"]);
     }
 
     #[test]
     fn wrap_text_long_word_hard_breaks() {
-        let lines = wrap_text("abcdefghij", 5);
+        let lines = node::wrap_str("abcdefghij", 5);
         assert_eq!(lines, vec!["abcde", "fghij"]);
     }
 
     #[test]
     fn wrap_text_empty() {
-        assert_eq!(wrap_text("", 80), vec![""]);
+        assert_eq!(node::wrap_str("", 80), vec![""]);
     }
 
     #[test]
     fn wrap_text_zero_width() {
-        assert_eq!(wrap_text("hello", 0), vec!["hello"]);
+        assert_eq!(node::wrap_str("hello", 0), vec!["hello"]);
     }
 
     // -----------------------------------------------------------------------

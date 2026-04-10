@@ -9,7 +9,7 @@ pub fn run_chart(output: Option<String>, no_open: bool, offline: bool) -> Result
     let org = Org::open(&org_root)?;
     let entries = walk_nodes(&org_root)?;
 
-    let chart_data = armitage_chart::build_chart_data(&entries, &org_root, &org.info().name)?;
+    let chart_data = armitage_chart::build_chart_data(&entries, &org.info().name)?;
     let html = armitage_chart::render_chart(&chart_data, offline)?;
 
     let output_path = output
