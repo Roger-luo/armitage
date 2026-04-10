@@ -457,11 +457,13 @@
             opacity
           }
         });
-        if (child.overflow_end) {
+        if (child.overflow_end && child.overflow_start) {
+          const oStart = parseDate(child.overflow_start);
           const oEnd = parseDate(child.overflow_end);
+          const relOStart = (oStart - outerStart) / outerRange;
           const relOEnd = (oEnd - outerStart) / outerRange;
-          const ox = cx + cw;
-          const ow = x + relOEnd * width - ox;
+          const ox = x + relOStart * width;
+          const ow = (relOEnd - relOStart) * width;
           if (ow > 0) {
             children.push({
               type: "rect",
@@ -520,8 +522,8 @@
         });
       }
     }
-    if (node.overflow_end) {
-      const overflowX = end[0];
+    if (node.overflow_end && node.overflow_start) {
+      const overflowX = api.coord([parseDate(node.overflow_start), yIdx])[0];
       const overflowEnd = api.coord([parseDate(node.overflow_end), yIdx]);
       const overflowWidth = overflowEnd[0] - overflowX;
       if (overflowWidth > 0) {
