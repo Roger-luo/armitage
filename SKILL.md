@@ -234,6 +234,34 @@ armitage config set <key> <value>          # e.g. triage.backend, triage.model
 armitage config set-secret <name>          # store in .armitage/secrets.toml
 ```
 
+### GitHub Project Board Integration
+
+Armitage can fetch timeline metadata (start date, target date, status) from a GitHub Projects v2
+board. This data is used for timeline validation and chart visualization.
+
+**Setup:** Add a `[triage.project]` section to `armitage.toml`. The field names must match the
+exact display names of the date fields on the project board.
+
+To discover the field names, run:
+```
+gh api graphql -f query='query { organization(login: "YOUR_ORG") { projectV2(number: N) {
+  title fields(first: 30) { nodes { ... on ProjectV2FieldCommon { name dataType } } } } } }'
+```
+
+Look for fields with `dataType: DATE` — those are the ones to map.
+
+```toml
+[triage.project]
+url = "https://github.com/orgs/<org>/projects/<number>"
+
+[triage.project.fields]
+start_date = "Start date"     # maps to the project's date field for start
+target_date = "Target date"   # maps to the project's date field for deadline
+```
+
+Once configured, `triage fetch` automatically pulls project metadata alongside issues. The agent
+should help the user discover field names via the GraphQL query above and configure the mapping.
+
 ## Typical Workflows
 
 ### Full triage from scratch
