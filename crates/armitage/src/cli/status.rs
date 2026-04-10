@@ -5,6 +5,36 @@ use armitage_sync::conflict::list_conflicts;
 use armitage_sync::hash::compute_node_hash;
 use armitage_sync::state::read_sync_state;
 
+// ---------------------------------------------------------------------------
+// Timeline violation detection
+// ---------------------------------------------------------------------------
+
+fn find_timeline_violations(nodes: &[armitage_core::tree::NodeEntry]) -> Vec<(&str, &str)> {
+    let mut violations = Vec::new();
+
+    for child in nodes {
+        let Some(child_tl) = child.node.timeline.as_ref() else {
+            continue;
+        };
+
+        // Find the parent path (strip the last component)
+        let parent_path = match child.path.rfind('/') {
+            Some(idx) => &child.path[..idx],
+            None => continue, // top-level node has no parent
+        };
+
+        // Find the parent node
+        if let Some(parent) = nodes.iter().find(|n| n.path == parent_path)
+            && let Some(parent_tl) = parent.node.timeline.as_ref()
+            && !parent_tl.contains(child_tl)
+        {
+            violations.push((parent.path.as_str(), child.path.as_str()));
+        }
+    }
+
+    violations
+}
+
 pub fn run() -> Result<()> {
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let org = Org::open(&org_root)?;
@@ -97,35 +127,4 @@ pub fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Timeline violation detection
-// ---------------------------------------------------------------------------
-
-fn find_timeline_violations(nodes: &[armitage_core::tree::NodeEntry]) -> Vec<(&str, &str)> {
-    let mut violations = Vec::new();
-
-    for child in nodes {
-        let child_tl = match child.node.timeline.as_ref() {
-            Some(t) => t,
-            None => continue,
-        };
-
-        // Find the parent path (strip the last component)
-        let parent_path = match child.path.rfind('/') {
-            Some(idx) => &child.path[..idx],
-            None => continue, // top-level node has no parent
-        };
-
-        // Find the parent node
-        if let Some(parent) = nodes.iter().find(|n| n.path == parent_path)
-            && let Some(parent_tl) = parent.node.timeline.as_ref()
-            && !parent_tl.contains(child_tl)
-        {
-            violations.push((parent.path.as_str(), child.path.as_str()));
-        }
-    }
-
-    violations
 }

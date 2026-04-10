@@ -454,9 +454,8 @@ pub fn get_project_items_for_issue(
     repo: &str,
     number: u64,
 ) -> Result<Vec<IssueProjectItem>> {
-    let issue_id = match lookup_issue_id(conn, repo, number)? {
-        Some(id) => id,
-        None => return Ok(vec![]),
+    let Some(issue_id) = lookup_issue_id(conn, repo, number)? else {
+        return Ok(vec![]);
     };
     let mut stmt = conn.prepare(
         "SELECT id, issue_id, project_url, target_date, start_date, status, fetched_at
@@ -508,9 +507,9 @@ pub fn upsert_suggestion(conn: &Connection, s: &TriageSuggestion) -> Result<i64>
             s.reasoning,
             s.llm_backend,
             s.created_at,
-            s.is_tracking_issue as i64,
+            i64::from(s.is_tracking_issue),
             categories_json,
-            s.is_stale as i64,
+            i64::from(s.is_stale),
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -1744,7 +1743,11 @@ mod tests {
         }
         let stored = get_issues_by_repo(&conn, "owner/repo").unwrap();
         for (i, s) in stored.iter().enumerate() {
-            upsert_suggestion(&conn, &sample_suggestion(s.id, "a", 0.5 + i as f64 * 0.1)).unwrap();
+            upsert_suggestion(
+                &conn,
+                &sample_suggestion(s.id, "a", (i as f64).mul_add(0.1, 0.5)),
+            )
+            .unwrap();
         }
 
         assert_eq!(get_pending_suggestions(&conn).unwrap().len(), 3);

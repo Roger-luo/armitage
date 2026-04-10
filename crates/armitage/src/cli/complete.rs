@@ -203,7 +203,7 @@ pub fn format_columns(items: &[&str], width: usize) -> String {
         if i > 0 && i % num_cols == 0 {
             out.push('\n');
         }
-        let _ = write!(out, "{:<col_width$}", item);
+        let _ = write!(out, "{item:<col_width$}");
     }
     out
 }

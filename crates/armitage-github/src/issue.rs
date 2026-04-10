@@ -291,21 +291,28 @@ pub fn list_issues_with_label(
     repo: &str,
     label: &str,
 ) -> Result<Vec<u64>> {
+    #[derive(serde::Deserialize)]
+    struct IssueNum {
+        number: u64,
+    }
+
     tracing::debug!(repo = repo, label = label, "gh issue list --label");
     let json = gh.run(&[
         "issue", "list", "--label", label, "--state", "all", "--limit", "9999", "--repo", repo,
         "--json", "number",
     ])?;
-    #[derive(serde::Deserialize)]
-    struct IssueNum {
-        number: u64,
-    }
     let issues: Vec<IssueNum> = serde_json::from_str(&json)?;
     Ok(issues.into_iter().map(|i| i.number).collect())
 }
 
 /// List all non-archived, non-fork repos in a GitHub org (returns "owner/name" strings).
 pub fn list_org_repos(gh: &ionem::shell::gh::Gh, org: &str) -> Result<Vec<String>> {
+    #[derive(serde::Deserialize)]
+    struct Repo {
+        #[serde(rename = "nameWithOwner")]
+        name_with_owner: String,
+    }
+
     tracing::debug!(org = org, "gh repo list");
     let json = gh.run(&[
         "repo",
@@ -318,11 +325,6 @@ pub fn list_org_repos(gh: &ionem::shell::gh::Gh, org: &str) -> Result<Vec<String
         "--json",
         "nameWithOwner",
     ])?;
-    #[derive(serde::Deserialize)]
-    struct Repo {
-        #[serde(rename = "nameWithOwner")]
-        name_with_owner: String,
-    }
     let repos: Vec<Repo> = serde_json::from_str(&json)?;
     Ok(repos.into_iter().map(|r| r.name_with_owner).collect())
 }

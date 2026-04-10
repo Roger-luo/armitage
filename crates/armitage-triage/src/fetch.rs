@@ -66,11 +66,7 @@ pub fn fetch_repo_issues(
     let mut count = 0;
     for api_issue in &issues {
         let labels: Vec<String> = api_issue.labels.iter().map(|l| l.name.clone()).collect();
-        let sub_issues_count = api_issue
-            .sub_issues_summary
-            .as_ref()
-            .map(|s| s.total)
-            .unwrap_or(0);
+        let sub_issues_count = api_issue.sub_issues_summary.as_ref().map_or(0, |s| s.total);
         let stored = StoredIssue {
             id: 0,
             repo: repo.to_string(),

@@ -289,25 +289,22 @@ fn map_item_to_project_record(
     now: &str,
 ) -> Result<Option<IssueProjectItem>> {
     // Draft items have content: null — skip.
-    let content = match &item.content {
-        Some(c) => c,
-        None => return Ok(None),
+    let Some(content) = &item.content else {
+        return Ok(None);
     };
 
-    let number = match content.number {
-        Some(n) => n,
-        None => return Ok(None),
+    let Some(number) = content.number else {
+        return Ok(None);
     };
 
-    let repo = match &content.repository {
-        Some(r) => &r.name_with_owner,
-        None => return Ok(None),
+    let Some(repo) = &content.repository else {
+        return Ok(None);
     };
+    let repo = &repo.name_with_owner;
 
     // Look up the issue in our DB; skip if not found (could be a PR or unfetched issue).
-    let issue_id = match db::lookup_issue_id(conn, repo, number)? {
-        Some(id) => id,
-        None => return Ok(None),
+    let Some(issue_id) = db::lookup_issue_id(conn, repo, number)? else {
+        return Ok(None);
     };
 
     let fields = extract_fields(&item.field_values.nodes);

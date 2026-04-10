@@ -142,6 +142,7 @@ pub fn prune_fully_synced(ledger: &mut LabelRenameLedger, all_repos: &[String]) 
 }
 
 /// Translate a list of label names through the rename ledger.
+///
 /// Any label matching an `old_name` in the ledger is replaced with its `new_name`.
 /// Duplicates that arise from the mapping are removed (preserving first occurrence order).
 pub fn translate_labels(labels: &[String], ledger: &LabelRenameLedger) -> Vec<String> {

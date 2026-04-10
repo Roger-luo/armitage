@@ -111,7 +111,7 @@ pub fn write_import_session(org_root: &Path, session: &LabelImportSession) -> Re
 }
 
 pub fn read_import_session(org_root: &Path, session_id: &str) -> Result<LabelImportSession> {
-    let path = import_sessions_dir(org_root).join(format!("{}.toml", session_id));
+    let path = import_sessions_dir(org_root).join(format!("{session_id}.toml"));
     let content = std::fs::read_to_string(&path)?;
     toml::from_str(&content).map_err(|source| Error::TomlParse { path, source })
 }
@@ -233,6 +233,7 @@ pub fn merge_selected_candidates(
 // ---------------------------------------------------------------------------
 
 /// Filter labels applicable to a given repo.
+///
 /// A label applies if its `repos` list is empty (universal) or contains the repo.
 /// Comparison strips `@qualifier` suffixes so `owner/repo@branch` matches `owner/repo`.
 pub fn labels_for_repo(labels: &LabelsFile, repo: &str) -> Vec<LabelDef> {
@@ -566,7 +567,7 @@ mod tests {
             &mut local,
             &session,
             &MergeSelection {
-                selected_names: ["bug".to_string()].into_iter().collect(),
+                selected_names: std::iter::once("bug".to_string()).collect(),
                 prefer_repo: None,
             },
         )

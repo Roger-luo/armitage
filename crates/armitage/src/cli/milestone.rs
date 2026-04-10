@@ -44,8 +44,7 @@ pub fn add_milestone(
     // Check for duplicate name
     if mf.milestones.iter().any(|m| m.name == name) {
         return Err(Error::Other(format!(
-            "milestone '{}' already exists on node '{}'",
-            name, node_path
+            "milestone '{name}' already exists on node '{node_path}'"
         )));
     }
 
@@ -74,8 +73,7 @@ pub fn remove_milestone(org_root: &Path, node_path: &str, name: &str) -> Result<
     mf.milestones.retain(|m| m.name != name);
     if mf.milestones.len() == before {
         return Err(Error::Other(format!(
-            "milestone '{}' not found on node '{}'",
-            name, node_path
+            "milestone '{name}' not found on node '{node_path}'"
         )));
     }
 
@@ -119,7 +117,7 @@ pub fn run_add(
         github_issue.as_deref(),
     )?;
 
-    println!("Added milestone '{}' to '{}'", name, node_path);
+    println!("Added milestone '{name}' to '{node_path}'");
     Ok(())
 }
 
@@ -188,7 +186,7 @@ pub fn run_remove(node_path: String, name: String) -> Result<()> {
     let org_root = find_org_root(&cwd)?;
 
     remove_milestone(&org_root, &node_path, &name)?;
-    println!("Removed milestone '{}' from '{}'", name, node_path);
+    println!("Removed milestone '{name}' from '{node_path}'");
     Ok(())
 }
 
@@ -201,15 +199,14 @@ fn parse_milestone_type(s: &str) -> Result<MilestoneType> {
         "checkpoint" => Ok(MilestoneType::Checkpoint),
         "okr" => Ok(MilestoneType::Okr),
         other => Err(Error::Other(format!(
-            "unknown milestone type: '{}' (expected 'checkpoint' or 'okr')",
-            other
+            "unknown milestone type: '{other}' (expected 'checkpoint' or 'okr')"
         ))),
     }
 }
 
 /// Parse a quarter string like "2026-Q1" into (year, quarter).
 fn parse_quarter(s: &str) -> Result<(i32, u32)> {
-    let err = || Error::Other(format!("invalid quarter: '{}' (expected YYYY-Q[1-4])", s));
+    let err = || Error::Other(format!("invalid quarter: '{s}' (expected YYYY-Q[1-4])"));
     let Some((year_str, q_str)) = s.split_once('-') else {
         return Err(err());
     };

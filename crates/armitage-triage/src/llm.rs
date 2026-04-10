@@ -533,11 +533,11 @@ fn invoke_gemini_api(config: &LlmConfig, prompt: &str) -> Result<String> {
 }
 
 pub(crate) fn invoke_llm(config: &LlmConfig, prompt: &str) -> Result<String> {
+    use std::process::{Command, Stdio};
+
     if matches!(config.backend, LlmBackend::GeminiApi) {
         return invoke_gemini_api(config, prompt);
     }
-
-    use std::process::{Command, Stdio};
 
     // Whether the prompt is passed via stdin (true) or as a CLI argument (false).
     let uses_stdin;
@@ -754,7 +754,7 @@ pub(crate) fn extract_json_object(text: &str) -> Option<String> {
             '}' => {
                 depth -= 1;
                 if depth == 0 {
-                    return Some(text[start..start + i + 1].to_string());
+                    return Some(text[start..=(start + i)].to_string());
                 }
             }
             _ => {}
@@ -1051,6 +1051,11 @@ pub fn refine_label_suggestions(
 ) -> Result<Vec<crate::label_import::LabelSuggestion>> {
     use std::fmt::Write;
 
+    #[derive(serde::Deserialize)]
+    struct RefineResponseInner {
+        suggestions: Vec<crate::label_import::LabelSuggestion>,
+    }
+
     let mut prompt = String::new();
     writeln!(prompt, "You previously suggested merging these labels:").unwrap();
     for name in labels {
@@ -1093,11 +1098,6 @@ pub fn refine_label_suggestions(
     let trimmed = raw.trim();
 
     // Parse: try direct, then code fence, then embedded object
-    #[derive(serde::Deserialize)]
-    struct RefineResponseInner {
-        suggestions: Vec<crate::label_import::LabelSuggestion>,
-    }
-
     let parsed = serde_json::from_str::<RefineResponseInner>(trimmed)
         .ok()
         .or_else(|| {
@@ -1484,6 +1484,20 @@ pub fn triage_issues(
     limit: Option<usize>,
     repo: Option<&str>,
 ) -> Result<usize> {
+    use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+
+    struct WorkItem {
+        prompt: String,
+        is_batch: bool,
+        issue_ids: Vec<i64>,
+        issue_refs: Vec<String>,
+        issue_titles: Vec<String>,
+        /// Existing labels per issue (for filtering out duplicates from LLM output).
+        existing_labels: Vec<std::collections::BTreeSet<String>>,
+    }
+
     let mut issues = match repo {
         Some(r) => db::get_untriaged_issues_by_repo(conn, r)?,
         None => db::get_untriaged_issues(conn)?,
@@ -1504,10 +1518,6 @@ pub fn triage_issues(
             );
         }
     }
-
-    use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-    use std::sync::{Arc, Mutex};
-    use std::thread;
 
     let backend_desc = config.model.as_ref().map_or_else(
         || config.backend.name().to_string(),
@@ -1563,16 +1573,6 @@ pub fn triage_issues(
     } else {
         vec![]
     };
-
-    struct WorkItem {
-        prompt: String,
-        is_batch: bool,
-        issue_ids: Vec<i64>,
-        issue_refs: Vec<String>,
-        issue_titles: Vec<String>,
-        /// Existing labels per issue (for filtering out duplicates from LLM output).
-        existing_labels: Vec<std::collections::BTreeSet<String>>,
-    }
 
     let items: Vec<WorkItem> = work_units
         .iter()

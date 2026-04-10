@@ -141,16 +141,16 @@ fn build_node(
     let (eff_start, eff_end) = if has_timeline {
         (start.clone(), end.clone())
     } else {
-        let child_starts: Vec<&str> = children
+        let eff_s = children
             .iter()
             .filter_map(|c| c.eff_start.as_deref())
-            .collect();
-        let child_ends: Vec<&str> = children
+            .min()
+            .map(String::from);
+        let eff_e = children
             .iter()
             .filter_map(|c| c.eff_end.as_deref())
-            .collect();
-        let eff_s = child_starts.into_iter().min().map(String::from);
-        let eff_e = child_ends.into_iter().max().map(String::from);
+            .max()
+            .map(String::from);
         (eff_s, eff_e)
     };
 
