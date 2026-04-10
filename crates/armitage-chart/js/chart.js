@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // crates/armitage-chart/ts/chart.ts
+  // ts/chart.ts
   var data = window.__CHART_DATA__;
   var currentPath = "";
   var useGlobalRange = false;
@@ -8,8 +8,7 @@
   var visibleNodes = [];
   var chartEl = document.getElementById("chart");
   var breadcrumbEl = document.getElementById("breadcrumb");
-  var btnFitted = document.getElementById("btn-fitted");
-  var btnGlobal = document.getElementById("btn-global");
+  var toggleBtn = document.getElementById("toggle-range");
   var panelEl = document.getElementById("panel");
   var panelContentEl = document.getElementById("panel-content");
   var chart = echarts.init(chartEl);
@@ -19,25 +18,8 @@
     paused: "#f59e0b",
     cancelled: "#ef4444"
   };
-  function cssVar(name) {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  }
-  function getThemeColors() {
-    return {
-      text: cssVar("--text"),
-      textMuted: cssVar("--text-muted"),
-      axisLine: cssVar("--chart-axis-line"),
-      grid: cssVar("--chart-grid"),
-      axis: cssVar("--chart-axis"),
-      noTlFill: cssVar("--no-tl-fill"),
-      noTlBorder: cssVar("--no-tl-border"),
-    };
-  }
-  var tc = getThemeColors();
-  window.__onThemeChange = function() {
-    tc = getThemeColors();
-    renderChart();
-  };
+  var NO_TIMELINE_COLOR = "rgba(107, 114, 128, 0.15)";
+  var NO_TIMELINE_BORDER = "rgba(107, 114, 128, 0.4)";
   function parseDate(s) {
     return (/* @__PURE__ */ new Date(s + "T00:00:00")).getTime();
   }
@@ -135,13 +117,6 @@
     if (!match) return "#";
     return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
   }
-  function allIssues(node) {
-    const result = [...node.issues];
-    for (const c of node.children) {
-      result.push(...allIssues(c));
-    }
-    return result;
-  }
   function showPanel(node) {
     selectedNode = node;
     let html = "";
@@ -189,12 +164,16 @@
       }
       html += `</ul></div>`;
     }
-    if (node.overflow_end) {
-      html += `<div class="panel-section panel-overflow">`;
-      html += `<h3>⚠ Timeline Overflow</h3>`;
-      html += `<div class="panel-meta">Issues target as late as <b>${node.overflow_end}</b>`;
-      if (node.end) html += `, but node ends <b>${node.end}</b>`;
-      html += `</div></div>`;
+    if (node.issues.length > 0) {
+      html += `<div class="panel-section">`;
+      html += `<h3>Issues (${node.issues.length})</h3>`;
+      html += `<ul class="panel-issues">`;
+      for (const issue of node.issues) {
+        const url = issueUrl(issue.issue_ref);
+        const label = issue.title ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>` : escapeHtml(issue.issue_ref);
+        html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
+      }
+      html += `</ul></div>`;
     }
     if (node.children.length > 0) {
       html += `<div class="panel-section">`;
@@ -212,31 +191,6 @@
       html += `</ul>`;
       html += `<button class="btn-drill" onclick="window.__nav('${node.path}')">Drill into ${escapeHtml(node.name)} &rsaquo;</button>`;
       html += `</div>`;
-    }
-    const issues = allIssues(node);
-    if (issues.length > 0) {
-      html += `<div class="panel-section">`;
-      html += `<h3>Issues (${issues.length})</h3>`;
-      if (node.issue_start || node.issue_end) {
-        html += `<div class="panel-meta" style="margin-bottom:8px">`;
-        if (node.issue_start) html += `<span class="label">Earliest start:</span> ${node.issue_start}<br/>`;
-        if (node.issue_end) html += `<span class="label">Latest target:</span> ${node.issue_end}`;
-        html += `</div>`;
-      }
-      html += `<ul class="panel-issues">`;
-      for (const issue of issues) {
-        const url = issueUrl(issue.issue_ref);
-        let label = issue.title ? escapeHtml(issue.title) : escapeHtml(issue.issue_ref);
-        let meta = `<span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>`;
-        if (issue.target_date) {
-          const isOverflow = node.end && issue.target_date > node.end;
-          meta += isOverflow
-            ? ` <span class="issue-overflow">&rarr; ${issue.target_date}</span>`
-            : ` <span class="issue-date">&rarr; ${issue.target_date}</span>`;
-        }
-        html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a><br/>${meta}</li>`;
-      }
-      html += `</ul></div>`;
     }
     panelContentEl.innerHTML = html;
     panelEl.classList.add("open");
@@ -325,18 +279,18 @@
         type: "time",
         min: xMin,
         max: xMax,
-        axisLabel: { color: tc.axis },
-        axisLine: { lineStyle: { color: tc.axisLine } },
+        axisLabel: { color: "#8b949e" },
+        axisLine: { lineStyle: { color: "#30363d" } },
         splitLine: {
           show: true,
-          lineStyle: { color: tc.grid, type: "dashed" }
+          lineStyle: { color: "#21262d", type: "dashed" }
         }
       },
       yAxis: {
         type: "category",
         data: categories,
         axisLabel: {
-          color: tc.text,
+          color: "#e6edf3",
           fontWeight: "bold",
           fontSize: 13
         },
@@ -365,7 +319,7 @@
               position: "start",
               formatter: (p) => p.name,
               fontSize: 10,
-              color: tc.textMuted
+              color: "#8b949e"
             },
             lineStyle: {
               type: "dashed",
@@ -435,135 +389,46 @@
       type: "rect",
       shape: { x, y, width, height, r: 4 },
       style: {
-        fill: hasTimeline ? `${statusColor}22` : tc.noTlFill,
-        stroke: isSelected ? tc.text : hasTimeline ? `${statusColor}55` : tc.noTlBorder,
+        fill: hasTimeline ? `${statusColor}22` : NO_TIMELINE_COLOR,
+        stroke: isSelected ? "#e6edf3" : hasTimeline ? `${statusColor}55` : NO_TIMELINE_BORDER,
         lineWidth: isSelected ? 2 : 1,
         lineDash: hasTimeline || isSelected ? null : [4, 3]
       }
     });
-    // Build sub-bars: child nodes + all descendant issues with dates
-    const subBars = [];
-    for (const c of node.children) {
-      if (c.eff_start && c.eff_end) {
-        subBars.push({ type: "node", start: c.eff_start, end: c.eff_end, color: STATUS_COLORS[c.status] || STATUS_COLORS.active, overflowStart: c.overflow_start, overflowEnd: c.overflow_end, label: c.name });
-      }
-    }
-    // Use overflow_start as the boundary — it's the earliest violated deadline
-    // from any descendant. Falls back to the node's own end / eff_end.
-    const issueDeadline = node.overflow_start || node.end || node.eff_end;
-    for (const issue of node.issues) {
-      const label = issue.title || issue.issue_ref;
-      if (issue.start_date || issue.target_date) {
-        const iStart = issue.start_date || issue.target_date;
-        const iEnd = issue.target_date || issue.start_date;
-        const overflows = issueDeadline && iEnd > issueDeadline;
-        subBars.push({ type: "issue", start: iStart, end: iEnd, overflows, label, issueRef: issue.issue_ref });
-      } else {
-        // No timeline: gray bar spanning full width
-        subBars.push({ type: "issue-no-date", label, issueRef: issue.issue_ref });
-      }
-    }
-    if (subBars.length > 0) {
+    const childrenWithTimeline = node.children.filter(
+      (c) => c.eff_start && c.eff_end
+    );
+    if (childrenWithTimeline.length > 0) {
       const barAreaTop = y + 4;
       const barAreaHeight = height - 8;
-      const maxBars = Math.min(subBars.length, 8);
+      const maxBars = Math.min(childrenWithTimeline.length, 5);
       const barH = Math.max(
-        3,
+        4,
         Math.min(10, (barAreaHeight - (maxBars - 1) * 2) / maxBars)
       );
-      const gap = Math.max(1, (barAreaHeight - maxBars * barH) / (maxBars + 1));
+      const gap = Math.max(2, (barAreaHeight - maxBars * barH) / (maxBars + 1));
       const outerStart = api.value(0);
       const outerEnd = api.value(1);
       const outerRange = outerEnd - outerStart;
       for (let i = 0; i < maxBars; i++) {
-        const sub = subBars[i];
-        const cy = barAreaTop + gap + i * (barH + gap);
-        const opacity = 0.6 + 0.3 * (1 - i / maxBars);
-
-        if (sub.type === "issue-no-date") {
-          // Gray dashed bar spanning full parent width
-          children.push({
-            type: "rect",
-            shape: { x, y: cy, width, height: barH, r: barH / 2 },
-            style: {
-              fill: tc.noTlFill,
-              stroke: tc.noTlBorder,
-              lineWidth: 1,
-              lineDash: [4, 3],
-              opacity
-            }
-          });
-          continue;
-        }
-
-        const cStart = parseDate(sub.start);
-        const cEnd = parseDate(sub.end);
+        const child = childrenWithTimeline[i];
+        const cStart = parseDate(child.eff_start);
+        const cEnd = parseDate(child.eff_end);
         const relStart = Math.max(0, (cStart - outerStart) / outerRange);
-        // Don't cap issue bars at parent edge — let them extend into overflow
-        const relEnd = sub.type === "issue"
-          ? (cEnd - outerStart) / outerRange
-          : Math.min(1, (cEnd - outerStart) / outerRange);
+        const relEnd = Math.min(1, (cEnd - outerStart) / outerRange);
         const cx = x + relStart * width;
-        const cw = Math.max((relEnd - relStart) * width, 2);
-        if (sub.type === "issue") {
-          if (sub.overflows && issueDeadline) {
-            // Split bar: green up to deadline, purple in overflow
-            const splitDate = parseDate(issueDeadline);
-            const relSplit = Math.max(relStart, Math.min(relEnd, (splitDate - outerStart) / outerRange));
-            const splitX = x + relSplit * width;
-            const greenW = Math.max(splitX - cx, 0);
-            const purpleW = Math.max(cx + cw - splitX, 0);
-            if (greenW > 0) {
-              children.push({
-                type: "rect",
-                shape: { x: cx, y: cy, width: greenW, height: barH, r: [barH / 2, 0, 0, barH / 2] },
-                style: { fill: "#22c55e44", stroke: "#22c55e88", lineWidth: 1, lineDash: [2, 2], opacity }
-              });
-            }
-            if (purpleW > 0) {
-              children.push({
-                type: "rect",
-                shape: { x: splitX, y: cy, width: purpleW, height: barH, r: [0, barH / 2, barH / 2, 0] },
-                style: { fill: "#8b5cf644", stroke: "#8b5cf688", lineWidth: 1, lineDash: [2, 2], opacity }
-              });
-            }
-          } else {
-            // Fully on-track: green
-            children.push({
-              type: "rect",
-              shape: { x: cx, y: cy, width: cw, height: barH, r: barH / 2 },
-              style: { fill: "#22c55e44", stroke: "#22c55e88", lineWidth: 1, lineDash: [2, 2], opacity }
-            });
+        const cw = (relEnd - relStart) * width;
+        const cy = barAreaTop + gap + i * (barH + gap);
+        const childColor = STATUS_COLORS[child.status] || STATUS_COLORS.active;
+        const opacity = 0.6 + 0.3 * (1 - i / maxBars);
+        children.push({
+          type: "rect",
+          shape: { x: cx, y: cy, width: Math.max(cw, 2), height: barH, r: 2 },
+          style: {
+            fill: childColor,
+            opacity
           }
-        } else {
-          // Child node bar
-          children.push({
-            type: "rect",
-            shape: { x: cx, y: cy, width: cw, height: barH, r: 2 },
-            style: { fill: sub.color, opacity }
-          });
-          // Overflow extension for child nodes
-          if (sub.overflowEnd && sub.overflowStart) {
-            const oStart = parseDate(sub.overflowStart);
-            const oEnd = parseDate(sub.overflowEnd);
-            const relOStart = (oStart - outerStart) / outerRange;
-            const relOEnd = (oEnd - outerStart) / outerRange;
-            const ox = x + relOStart * width;
-            const ow = (relOEnd - relOStart) * width;
-            if (ow > 0) {
-              children.push({
-                type: "rect",
-                shape: { x: ox, y: cy, width: ow, height: barH, r: [0, 2, 2, 0] },
-                style: {
-                  fill: "rgba(239, 68, 68, 0.3)",
-                  stroke: "rgba(239, 68, 68, 0.6)",
-                  lineWidth: 1,
-                  lineDash: [3, 2]
-                }
-              });
-            }
-          }
-        }
+        });
       }
     }
     const nodeMilestones = currentPath === "" ? allCheckpoints(node) : [];
@@ -609,40 +474,6 @@
         });
       }
     }
-    // Only show outer bar red zone when overflow exceeds the bar's own timeline.
-    // If the overflow is contained within the node's timeline (e.g. a child
-    // milestone overflows but the product line doesn't), sub-bars handle it.
-    const barEnd = node.end || node.eff_end;
-    if (node.overflow_end && node.overflow_start && barEnd && node.overflow_end > barEnd) {
-      const overflowX = api.coord([parseDate(node.overflow_start), yIdx])[0];
-      const overflowEnd = api.coord([parseDate(node.overflow_end), yIdx]);
-      const overflowWidth = overflowEnd[0] - overflowX;
-      if (overflowWidth > 0) {
-        children.push({
-          type: "rect",
-          shape: { x: overflowX, y: y + 2, width: overflowWidth, height: height - 4, r: [0, 4, 4, 0] },
-          style: {
-            fill: "rgba(239, 68, 68, 0.15)",
-            stroke: "rgba(239, 68, 68, 0.5)",
-            lineWidth: 1,
-            lineDash: [4, 2]
-          }
-        });
-        children.push({
-          type: "text",
-          style: {
-            text: "\u26a0",
-            x: overflowX + overflowWidth / 2,
-            y: y + height / 2,
-            fill: "#ef4444",
-            fontSize: 12,
-            textAlign: "center",
-            textVerticalAlign: "middle",
-            opacity: 0.8
-          }
-        });
-      }
-    }
     if (node.children.length > 0) {
       const arrowX = x + width - 12;
       const arrowY = y + height / 2;
@@ -683,12 +514,11 @@
   function renderChart() {
     chart.setOption(buildOption(), true);
   }
-  window.__setRange = (global) => {
-    useGlobalRange = global;
-    btnFitted.classList.toggle("active", !useGlobalRange);
-    btnGlobal.classList.toggle("active", useGlobalRange);
+  toggleBtn.addEventListener("click", () => {
+    useGlobalRange = !useGlobalRange;
+    toggleBtn.textContent = useGlobalRange ? "Show Fitted Range" : "Show Global Range";
     renderChart();
-  };
+  });
   window.addEventListener("resize", () => chart.resize());
   updateBreadcrumb();
   renderChart();

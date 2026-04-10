@@ -2,6 +2,9 @@
 export interface ChartIssue {
   issue_ref: string;
   title: string | null;
+  start_date: string | null;
+  target_date: string | null;
+  state: string | null;
 }
 
 /** Mirrors the Rust ChartMilestone struct. */
@@ -25,6 +28,7 @@ export interface ChartNode {
   has_timeline: boolean;
   owners: string[];
   team: string | null;
+  overflow_end: string | null;
   children: ChartNode[];
   milestones: ChartMilestone[];
   issues: ChartIssue[];
