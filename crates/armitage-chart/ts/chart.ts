@@ -511,8 +511,33 @@ function buildOption(): echarts.EChartsOption {
       trigger: "item",
       formatter: (params: any) => {
         const idx = params.dataIndex;
-        const n = visibleNodes[idx];
-        if (!n) return "";
+        const entry = seriesEntries[idx];
+        if (!entry) return "";
+
+        if (entry.type === "separator" || entry.type === "show-more") return "";
+
+        if (entry.type === "issue") {
+          const issue = entry.issue;
+          const parts = [
+            `<b>${issue.title || issue.issue_ref}</b>`,
+            issue.issue_ref,
+          ];
+          if (issue.start_date) parts.push(`Start: ${issue.start_date}`);
+          if (issue.target_date) parts.push(`Target: ${issue.target_date}`);
+          if (
+            issue.target_date &&
+            entry.parentNode.end &&
+            issue.target_date > entry.parentNode.end
+          ) {
+            parts.push(
+              `<span style="color:#f85149">Overdue: ${formatOverdue(issue.target_date, entry.parentNode.end)}</span>`,
+            );
+          }
+          parts.push("", "<i>Click to open on GitHub</i>");
+          return parts.join("<br/>");
+        }
+
+        const n = entry.node;
         const dates = n.has_timeline
           ? `${n.start} &rarr; ${n.end}`
           : n.eff_start
@@ -529,7 +554,11 @@ function buildOption(): echarts.EChartsOption {
             parts.push(`&diams; ${m.name} (${m.date})`);
           }
         }
-        parts.push("", "<i>Click for details</i>");
+        if (n.children.length === 0 && n.issues.length > 0) {
+          parts.push("", "<i>Click to expand issues</i>");
+        } else {
+          parts.push("", "<i>Click for details</i>");
+        }
         return parts.join("<br/>");
       },
     },
