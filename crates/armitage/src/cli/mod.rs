@@ -90,6 +90,9 @@ enum Commands {
         /// Embed ECharts JS inline for offline viewing
         #[arg(long)]
         offline: bool,
+        /// Watch for changes and re-render automatically
+        #[arg(long, short)]
+        watch: bool,
     },
     /// Self-management commands
     #[command(name = "self")]
@@ -758,7 +761,8 @@ pub fn run() -> Result<()> {
             output,
             no_open,
             offline,
-        } => chart::run_chart(output, no_open, offline)?,
+            watch,
+        } => chart::run_chart(output, no_open, offline, watch)?,
         Commands::Config { command } => match command {
             ConfigCommands::Set { key, value } => {
                 config::run_set(key, value)?;
