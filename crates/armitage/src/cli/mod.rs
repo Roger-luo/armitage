@@ -137,6 +137,24 @@ enum NodeCommands {
         #[arg(long, short = 'y')]
         yes: bool,
     },
+    /// Set fields on a node without interactive editing
+    Set {
+        path: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        owners: Option<String>,
+        #[arg(long)]
+        team: Option<String>,
+        #[arg(long)]
+        repos: Option<String>,
+        #[arg(long)]
+        labels: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+    },
     /// Display indented tree of all nodes
     Tree {
         /// Maximum depth to display (0 = top-level only, omit for unlimited)
@@ -639,6 +657,18 @@ pub fn run() -> Result<()> {
             }
             NodeCommands::Remove { path, yes } => {
                 node::run_remove(path, yes)?;
+            }
+            NodeCommands::Set {
+                path,
+                name,
+                description,
+                owners,
+                team,
+                repos,
+                labels,
+                status,
+            } => {
+                node::run_set(path, name, description, owners, team, repos, labels, status)?;
             }
             NodeCommands::Tree { depth } => {
                 node::run_tree(depth)?;

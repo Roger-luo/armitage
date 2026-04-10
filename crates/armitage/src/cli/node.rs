@@ -1537,6 +1537,68 @@ pub fn run_tree(max_depth: Option<usize>) -> Result<()> {
     Ok(())
 }
 
+/// CLI entry point: armitage node set
+/// Set fields on a node non-interactively.
+#[allow(clippy::too_many_arguments)]
+pub fn run_set(
+    path: String,
+    name: Option<String>,
+    description: Option<String>,
+    owners: Option<String>,
+    team: Option<String>,
+    repos: Option<String>,
+    labels: Option<String>,
+    status: Option<String>,
+) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let org_root = find_org_root(&cwd)?;
+    let entry = read_node(&org_root, &path)?;
+    let mut node = entry.node.clone();
+
+    if let Some(n) = name {
+        node.name = n;
+    }
+    if let Some(d) = description {
+        node.description = d;
+    }
+    if let Some(o) = owners {
+        node.owners = o
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+    if let Some(t) = team {
+        node.team = if t.is_empty() || t == "none" {
+            None
+        } else {
+            Some(t)
+        };
+    }
+    if let Some(r) = repos {
+        node.repos = r
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+    if let Some(l) = labels {
+        node.labels = l
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+    if let Some(s) = status {
+        node.status = parse_status(&s)?;
+    }
+
+    let toml_content = toml::to_string(&node)?;
+    std::fs::write(entry.dir.join("node.toml"), toml_content)?;
+    println!("Updated '{path}'");
+    Ok(())
+}
+
 /// CLI entry point: armitage node check
 /// Scans the whole tree for timeline violations and other issues.
 pub fn run_check() -> Result<()> {
