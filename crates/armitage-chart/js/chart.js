@@ -192,24 +192,6 @@
       html += `<button class="btn-drill" onclick="window.__nav('${node.path}')">Drill into ${escapeHtml(node.name)} &rsaquo;</button>`;
       html += `</div>`;
     }
-    if (node.issues && node.issues.length > 0) {
-      html += `<div class="panel-section">`;
-      html += `<h3>Issues (${node.issues.length})</h3>`;
-      html += `<ul class="panel-issues">`;
-      for (const issue of node.issues) {
-        const ref = issue.ref;
-        const m = ref.match(/^([^#]+)#(\d+)$/);
-        const url = m ? `https://github.com/${m[1]}/issues/${m[2]}` : null;
-        const display = issue.title ? `${escapeHtml(issue.title)}` : escapeHtml(ref);
-        const refLabel = `<span class="issue-ref">${escapeHtml(ref)}</span>`;
-        if (url) {
-          html += `<li><a href="${url}" target="_blank" rel="noopener">${display}</a>${issue.title ? '<br/>' + refLabel : ''}</li>`;
-        } else {
-          html += `<li>${display}</li>`;
-        }
-      }
-      html += `</ul></div>`;
-    }
     panelContentEl.innerHTML = html;
     panelEl.classList.add("open");
     chart.resize();
