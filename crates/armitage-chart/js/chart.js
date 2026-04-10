@@ -302,7 +302,15 @@
           type: "custom",
           renderItem: renderBar,
           encode: { x: [0, 1], y: 2 },
-          data: seriesData,
+          data: seriesData
+        },
+        // Invisible line series that carries markLine for vertical lines
+        // (today, OKRs, checkpoints). markLine on custom series is unreliable.
+        {
+          type: "line",
+          data: [],
+          symbol: "none",
+          silent: true,
           markLine: {
             silent: false,
             symbol: ["none", "none"],
@@ -345,7 +353,7 @@
             }),
             tooltip: {
               formatter: (p) => {
-                if (p.data === todayLine || p.name === "Today") return "Today";
+                if (p.name === "Today") return "Today";
                 const m = p.data?._okr;
                 if (!m) return p.name;
                 return [

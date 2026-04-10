@@ -390,6 +390,14 @@ function buildOption(): echarts.EChartsOption {
         renderItem: renderBar,
         encode: { x: [0, 1], y: 2 },
         data: seriesData,
+      },
+      // Invisible line series that carries markLine for vertical lines
+      // (today, OKRs, checkpoints). markLine on custom series is unreliable.
+      {
+        type: "line",
+        data: [],
+        symbol: "none",
+        silent: true,
         markLine: {
           silent: false,
           symbol: ["none", "none"],
@@ -434,7 +442,7 @@ function buildOption(): echarts.EChartsOption {
           }),
           tooltip: {
             formatter: (p: any) => {
-              if (p.data === todayLine || p.name === "Today") return "Today";
+              if (p.name === "Today") return "Today";
               const m = p.data?._okr as ChartMilestone | undefined;
               if (!m) return p.name;
               return [
