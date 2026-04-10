@@ -5,7 +5,9 @@ use rusqlite::Connection;
 
 use crate::db;
 use crate::error::Result;
+use armitage_core::issues::IssuesFile;
 use armitage_core::node::IssueRef;
+use armitage_core::tree::walk_nodes;
 use armitage_labels::rename::LabelRenameLedger;
 
 // ---------------------------------------------------------------------------
@@ -71,6 +73,16 @@ pub fn apply_all(
             match armitage_github::issue::add_comment(gh, &issue_ref, &decision.question) {
                 Ok(()) => {
                     db::mark_applied(conn, decision.id, &now)?;
+                    if let Some(node_path) = &decision.final_node
+                        && let Err(e) = record_issue_in_node(
+                            org_root,
+                            node_path,
+                            &issue_ref_str,
+                            Some(&issue.title),
+                        )
+                    {
+                        eprintln!("  {issue_ref_str}: warning: issues.toml write failed: {e}");
+                    }
                     println!("  {issue_ref_str}: posted {label}");
                     stats.applied += 1;
                 }
@@ -86,6 +98,16 @@ pub fn apply_all(
         if decision.decision == "stale" {
             if !dry_run {
                 db::mark_applied(conn, decision.id, &now)?;
+                if let Some(node_path) = &decision.final_node
+                    && let Err(e) = record_issue_in_node(
+                        org_root,
+                        node_path,
+                        &issue_ref_str,
+                        Some(&issue.title),
+                    )
+                {
+                    eprintln!("  {issue_ref_str}: warning: issues.toml write failed: {e}");
+                }
             }
             println!("  {issue_ref_str}: stale (no action)");
             stats.skipped += 1;
@@ -101,6 +123,16 @@ pub fn apply_all(
         if add_labels.is_empty() && remove_labels.is_empty() {
             if !dry_run {
                 db::mark_applied(conn, decision.id, &now)?;
+                if let Some(node_path) = &decision.final_node
+                    && let Err(e) = record_issue_in_node(
+                        org_root,
+                        node_path,
+                        &issue_ref_str,
+                        Some(&issue.title),
+                    )
+                {
+                    eprintln!("  {issue_ref_str}: warning: issues.toml write failed: {e}");
+                }
             }
             println!("  {issue_ref_str}: no label changes needed");
             stats.skipped += 1;
@@ -129,6 +161,16 @@ pub fn apply_all(
         ) {
             Ok(()) => {
                 db::mark_applied(conn, decision.id, &now)?;
+                if let Some(node_path) = &decision.final_node
+                    && let Err(e) = record_issue_in_node(
+                        org_root,
+                        node_path,
+                        &issue_ref_str,
+                        Some(&issue.title),
+                    )
+                {
+                    eprintln!("  {issue_ref_str}: warning: issues.toml write failed: {e}");
+                }
                 println!("  {issue_ref_str}: applied");
                 if !add_labels.is_empty() {
                     println!("    + {}", add_labels.join(", "));
@@ -201,6 +243,46 @@ pub fn compute_label_diff(
 }
 
 // ---------------------------------------------------------------------------
+// issues.toml tracking
+// ---------------------------------------------------------------------------
+
+/// Record an issue in the target node's `issues.toml`, removing it from any
+/// other node that may have previously claimed it (e.g. after re-classification).
+fn record_issue_in_node(
+    org_root: &Path,
+    node_path: &str,
+    issue_ref_str: &str,
+    title: Option<&str>,
+) -> Result<()> {
+    let target_dir = org_root.join(node_path);
+    if !target_dir.join("node.toml").exists() {
+        // Node directory doesn't exist or isn't a valid node — skip silently
+        // rather than failing the whole apply.
+        eprintln!("  warning: node '{node_path}' has no node.toml, skipping issues.toml write");
+        return Ok(());
+    }
+
+    // Remove from any other node that currently contains this issue.
+    let all_nodes = walk_nodes(org_root)?;
+    for entry in &all_nodes {
+        if entry.path == node_path {
+            continue;
+        }
+        let mut file = IssuesFile::read(&entry.dir)?;
+        if file.remove(issue_ref_str) {
+            file.write(&entry.dir)?;
+        }
+    }
+
+    // Add to the target node.
+    let mut file = IssuesFile::read(&target_dir)?;
+    file.add(issue_ref_str.to_string(), title.map(|s| s.to_string()));
+    file.write(&target_dir)?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -255,6 +337,7 @@ fn ensure_labels_exist(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use armitage_core::issues::IssuesFile;
     use armitage_labels::rename::LabelRename;
 
     fn empty_ledger() -> LabelRenameLedger {
@@ -373,5 +456,90 @@ mod tests {
         let diff = compute_label_diff(&current, &desired, &ledger);
         assert!(diff.add.is_empty());
         assert!(diff.remove.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // record_issue_in_node tests
+    // -----------------------------------------------------------------------
+
+    /// Helper: create a minimal org tree in a temp dir with given node paths.
+    fn make_test_org(node_paths: &[&str]) -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        // write a minimal armitage.toml (not strictly needed by walk_nodes, but
+        // mirrors real org structure)
+        std::fs::write(tmp.path().join("armitage.toml"), "[org]\nname = \"test\"\n").unwrap();
+        for p in node_paths {
+            let dir = tmp.path().join(p);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("node.toml"),
+                format!(
+                    "name = \"{}\" \ndescription = \"test node\"\n",
+                    p.replace('/', "-")
+                ),
+            )
+            .unwrap();
+        }
+        tmp
+    }
+
+    #[test]
+    fn record_adds_issue_to_target_node() {
+        let tmp = make_test_org(&["alpha", "beta"]);
+        record_issue_in_node(tmp.path(), "alpha", "acme/repo#1", Some("First issue")).unwrap();
+
+        let f = IssuesFile::read(&tmp.path().join("alpha")).unwrap();
+        assert_eq!(f.len(), 1);
+        assert!(f.has("acme/repo#1"));
+
+        // beta should still be empty
+        let f2 = IssuesFile::read(&tmp.path().join("beta")).unwrap();
+        assert!(f2.is_empty());
+    }
+
+    #[test]
+    fn record_moves_issue_on_reclassification() {
+        let tmp = make_test_org(&["alpha", "beta"]);
+
+        // Initially classify to alpha
+        record_issue_in_node(tmp.path(), "alpha", "acme/repo#1", Some("Issue")).unwrap();
+        assert!(
+            IssuesFile::read(&tmp.path().join("alpha"))
+                .unwrap()
+                .has("acme/repo#1")
+        );
+
+        // Re-classify to beta
+        record_issue_in_node(tmp.path(), "beta", "acme/repo#1", Some("Issue")).unwrap();
+
+        // Should be in beta, removed from alpha
+        assert!(
+            IssuesFile::read(&tmp.path().join("beta"))
+                .unwrap()
+                .has("acme/repo#1")
+        );
+        assert!(
+            !IssuesFile::read(&tmp.path().join("alpha"))
+                .unwrap()
+                .has("acme/repo#1")
+        );
+    }
+
+    #[test]
+    fn record_deduplicates_same_node() {
+        let tmp = make_test_org(&["alpha"]);
+        record_issue_in_node(tmp.path(), "alpha", "acme/repo#1", Some("A")).unwrap();
+        record_issue_in_node(tmp.path(), "alpha", "acme/repo#1", Some("A")).unwrap();
+
+        let f = IssuesFile::read(&tmp.path().join("alpha")).unwrap();
+        assert_eq!(f.len(), 1);
+    }
+
+    #[test]
+    fn record_skips_invalid_node_path() {
+        let tmp = make_test_org(&["alpha"]);
+        // "nonexistent" has no node.toml — should not error
+        let result = record_issue_in_node(tmp.path(), "nonexistent", "acme/repo#1", None);
+        assert!(result.is_ok());
     }
 }
