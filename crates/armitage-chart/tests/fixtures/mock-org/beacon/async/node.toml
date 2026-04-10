@@ -1,0 +1,7 @@
+name = "Async Runtime"
+description = "Asynchronous execution primitives for non-blocking signal processing."
+status = "active"
+
+[timeline]
+start = "2026-03-01"
+end = "2026-12-31"

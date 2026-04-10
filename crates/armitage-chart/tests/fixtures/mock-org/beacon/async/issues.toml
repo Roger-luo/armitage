@@ -1,0 +1,11 @@
+[[issues]]
+ref = "NexusLabs/waveform-engine#205"
+title = "Future combinator library"
+
+[[issues]]
+ref = "NexusLabs/waveform-engine#206"
+title = "Async channel implementation"
+
+[[issues]]
+ref = "NexusLabs/waveform-engine#207"
+title = "Backpressure mechanism"

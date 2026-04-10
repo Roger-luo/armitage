@@ -1,0 +1,7 @@
+name = "Analysis Engine"
+description = "Real-time metrics analysis and anomaly detection."
+status = "paused"
+
+[timeline]
+start = "2026-06-01"
+end = "2026-12-31"

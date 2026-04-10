@@ -1,0 +1,7 @@
+name = "External Integrations"
+description = "Adapters for third-party signal processing libraries and data formats."
+status = "active"
+
+[timeline]
+start = "2026-02-01"
+end = "2026-08-31"

@@ -1,0 +1,8 @@
+name = "Scheduler"
+description = "Task scheduler with priority queues and deadline-aware scheduling."
+status = "active"
+owners = ["bkim"]
+
+[timeline]
+start = "2026-04-01"
+end = "2026-09-30"

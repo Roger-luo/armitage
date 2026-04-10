@@ -1,0 +1,11 @@
+[[issues]]
+ref = "Nexus-QC/test-infra#301"
+title = "Multi-node test harness"
+
+[[issues]]
+ref = "Nexus-QC/test-infra#302"
+title = "Network partition simulator"
+
+[[issues]]
+ref = "Nexus-QC/test-infra#303"
+title = "Chaos testing framework"

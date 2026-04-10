@@ -1,0 +1,7 @@
+name = "Compass"
+description = "Cross-platform integration testing framework for distributed pipelines."
+status = "active"
+
+[timeline]
+start = "2026-04-01"
+end = "2026-12-31"

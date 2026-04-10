@@ -1,0 +1,17 @@
+[[members]]
+github = "agarcia"
+name = "Ana Garcia"
+role = "Software Engineer"
+teams = ["core"]
+
+[[members]]
+github = "bkim"
+name = "Brian Kim"
+role = "Senior Software Engineer"
+teams = ["platform"]
+
+[[members]]
+github = "czhang"
+name = "Chen Zhang"
+role = "Engineering Manager"
+teams = ["core", "platform"]
