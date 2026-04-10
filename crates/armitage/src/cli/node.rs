@@ -1611,8 +1611,9 @@ pub fn run_check() -> Result<()> {
     let org_root = find_org_root(&cwd)?;
     let all = walk_nodes(&org_root)?;
 
-    let mut issues = 0;
+    let mut violations = 0;
 
+    // --- Parent-child timeline containment ---
     for entry in &all {
         let Some(parent_path) = parent_of(&entry.path) else {
             continue;
@@ -1621,11 +1622,10 @@ pub fn run_check() -> Result<()> {
             continue;
         };
 
-        // Check timeline containment
         if let (Some(child_tl), Some(parent_tl)) = (&entry.node.timeline, &parent.node.timeline)
             && !parent_tl.contains(child_tl)
         {
-            issues += 1;
+            violations += 1;
             println!(
                 "{}timeline violation:{} {bold}{}{reset}",
                 color::RED,
@@ -1643,7 +1643,6 @@ pub fn run_check() -> Result<()> {
                 dim = color::DIM,
                 reset = color::RESET,
             );
-            // Show which bound is violated
             if child_tl.start < parent_tl.start {
                 println!(
                     "  {yellow}start date is {days} day(s) before parent start{reset}",
@@ -1673,12 +1672,119 @@ pub fn run_check() -> Result<()> {
         }
     }
 
-    if issues == 0 {
+    // --- Issue project dates vs node timeline ---
+    let conn = armitage_triage::db::open_db(&org_root).ok();
+    if let Some(conn) = &conn {
+        for entry in &all {
+            let Some(tl) = &entry.node.timeline else {
+                continue;
+            };
+            let issues_file =
+                armitage_core::issues::IssuesFile::read(&entry.dir).unwrap_or_default();
+            if issues_file.is_empty() {
+                continue;
+            }
+
+            for issue_entry in &issues_file.issues {
+                let Some((repo, num)) = parse_issue_ref(&issue_entry.issue_ref) else {
+                    continue;
+                };
+                let items = armitage_triage::db::get_project_items_for_issue(conn, &repo, num)
+                    .unwrap_or_default();
+                for item in &items {
+                    let issue_label = issue_entry
+                        .title
+                        .as_deref()
+                        .unwrap_or(&issue_entry.issue_ref);
+
+                    // Check target_date exceeds node end
+                    if let Some(target) = &item.target_date
+                        && let Ok(target_date) =
+                            chrono::NaiveDate::parse_from_str(target, "%Y-%m-%d")
+                        && target_date > tl.end
+                    {
+                        violations += 1;
+                        let days = target_date.signed_duration_since(tl.end).num_days();
+                        println!(
+                            "{}issue target date exceeds node timeline:{} {bold}{}{reset}",
+                            color::RED,
+                            color::RESET,
+                            entry.path,
+                            bold = color::BOLD,
+                            reset = color::RESET,
+                        );
+                        println!(
+                            "  {dim}{}{reset}",
+                            issue_entry.issue_ref,
+                            dim = color::DIM,
+                            reset = color::RESET,
+                        );
+                        println!("  {}", issue_label);
+                        println!(
+                            "  {yellow}target {target} is {days} day(s) after node end {end}{reset}",
+                            yellow = color::YELLOW,
+                            target = target,
+                            days = days,
+                            end = tl.end,
+                            reset = color::RESET,
+                        );
+                        println!();
+                    }
+
+                    // Check start_date before node start
+                    if let Some(start) = &item.start_date
+                        && let Ok(start_date) = chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d")
+                        && start_date < tl.start
+                    {
+                        violations += 1;
+                        let days = tl.start.signed_duration_since(start_date).num_days();
+                        println!(
+                            "{}issue start date precedes node timeline:{} {bold}{}{reset}",
+                            color::RED,
+                            color::RESET,
+                            entry.path,
+                            bold = color::BOLD,
+                            reset = color::RESET,
+                        );
+                        println!(
+                            "  {dim}{}{reset}",
+                            issue_entry.issue_ref,
+                            dim = color::DIM,
+                            reset = color::RESET,
+                        );
+                        println!("  {}", issue_label);
+                        println!(
+                            "  {yellow}start {start} is {days} day(s) before node start {node_start}{reset}",
+                            yellow = color::YELLOW,
+                            start = start,
+                            days = days,
+                            node_start = tl.start,
+                            reset = color::RESET,
+                        );
+                        println!();
+                    }
+                }
+            }
+        }
+    }
+
+    if violations == 0 {
         println!("{}No issues found.{}", color::GREEN, color::RESET);
     } else {
-        println!("{}Found {issues} issue(s).{}", color::YELLOW, color::RESET,);
+        println!(
+            "{}Found {violations} issue(s).{}",
+            color::YELLOW,
+            color::RESET,
+        );
     }
     Ok(())
+}
+
+/// Parse "owner/repo#123" into ("owner/repo", 123).
+fn parse_issue_ref(s: &str) -> Option<(String, u64)> {
+    let (repo, num_str) = s.rsplit_once('#')?;
+    let num = num_str.parse().ok()?;
+    Some((repo.to_string(), num))
 }
 
 #[cfg(test)]
