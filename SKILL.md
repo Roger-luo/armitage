@@ -41,6 +41,8 @@ nesting). Each node represents an initiative, project, or task.
 - `status` — `active`, `completed`, `paused`, `cancelled`
 - `repos` — associated GitHub repos, with optional `@branch` qualifier (see below)
 - `labels` — labels to apply to issues classified under this node
+- `owners` — GitHub usernames responsible for this node (references `team.toml`)
+- `team` — functional team that owns this node (e.g. `circuit`, `flair`, `shuttle`, `kirin`)
 - `github_issue` — linked issue in `owner/repo#number` format
 - `timeline` — `start` and `end` dates
 
@@ -84,11 +86,12 @@ confidence = 0.92
 armitage init <name> [--github-org <org>...] [--default-repo <owner/repo>]
 # after init, set up AGENTS.md for AI workflows:
 # ion agents init Roger-luo/armitage/templates/org-agents.md
-armitage node new [<path>] [--name ...] [--description ...] [--repos ...]
+armitage node new [<path>] [--name ...] [--description ...] [--repos ...] [--owners ...] [--team ...]
 armitage node list [<path>] [-r]
-armitage node tree
+armitage node tree [--depth N]         # -d N for short; omit for full tree
 armitage node show <path>
 armitage node edit <path>
+armitage node set <path> [--name ...] [--description ...] [--owners ...] [--team ...] [--repos ...] [--labels ...] [--status ...]
 armitage node move <from> <to>
 armitage node merge <from> <to> [-y]   # merge source into target
 armitage node remove <path> [-y]
