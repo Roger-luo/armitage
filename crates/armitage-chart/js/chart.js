@@ -19,8 +19,25 @@
     paused: "#f59e0b",
     cancelled: "#ef4444"
   };
-  var NO_TIMELINE_COLOR = "rgba(107, 114, 128, 0.15)";
-  var NO_TIMELINE_BORDER = "rgba(107, 114, 128, 0.4)";
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function getThemeColors() {
+    return {
+      text: cssVar("--text"),
+      textMuted: cssVar("--text-muted"),
+      axisLine: cssVar("--chart-axis-line"),
+      grid: cssVar("--chart-grid"),
+      axis: cssVar("--chart-axis"),
+      noTlFill: cssVar("--no-tl-fill"),
+      noTlBorder: cssVar("--no-tl-border"),
+    };
+  }
+  var tc = getThemeColors();
+  window.__onThemeChange = function() {
+    tc = getThemeColors();
+    renderChart();
+  };
   function parseDate(s) {
     return (/* @__PURE__ */ new Date(s + "T00:00:00")).getTime();
   }
@@ -308,18 +325,18 @@
         type: "time",
         min: xMin,
         max: xMax,
-        axisLabel: { color: "#8b949e" },
-        axisLine: { lineStyle: { color: "#30363d" } },
+        axisLabel: { color: tc.axis },
+        axisLine: { lineStyle: { color: tc.axisLine } },
         splitLine: {
           show: true,
-          lineStyle: { color: "#21262d", type: "dashed" }
+          lineStyle: { color: tc.grid, type: "dashed" }
         }
       },
       yAxis: {
         type: "category",
         data: categories,
         axisLabel: {
-          color: "#e6edf3",
+          color: tc.text,
           fontWeight: "bold",
           fontSize: 13
         },
@@ -348,7 +365,7 @@
               position: "start",
               formatter: (p) => p.name,
               fontSize: 10,
-              color: "#8b949e"
+              color: tc.textMuted
             },
             lineStyle: {
               type: "dashed",
@@ -418,8 +435,8 @@
       type: "rect",
       shape: { x, y, width, height, r: 4 },
       style: {
-        fill: hasTimeline ? `${statusColor}22` : NO_TIMELINE_COLOR,
-        stroke: isSelected ? "#e6edf3" : hasTimeline ? `${statusColor}55` : NO_TIMELINE_BORDER,
+        fill: hasTimeline ? `${statusColor}22` : tc.noTlFill,
+        stroke: isSelected ? tc.text : hasTimeline ? `${statusColor}55` : tc.noTlBorder,
         lineWidth: isSelected ? 2 : 1,
         lineDash: hasTimeline || isSelected ? null : [4, 3]
       }
