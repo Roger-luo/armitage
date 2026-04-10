@@ -179,6 +179,9 @@ fn build_roadmap_section(nodes: &[NodeEntry]) -> String {
         if !entry.node.repos.is_empty() {
             s.push_str(&format!("  [repos: {}]", entry.node.repos.join(", ")));
         }
+        if let Some(ref hint) = entry.node.triage_hint {
+            s.push_str(&format!("  [hint: {}]", hint));
+        }
         s.push('\n');
     }
     s
@@ -1870,6 +1873,7 @@ mod tests {
                 repos: vec![],
                 owners: vec![],
                 team: None,
+                triage_hint: None,
                 timeline: None,
                 status: NodeStatus::Active,
             },
@@ -2001,6 +2005,7 @@ mod tests {
                 repos: vec![],
                 owners: vec![],
                 team: None,
+                triage_hint: None,
                 timeline: None,
                 status: NodeStatus::Active,
             },

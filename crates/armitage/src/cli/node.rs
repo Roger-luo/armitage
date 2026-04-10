@@ -848,6 +848,7 @@ pub(crate) fn create_node_full(
     let node = Node {
         name: derived_name,
         description: description.unwrap_or("").to_string(),
+        triage_hint: None,
         github_issue: github_issue.map(|s| s.to_string()),
         labels: labels_vec,
         repos: repos.to_vec(),
@@ -945,6 +946,9 @@ pub fn run_show(path: String) -> Result<()> {
 
     println!("name:        {}", entry.node.name);
     println!("description: {}", entry.node.description);
+    if let Some(ref hint) = entry.node.triage_hint {
+        println!("triage_hint: {hint}");
+    }
     println!("status:      {}", entry.node.status);
     if let Some(ref issue) = entry.node.github_issue {
         println!("github:      {issue}");
@@ -1239,6 +1243,7 @@ pub fn run_edit(path: String) -> Result<()> {
     let updated = Node {
         name,
         description,
+        triage_hint: node.triage_hint.clone(),
         github_issue,
         labels,
         repos,
@@ -1544,6 +1549,7 @@ pub fn run_set(
     path: String,
     name: Option<String>,
     description: Option<String>,
+    triage_hint: Option<String>,
     owners: Option<String>,
     team: Option<String>,
     repos: Option<String>,
@@ -1560,6 +1566,13 @@ pub fn run_set(
     }
     if let Some(d) = description {
         node.description = d;
+    }
+    if let Some(h) = triage_hint {
+        node.triage_hint = if h.is_empty() || h == "none" {
+            None
+        } else {
+            Some(h)
+        };
     }
     if let Some(o) = owners {
         node.owners = o
@@ -1904,6 +1917,7 @@ mod tests {
             node: Node {
                 name: path.rsplit('/').next().unwrap_or(path).to_string(),
                 description: desc.to_string(),
+                triage_hint: None,
                 status,
                 github_issue: None,
                 labels: vec![],
