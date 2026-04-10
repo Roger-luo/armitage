@@ -142,6 +142,16 @@
     }
     return clusters;
   }
+  function formatOverdue(targetDate, nodeEnd) {
+    const target = parseDate(targetDate);
+    const end = parseDate(nodeEnd);
+    const diffMs = target - end;
+    if (diffMs <= 0) return "";
+    const diffDays = Math.ceil(diffMs / (24 * 3600 * 1e3));
+    if (diffDays < 14) return `+${diffDays} days`;
+    const diffWeeks = Math.round(diffDays / 7);
+    return `+${diffWeeks} wks`;
+  }
   function updateBreadcrumb() {
     const parts = [
       { label: data.org_name || "Root", path: "" }
@@ -489,9 +499,116 @@
       backgroundColor: "transparent"
     };
   }
+  function renderIssueRow(params, api, issue, parentNode) {
+    const yIdx = api.value(2);
+    const bandWidth = api.size([0, 1])[1];
+    const yCenter = api.coord([0, yIdx])[1];
+    const children = [];
+    if (!issue.start_date || !issue.target_date) {
+      return { type: "group", children: [] };
+    }
+    const startX = api.coord([parseDate(issue.start_date), yIdx])[0];
+    const endX = api.coord([parseDate(issue.target_date), yIdx])[0];
+    const barY = yCenter - 3;
+    const barW = Math.max(endX - startX, 2);
+    children.push({
+      type: "rect",
+      shape: { x: startX, y: barY, width: barW, height: 6, r: 2 },
+      style: {
+        fill: "#58a6ff",
+        opacity: 0.6
+      }
+    });
+    const isOverdue = parentNode.end && issue.target_date > parentNode.end;
+    if (isOverdue) {
+      const todayMs = (/* @__PURE__ */ new Date()).setHours(0, 0, 0, 0);
+      const targetMs = parseDate(issue.target_date);
+      if (todayMs > targetMs) {
+        const overdueStartX = endX;
+        const overdueEndX = api.coord([todayMs, yIdx])[0];
+        const overdueW = Math.max(overdueEndX - overdueStartX, 2);
+        children.push({
+          type: "rect",
+          shape: { x: overdueStartX, y: barY, width: overdueW, height: 6, r: 2 },
+          style: {
+            fill: "#f85149",
+            opacity: 0.6
+          }
+        });
+      }
+      const overdueLabel = formatOverdue(issue.target_date, parentNode.end);
+      if (overdueLabel) {
+        const labelX = Math.max(
+          endX + 4,
+          api.coord([(/* @__PURE__ */ new Date()).setHours(0, 0, 0, 0), yIdx])[0] + 4
+        );
+        children.push({
+          type: "text",
+          style: {
+            text: overdueLabel,
+            x: labelX,
+            y: yCenter,
+            fill: "#f85149",
+            fontSize: 10,
+            textAlign: "left",
+            textVerticalAlign: "middle"
+          }
+        });
+      }
+    } else {
+      const refMatch = issue.issue_ref.match(/#(\d+)$/);
+      const refLabel = refMatch ? `#${refMatch[1]}` : issue.issue_ref;
+      children.push({
+        type: "text",
+        style: {
+          text: refLabel,
+          x: endX + 4,
+          y: yCenter,
+          fill: "#484f58",
+          fontSize: 10,
+          textAlign: "left",
+          textVerticalAlign: "middle"
+        }
+      });
+    }
+    return { type: "group", children };
+  }
+  function renderSeparatorRow(params, api) {
+    const yIdx = api.value(2);
+    const yCenter = api.coord([0, yIdx])[1];
+    const gridLeft = params.coordSys.x;
+    const gridRight = params.coordSys.x + params.coordSys.width;
+    return {
+      type: "group",
+      children: [
+        {
+          type: "line",
+          shape: { x1: gridLeft, y1: yCenter, x2: gridRight, y2: yCenter },
+          style: {
+            stroke: "#21262d",
+            lineWidth: 1,
+            lineDash: [4, 3]
+          }
+        }
+      ]
+    };
+  }
+  function renderShowMoreRow(params, api, entry) {
+    return { type: "group", children: [] };
+  }
   function renderBar(params, api) {
-    const node = visibleNodes[params.dataIndex];
-    if (!node) return { type: "group", children: [] };
+    const entry = seriesEntries[params.dataIndex];
+    if (!entry) return { type: "group", children: [] };
+    if (entry.type === "separator") {
+      return renderSeparatorRow(params, api);
+    }
+    if (entry.type === "issue") {
+      return renderIssueRow(params, api, entry.issue, entry.parentNode);
+    }
+    if (entry.type === "show-more") {
+      return renderShowMoreRow(params, api, entry);
+    }
+    const node = entry.node;
     const yIdx = api.value(2);
     const start = api.coord([api.value(0), yIdx]);
     const end = api.coord([api.value(1), yIdx]);
@@ -503,6 +620,8 @@
     if (width <= 0) return { type: "group", children: [] };
     const children = [];
     const isSelected = selectedNode?.path === node.path;
+    const isDimmed = expandedNode !== null && expandedNode !== node.path;
+    const groupOpacity = isDimmed ? 0.4 : 1;
     const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
     const hasTimeline = node.has_timeline;
     children.push({
@@ -714,7 +833,7 @@
         }
       });
     }
-    return { type: "group", children };
+    return { type: "group", children, style: { opacity: groupOpacity } };
   }
   function navigateTo(path) {
     currentPath = path;

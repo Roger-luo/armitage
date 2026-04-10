@@ -663,13 +663,160 @@ function buildOption(): echarts.EChartsOption {
   };
 }
 
+/** Render a single issue row in the expanded view. */
+function renderIssueRow(
+  params: any,
+  api: any,
+  issue: ChartIssue,
+  parentNode: ChartNode,
+): echarts.CustomSeriesRenderItemReturn {
+  const yIdx = api.value(2);
+  const bandWidth = api.size([0, 1])[1];
+  const yCenter = api.coord([0, yIdx])[1];
+
+  const children: any[] = [];
+
+  if (!issue.start_date || !issue.target_date) {
+    // No-date issue: just show a dimmed text placeholder
+    // (The label is already rendered by the Y-axis)
+    return { type: "group", children: [] };
+  }
+
+  const startX = api.coord([parseDate(issue.start_date), yIdx])[0];
+  const endX = api.coord([parseDate(issue.target_date), yIdx])[0];
+  const barY = yCenter - 3; // 6px tall, centered
+  const barW = Math.max(endX - startX, 2);
+
+  // On-track portion
+  children.push({
+    type: "rect",
+    shape: { x: startX, y: barY, width: barW, height: 6, r: 2 },
+    style: {
+      fill: "#58a6ff",
+      opacity: 0.6,
+    },
+  });
+
+  // Overdue red extension (target_date → today)
+  const isOverdue =
+    parentNode.end && issue.target_date > parentNode.end;
+  if (isOverdue) {
+    const todayMs = new Date().setHours(0, 0, 0, 0);
+    const targetMs = parseDate(issue.target_date);
+    if (todayMs > targetMs) {
+      const overdueStartX = endX;
+      const overdueEndX = api.coord([todayMs, yIdx])[0];
+      const overdueW = Math.max(overdueEndX - overdueStartX, 2);
+
+      children.push({
+        type: "rect",
+        shape: { x: overdueStartX, y: barY, width: overdueW, height: 6, r: 2 },
+        style: {
+          fill: "#f85149",
+          opacity: 0.6,
+        },
+      });
+    }
+
+    // Right-side overdue label
+    const overdueLabel = formatOverdue(issue.target_date, parentNode.end!);
+    if (overdueLabel) {
+      const labelX = Math.max(
+        endX + 4,
+        api.coord([new Date().setHours(0, 0, 0, 0), yIdx])[0] + 4,
+      );
+      children.push({
+        type: "text",
+        style: {
+          text: overdueLabel,
+          x: labelX,
+          y: yCenter,
+          fill: "#f85149",
+          fontSize: 10,
+          textAlign: "left",
+          textVerticalAlign: "middle",
+        },
+      });
+    }
+  } else {
+    // Right-side issue ref label for on-track issues
+    const refMatch = issue.issue_ref.match(/#(\d+)$/);
+    const refLabel = refMatch ? `#${refMatch[1]}` : issue.issue_ref;
+    children.push({
+      type: "text",
+      style: {
+        text: refLabel,
+        x: endX + 4,
+        y: yCenter,
+        fill: "#484f58",
+        fontSize: 10,
+        textAlign: "left",
+        textVerticalAlign: "middle",
+      },
+    });
+  }
+
+  return { type: "group", children };
+}
+
+/** Render the dashed separator between overdue and on-track issues. */
+function renderSeparatorRow(
+  params: any,
+  api: any,
+): echarts.CustomSeriesRenderItemReturn {
+  const yIdx = api.value(2);
+  const yCenter = api.coord([0, yIdx])[1];
+  const gridLeft = (params.coordSys as any).x;
+  const gridRight = (params.coordSys as any).x + (params.coordSys as any).width;
+
+  return {
+    type: "group",
+    children: [
+      {
+        type: "line",
+        shape: { x1: gridLeft, y1: yCenter, x2: gridRight, y2: yCenter },
+        style: {
+          stroke: "#21262d",
+          lineWidth: 1,
+          lineDash: [4, 3],
+        },
+      },
+    ],
+  };
+}
+
+/** Render the "show N more" clickable row. */
+function renderShowMoreRow(
+  params: any,
+  api: any,
+  entry: ShowMoreEntry,
+): echarts.CustomSeriesRenderItemReturn {
+  // The label is already rendered by the Y-axis category.
+  // We just return an empty group — the click handler on the
+  // chart series handles the interaction.
+  return { type: "group", children: [] };
+}
+
 /** Custom renderItem: draws the outer bar + nested child bars. */
 function renderBar(
   params: any,
   api: any,
 ): echarts.CustomSeriesRenderItemReturn {
-  const node: ChartNode = visibleNodes[params.dataIndex];
-  if (!node) return { type: "group", children: [] };
+  const entry = seriesEntries[params.dataIndex];
+  if (!entry) return { type: "group", children: [] };
+
+  // Dispatch based on entry type
+  if (entry.type === "separator") {
+    return renderSeparatorRow(params, api);
+  }
+  if (entry.type === "issue") {
+    return renderIssueRow(params, api, entry.issue, entry.parentNode);
+  }
+  if (entry.type === "show-more") {
+    return renderShowMoreRow(params, api, entry);
+  }
+
+  const node = entry.node;
 
   const yIdx = api.value(2);
   const start = api.coord([api.value(0), yIdx]);
@@ -687,6 +834,10 @@ function renderBar(
 
   // Highlight selected node
   const isSelected = selectedNode?.path === node.path;
+
+  // Dim non-expanded bars when a node is expanded
+  const isDimmed = expandedNode !== null && expandedNode !== node.path;
+  const groupOpacity = isDimmed ? 0.4 : 1.0;
 
   // Outer bar
   const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
@@ -938,7 +1089,7 @@ function renderBar(
     });
   }
 
-  return { type: "group", children };
+  return { type: "group", children, style: { opacity: groupOpacity } };
 }
 
 // ---------------------------------------------------------------------------
