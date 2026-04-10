@@ -147,17 +147,23 @@ fn build_node(
     let milestones = read_milestones(&entry.dir);
     let issues = read_issues(&entry.dir, dates_map);
 
-    let issue_start = issues
-        .iter()
-        .filter_map(|i| i.start_date.as_deref())
+    let own_issue_start = issues.iter().filter_map(|i| i.start_date.as_deref()).min();
+    let child_issue_start = children.iter().filter_map(|c| c.issue_start.as_deref());
+    let issue_start = own_issue_start
+        .into_iter()
+        .chain(child_issue_start)
         .min()
         .map(String::from);
-    let issue_end = issues
-        .iter()
-        .filter_map(|i| i.target_date.as_deref())
+
+    let own_issue_end = issues.iter().filter_map(|i| i.target_date.as_deref()).max();
+    let child_issue_end = children.iter().filter_map(|c| c.issue_end.as_deref());
+    let issue_end = own_issue_end
+        .into_iter()
+        .chain(child_issue_end)
         .max()
         .map(String::from);
-    let overflow_end = end.as_deref().and_then(|node_end| {
+    // Compute overflow: max of own issues overshooting + children's overflows
+    let own_overflow = end.as_deref().and_then(|node_end| {
         issues
             .iter()
             .filter_map(|i| i.target_date.as_deref())
@@ -165,6 +171,16 @@ fn build_node(
             .max()
             .map(String::from)
     });
+    let child_overflow = children
+        .iter()
+        .filter_map(|c| c.overflow_end.as_deref())
+        .max()
+        .map(String::from);
+    let overflow_end = [own_overflow.as_deref(), child_overflow.as_deref()]
+        .into_iter()
+        .flatten()
+        .max()
+        .map(String::from);
 
     ChartNode {
         path: entry.path.clone(),
