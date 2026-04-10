@@ -1599,6 +1599,41 @@ pub fn run_set(
     Ok(())
 }
 
+/// CLI entry point: armitage node fmt
+/// Re-serialize node.toml files with canonical formatting (multi-line strings, etc.).
+pub fn run_fmt(paths: Vec<String>) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let org_root = find_org_root(&cwd)?;
+
+    let entries = if paths.is_empty() {
+        walk_nodes(&org_root)?
+    } else {
+        let mut v = Vec::new();
+        for p in &paths {
+            v.push(read_node(&org_root, p)?);
+        }
+        v
+    };
+
+    let mut formatted = 0;
+    for entry in &entries {
+        let toml_path = entry.dir.join("node.toml");
+        let old = std::fs::read_to_string(&toml_path)?;
+        let new = entry.node.to_toml()?;
+        if old != new {
+            std::fs::write(&toml_path, &new)?;
+            println!("Formatted '{}'", entry.path);
+            formatted += 1;
+        }
+    }
+    if formatted == 0 {
+        println!("All {} node(s) already formatted.", entries.len());
+    } else {
+        println!("Formatted {formatted} of {} node(s).", entries.len());
+    }
+    Ok(())
+}
+
 /// CLI entry point: armitage node check
 /// Scans the whole tree for timeline violations and other issues.
 pub fn run_check() -> Result<()> {

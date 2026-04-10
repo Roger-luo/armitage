@@ -161,6 +161,11 @@ enum NodeCommands {
         #[arg(long, short)]
         depth: Option<usize>,
     },
+    /// Format node.toml files (re-serialize with multi-line strings)
+    Fmt {
+        /// Specific node paths to format (omit for all nodes)
+        paths: Vec<String>,
+    },
     /// Check for timeline violations and other issues
     Check,
 }
@@ -672,6 +677,9 @@ pub fn run() -> Result<()> {
             }
             NodeCommands::Tree { depth } => {
                 node::run_tree(depth)?;
+            }
+            NodeCommands::Fmt { paths } => {
+                node::run_fmt(paths)?;
             }
             NodeCommands::Check => {
                 node::run_check()?;
