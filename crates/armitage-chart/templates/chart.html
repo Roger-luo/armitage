@@ -165,12 +165,28 @@
       cursor: pointer;
     }
     .btn-drill:hover { background: #30363d; }
+    #panel .panel-issues {
+      list-style: none;
+      font-size: 13px;
+    }
+    #panel .panel-issues li {
+      padding: 4px 0;
+      border-bottom: 1px solid #21262d;
+    }
+    #panel .panel-issues li:last-child {
+      border-bottom: none;
+    }
     .panel-issue-link {
       color: #58a6ff;
       text-decoration: none;
       font-size: 13px;
+      line-height: 1.4;
     }
     .panel-issue-link:hover { text-decoration: underline; }
+    .panel-issue-link .issue-ref {
+      color: #484f58;
+      font-size: 11px;
+    }
   </style>
 </head>
 <body>

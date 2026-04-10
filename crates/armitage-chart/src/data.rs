@@ -4,6 +4,7 @@ use std::path::Path;
 use chrono::NaiveDate;
 use serde::Serialize;
 
+use armitage_core::issues::IssuesFile;
 use armitage_core::tree::NodeEntry;
 use armitage_milestones::milestone::MilestoneFile;
 
@@ -27,6 +28,14 @@ pub struct ChartNode {
     pub team: Option<String>,
     pub children: Vec<ChartNode>,
     pub milestones: Vec<ChartMilestone>,
+    pub issues: Vec<ChartIssue>,
+}
+
+/// An issue reference for the chart panel.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChartIssue {
+    pub issue_ref: String,
+    pub title: Option<String>,
 }
 
 /// A milestone or OKR marker on the timeline.
@@ -49,6 +58,19 @@ pub struct ChartData {
 
 fn date_to_str(d: &NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()
+}
+
+fn read_issues(node_dir: &Path) -> Vec<ChartIssue> {
+    let Ok(file) = IssuesFile::read(node_dir) else {
+        return vec![];
+    };
+    file.issues
+        .into_iter()
+        .map(|e| ChartIssue {
+            issue_ref: e.issue_ref,
+            title: e.title,
+        })
+        .collect()
 }
 
 fn read_milestones(node_dir: &Path) -> Vec<ChartMilestone> {
@@ -104,6 +126,7 @@ fn build_node(entry: &NodeEntry, children_map: &HashMap<String, Vec<&NodeEntry>>
     };
 
     let milestones = read_milestones(&entry.dir);
+    let issues = read_issues(&entry.dir);
 
     ChartNode {
         path: entry.path.clone(),
@@ -119,6 +142,7 @@ fn build_node(entry: &NodeEntry, children_map: &HashMap<String, Vec<&NodeEntry>>
         team: entry.node.team.clone(),
         children,
         milestones,
+        issues,
     }
 }
 

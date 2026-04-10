@@ -1,4 +1,4 @@
-import type { ChartData, ChartNode, ChartMilestone } from "./types";
+import type { ChartData, ChartNode, ChartMilestone, ChartIssue } from "./types";
 
 // ---------------------------------------------------------------------------
 // State
@@ -219,6 +219,21 @@ function showPanel(node: ChartNode): void {
       html += `<li>&diams; ${escapeHtml(m.name)} <span class="ms-date">${m.date}</span>`;
       if (m.description) html += `<br/><span class="ms-date">${escapeHtml(m.description)}</span>`;
       html += `</li>`;
+    }
+    html += `</ul></div>`;
+  }
+
+  // Issues
+  if (node.issues.length > 0) {
+    html += `<div class="panel-section">`;
+    html += `<h3>Issues (${node.issues.length})</h3>`;
+    html += `<ul class="panel-issues">`;
+    for (const issue of node.issues) {
+      const url = issueUrl(issue.issue_ref);
+      const label = issue.title
+        ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>`
+        : escapeHtml(issue.issue_ref);
+      html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
     }
     html += `</ul></div>`;
   }

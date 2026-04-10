@@ -1,3 +1,9 @@
+/** Mirrors the Rust ChartIssue struct. */
+export interface ChartIssue {
+  issue_ref: string;
+  title: string | null;
+}
+
 /** Mirrors the Rust ChartMilestone struct. */
 export interface ChartMilestone {
   name: string;
@@ -21,6 +27,7 @@ export interface ChartNode {
   team: string | null;
   children: ChartNode[];
   milestones: ChartMilestone[];
+  issues: ChartIssue[];
 }
 
 /** Top-level chart data injected into window.__CHART_DATA__. */
