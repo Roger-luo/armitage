@@ -26,6 +26,7 @@ termimad = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 rusqlite = { workspace = true }
+notify = { workspace = true }
 
 [build-dependencies]
 ionem = { version = "0.2.0" }
