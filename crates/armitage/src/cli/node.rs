@@ -435,6 +435,8 @@ fn run_create_noninteractive(
 }
 
 fn run_create_interactive() -> Result<()> {
+    const LAST_STEP: usize = 7;
+
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
 
@@ -477,7 +479,6 @@ fn run_create_interactive() -> Result<()> {
     let mut tl: Option<armitage_core::node::Timeline> = None;
 
     let mut step: usize = 0;
-    const LAST_STEP: usize = 7;
 
     while step <= LAST_STEP {
         match step {
@@ -578,7 +579,7 @@ fn run_create_interactive() -> Result<()> {
                                         &format!("  Description for '{n}'"),
                                         "",
                                     )?;
-                                    lf.add(n.to_string(), desc);
+                                    lf.add((*n).clone(), desc);
                                 }
                                 lf.write(&org_root)?;
                                 println!("  Labels added to labels.toml.\n");
@@ -637,13 +638,11 @@ fn run_create_interactive() -> Result<()> {
                             );
                         }
                         let default_start = parent_tl
-                            .map(|pt| pt.start)
-                            .unwrap_or_else(|| chrono::Local::now().date_naive());
+                            .map_or_else(|| chrono::Local::now().date_naive(), |pt| pt.start);
                         println!("  Enter start date:");
                         let start = rl_date_fields(&mut rl, default_start)?;
-                        let default_end = parent_tl
-                            .map(|pt| pt.end)
-                            .unwrap_or_else(|| start + chrono::Months::new(6));
+                        let default_end =
+                            parent_tl.map_or_else(|| start + chrono::Months::new(6), |pt| pt.end);
                         let default_end = if default_end < start {
                             start + chrono::Months::new(6)
                         } else {
@@ -679,7 +678,7 @@ fn run_create_interactive() -> Result<()> {
                         }
                         step += 1;
                     }
-                    _ => {
+                    Input::Value(_) => {
                         tl = None;
                         step += 1;
                     }
@@ -767,14 +766,14 @@ pub(crate) fn create_node_full(
         )));
     }
 
-    let derived_name = name
-        .map(std::string::ToString::to_string)
-        .unwrap_or_else(|| {
+    let derived_name = name.map_or_else(
+        || {
             Path::new(path)
                 .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.to_string())
-        });
+                .map_or_else(|| path.to_string(), |n| n.to_string_lossy().to_string())
+        },
+        std::string::ToString::to_string,
+    );
 
     let labels_vec: Vec<String> = labels
         .map(|l| {
@@ -821,7 +820,7 @@ pub(crate) fn create_node_full(
     let toml_content = node.to_toml()?;
     std::fs::write(node_dir.join("node.toml"), toml_content)?;
 
-    println!("Created node at '{}'", path);
+    println!("Created node at '{path}'");
     Ok(())
 }
 
@@ -955,6 +954,8 @@ pub fn run_show(path: String) -> Result<()> {
 
 /// CLI entry point: armitage node edit
 pub fn run_edit(path: String) -> Result<()> {
+    const LAST_STEP: usize = 7;
+
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
     let entry = read_node(&org_root, &path)?;
@@ -986,7 +987,6 @@ pub fn run_edit(path: String) -> Result<()> {
     let mut timeline: Option<armitage_core::node::Timeline> = node.timeline.clone();
 
     let mut step: usize = 0;
-    const LAST_STEP: usize = 7;
 
     while step <= LAST_STEP {
         match step {
@@ -1017,7 +1017,7 @@ pub fn run_edit(path: String) -> Result<()> {
                         step += 1;
                     }
                     Err(_) => {
-                        println!("  Invalid status. Choose: active, paused, completed, cancelled.")
+                        println!("  Invalid status. Choose: active, paused, completed, cancelled.");
                     }
                 },
                 Input::Back => {
@@ -1076,7 +1076,7 @@ pub fn run_edit(path: String) -> Result<()> {
                                         &format!("  Description for '{n}'"),
                                         "",
                                     )?;
-                                    lf.add(n.to_string(), desc);
+                                    lf.add((*n).clone(), desc);
                                 }
                                 lf.write(&org_root)?;
                                 println!("  Labels added to labels.toml.\n");
@@ -1189,7 +1189,7 @@ pub fn run_edit(path: String) -> Result<()> {
                         }
                         step += 1;
                     }
-                    _ => {
+                    Input::Value(_) => {
                         timeline = None;
                         step += 1;
                     }
@@ -1296,7 +1296,7 @@ fn rl_date_fields(rl: &mut DefaultEditor, default: chrono::NaiveDate) -> Result<
         let day_str = rl_with_default(
             rl,
             &format!("    Day (1-{max_day})"),
-            &format!("{:02}", default_day),
+            &format!("{default_day:02}"),
         )?;
         let day: u32 = match day_str.parse() {
             Ok(d) if (1..=max_day).contains(&d) => d,
@@ -1323,8 +1323,7 @@ fn days_in_month(year: i32, month: u32) -> u32 {
         chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
     }
     .and_then(|d| d.pred_opt())
-    .map(|d| d.day())
-    .unwrap_or(28)
+    .map_or(28, |d| d.day())
 }
 
 /// Core move logic, separated for testability.
@@ -1427,10 +1426,7 @@ pub fn run_merge(from: String, to: String, yes: bool) -> Result<()> {
     };
 
     println!("Merge '{from}' into '{to}':");
-    println!(
-        "  {} triage suggestion(s) will be reassigned",
-        suggestion_count
-    );
+    println!("  {suggestion_count} triage suggestion(s) will be reassigned");
     if !children.is_empty() {
         println!("  {} child node(s) will be moved:", children.len());
         for child in &children {
@@ -1721,7 +1717,7 @@ pub fn run_check() -> Result<()> {
                             dim = color::DIM,
                             reset = color::RESET,
                         );
-                        println!("  {}", issue_label);
+                        println!("  {issue_label}");
                         println!(
                             "  {yellow}target {target} is {days} day(s) after node end {end}{reset}",
                             yellow = color::YELLOW,
@@ -1754,7 +1750,7 @@ pub fn run_check() -> Result<()> {
                             dim = color::DIM,
                             reset = color::RESET,
                         );
-                        println!("  {}", issue_label);
+                        println!("  {issue_label}");
                         println!(
                             "  {yellow}start {start} is {days} day(s) before node start {node_start}{reset}",
                             yellow = color::YELLOW,

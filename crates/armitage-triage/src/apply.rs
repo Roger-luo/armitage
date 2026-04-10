@@ -318,13 +318,11 @@ pub fn compute_label_diff(
 /// Read the `[triage.repo_labels]` config: a map from repo to labels that
 /// the repo already implies. Returns an empty map on any config error.
 fn read_repo_implied_labels(org_root: &Path) -> HashMap<String, HashSet<String>> {
-    let org = match Org::open(org_root) {
-        Ok(o) => o,
-        Err(_) => return HashMap::new(),
+    let Ok(org) = Org::open(org_root) else {
+        return HashMap::new();
     };
-    let config = match org.domain_config::<TriageDomain>() {
-        Ok(c) => c,
-        Err(_) => return HashMap::new(),
+    let Ok(config) = org.domain_config::<TriageDomain>() else {
+        return HashMap::new();
     };
     config
         .repo_labels
@@ -341,9 +339,8 @@ fn read_repo_implied_labels(org_root: &Path) -> HashMap<String, HashSet<String>>
 /// issue classified to that node. Includes the node's own labels plus all
 /// ancestor labels (e.g. `gemini/logical-mvp` inherits from `gemini/`).
 fn build_node_label_map(org_root: &Path) -> HashMap<String, Vec<String>> {
-    let nodes = match walk_nodes(org_root) {
-        Ok(n) => n,
-        Err(_) => return HashMap::new(),
+    let Ok(nodes) = walk_nodes(org_root) else {
+        return HashMap::new();
     };
 
     // First pass: collect direct labels per node
@@ -713,7 +710,7 @@ mod tests {
             let labels_toml = if labels.is_empty() {
                 String::new()
             } else {
-                let items: Vec<String> = labels.iter().map(|l| format!("\"{}\"", l)).collect();
+                let items: Vec<String> = labels.iter().map(|l| format!("\"{l}\"")).collect();
                 format!("labels = [{}]", items.join(", "))
             };
             std::fs::write(

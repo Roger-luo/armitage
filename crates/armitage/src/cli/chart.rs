@@ -39,9 +39,10 @@ pub fn run_chart(output: Option<String>, no_open: bool, offline: bool, watch: bo
     if watch {
         run_watch_server(&org_root, offline)?;
     } else {
-        let output_path = output
-            .map(PathBuf::from)
-            .unwrap_or_else(|| org_root.join(".armitage").join("chart.html"));
+        let output_path = output.map_or_else(
+            || org_root.join(".armitage").join("chart.html"),
+            PathBuf::from,
+        );
 
         let html = generate_chart(&org_root, offline)?;
         write_file(&output_path, &html)?;

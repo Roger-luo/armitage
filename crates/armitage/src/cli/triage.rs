@@ -373,7 +373,7 @@ fn run_llm_reconcile(
             pick_recommended(
                 &selected_labels,
                 &suggestions,
-                &recommended,
+                recommended.as_ref(),
                 &local,
                 session,
             )
@@ -429,7 +429,7 @@ fn run_llm_reconcile(
 fn pick_recommended(
     selected_labels: &[&String],
     suggestions: &[label_import::LabelSuggestion],
-    recommended: &Option<String>,
+    recommended: Option<&String>,
     local: &LabelsFile,
     session: &label_import::LabelImportSession,
 ) -> LabelDef {
@@ -976,8 +976,7 @@ pub fn run_classify(
         let null_count = nodes_breakdown
             .iter()
             .find(|n| n.node.is_none())
-            .map(|n| n.count)
-            .unwrap_or(0);
+            .map_or(0, |n| n.count);
 
         let json = serde_json::json!({
             "classified": count,
@@ -1474,8 +1473,7 @@ fn print_suggestion(
     };
     let confidence = suggestion
         .confidence
-        .map(|c| format!("{:.0}%", c * 100.0))
-        .unwrap_or_else(|| "?".to_string());
+        .map_or_else(|| "?".to_string(), |c| format!("{:.0}%", c * 100.0));
 
     let dim = console::Style::new().dim();
     let green = console::Style::new().green();
@@ -1957,10 +1955,10 @@ pub fn run_decide(
             &org_root,
             issue_ref_str,
             decision_type,
-            &node,
-            &parsed_labels,
+            node.as_ref(),
+            parsed_labels.as_ref(),
             &note,
-            &question,
+            question.as_ref(),
         ) {
             eprintln!("Error on {issue_ref_str}: {e}");
             errors.push(format!("{issue_ref_str}: {e}"));
@@ -1985,10 +1983,10 @@ fn decide_one(
     org_root: &Path,
     issue_ref_str: &str,
     decision_type: &str,
-    node: &Option<String>,
-    parsed_labels: &Option<Vec<String>>,
+    node: Option<&String>,
+    parsed_labels: Option<&Vec<String>>,
     note: &str,
-    question: &Option<String>,
+    question: Option<&String>,
 ) -> Result<()> {
     let issue_ref = IssueRef::parse(issue_ref_str)?;
     let (issue, suggestion, existing_decision) =
@@ -2055,9 +2053,9 @@ fn decide_one(
             println!("Rejected {issue_ref_str}");
         }
         "modify" => {
-            let final_node = node.clone().or_else(|| suggestion.suggested_node.clone());
+            let final_node = node.cloned().or_else(|| suggestion.suggested_node.clone());
             let final_labels = parsed_labels
-                .clone()
+                .cloned()
                 .unwrap_or_else(|| suggestion.suggested_labels.clone());
             db::insert_decision(
                 conn,
@@ -2084,7 +2082,7 @@ fn decide_one(
             println!("Modified {issue_ref_str}");
         }
         "stale" => {
-            let q = question.as_deref().unwrap_or("").to_string();
+            let q = question.map_or(String::new(), |s| s.as_str().to_string());
             db::insert_decision(
                 conn,
                 &db::ReviewDecision {
@@ -2106,7 +2104,7 @@ fn decide_one(
             }
         }
         "inquire" => {
-            let q = question.as_deref().unwrap_or("").to_string();
+            let q = question.map_or(String::new(), |s| s.as_str().to_string());
             db::insert_decision(
                 conn,
                 &db::ReviewDecision {
@@ -2266,12 +2264,12 @@ pub fn run_suggestions(
             );
         }
         OutputFormat::Summary => {
+            const CONFIDENCE_THRESHOLD: f64 = 0.80;
+
             if results.is_empty() {
                 println!("No suggestions match the given filters.");
                 return Ok(());
             }
-
-            const CONFIDENCE_THRESHOLD: f64 = 0.80;
 
             let (auto, uncertain): (Vec<_>, Vec<_>) = results.iter().partition(|(_, sug)| {
                 sug.confidence.unwrap_or(0.0) >= CONFIDENCE_THRESHOLD
@@ -2328,9 +2326,8 @@ pub fn run_suggestions(
                 let node = sug.suggested_node.as_deref().unwrap_or("(unclassified)");
                 let conf = sug
                     .confidence
-                    .map(|c| format!("{:.0}%", c * 100.0))
-                    .unwrap_or_else(|| "\u{2014}".to_string());
-                println!("{:<30} {:<55} {:<25} {:>6}", issue_ref, title, node, conf);
+                    .map_or_else(|| "\u{2014}".to_string(), |c| format!("{:.0}%", c * 100.0));
+                println!("{issue_ref:<30} {title:<55} {node:<25} {conf:>6}");
             }
             println!("\n{} suggestion(s)", results.len());
         }
@@ -2405,7 +2402,7 @@ pub fn run_decisions(
             let issue_ref = format!("{}#{}", issue.repo, issue.number);
             let title: String = issue.title.chars().take(38).collect();
             let node = dec.final_node.as_deref().unwrap_or("\u{2014}");
-            let applied = dec.applied_at.as_deref().map(|_| "yes").unwrap_or("no");
+            let applied = dec.applied_at.as_deref().map_or("no", |_| "yes");
             println!(
                 "{:<30} {:<40} {:<10} {:<25} {}",
                 issue_ref, title, dec.decision, node, applied
@@ -2945,18 +2942,16 @@ fn ensure_ancestors_exist(org_root: &Path, node_path: &str, auto_accept: bool) -
         println!("  Parent node '{ancestor}' does not exist and must be created.");
 
         let (name, description) = if auto_accept {
-            let name = leaf
-                .chars()
-                .next()
-                .map(|c| c.to_uppercase().to_string() + &leaf[1..])
-                .unwrap_or_else(|| leaf.to_string());
+            let name = leaf.chars().next().map_or_else(
+                || leaf.to_string(),
+                |c| c.to_uppercase().to_string() + &leaf[1..],
+            );
             (name, String::new())
         } else {
-            let default_name = leaf
-                .chars()
-                .next()
-                .map(|c| c.to_uppercase().to_string() + &leaf[1..])
-                .unwrap_or_else(|| leaf.to_string());
+            let default_name = leaf.chars().next().map_or_else(
+                || leaf.to_string(),
+                |c| c.to_uppercase().to_string() + &leaf[1..],
+            );
 
             let name: String =
                 dialoguer::Input::with_theme(&dialoguer::theme::ColorfulTheme::default())
@@ -3127,8 +3122,7 @@ fn run_labels_merge_interactive(
         let preview = candidate
             .remote_variants
             .first()
-            .map(|variant| variant.description.as_str())
-            .unwrap_or("");
+            .map_or("", |variant| variant.description.as_str());
         let prompt = format!(
             "[{}] {} ({:?}) {} ",
             candidate.name,

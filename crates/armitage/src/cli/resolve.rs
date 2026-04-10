@@ -89,8 +89,8 @@ fn resolve_conflict_interactive(
         let local_lines = body_conflict.local.lines().count();
         let remote_lines = body_conflict.remote.lines().count();
         println!("Body conflict:");
-        println!("  [L] local:  {} lines", local_lines);
-        println!("  [R] remote: {} lines", remote_lines);
+        println!("  [L] local:  {local_lines} lines");
+        println!("  [R] remote: {remote_lines} lines");
 
         let choice = prompt_lr("Choose [L]ocal or [R]emote: ")?;
         let chosen_body = if choice == 'R' || choice == 'r' {

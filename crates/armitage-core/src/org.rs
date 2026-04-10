@@ -165,10 +165,6 @@ mod tests {
 
     #[test]
     fn domain_config_returns_default_when_missing() {
-        let tmp = TempDir::new().unwrap();
-        write_config(tmp.path(), "");
-        let org = Org::open(tmp.path()).unwrap();
-
         // A made-up domain whose key is absent from the config.
         struct FakeDomain;
         impl Domain for FakeDomain {
@@ -176,6 +172,10 @@ mod tests {
             const CONFIG_KEY: &'static str = "fake_section";
             type Config = OrgInfo;
         }
+
+        let tmp = TempDir::new().unwrap();
+        write_config(tmp.path(), "");
+        let org = Org::open(tmp.path()).unwrap();
 
         let cfg = org.domain_config::<FakeDomain>().unwrap();
         assert_eq!(cfg.name, ""); // OrgInfo::default().name is empty

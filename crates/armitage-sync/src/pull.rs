@@ -105,11 +105,7 @@ pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNode
         return Ok(PullNodeResult::Skipped);
     }
 
-    let result = if !local_changed {
-        // 6a. Only remote changed: fast-forward
-        apply_remote_to_local(entry, &remote_issue)?;
-        PullNodeResult::FastForward
-    } else {
+    let result = if local_changed {
         // 6b. Both changed: three-way merge
         let local_node = &entry.node;
         let remote_node = Node {
@@ -183,6 +179,10 @@ pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNode
                 PullNodeResult::Conflicted
             }
         }
+    } else {
+        // 6a. Only remote changed: fast-forward
+        apply_remote_to_local(entry, &remote_issue)?;
+        PullNodeResult::FastForward
     };
 
     // 7. Update sync state
