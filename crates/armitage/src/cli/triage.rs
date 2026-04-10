@@ -24,6 +24,7 @@ pub enum OutputFormat {
     Table,
     Json,
     Summary,
+    Refs,
 }
 
 impl OutputFormat {
@@ -32,8 +33,9 @@ impl OutputFormat {
             "table" => Ok(Self::Table),
             "json" => Ok(Self::Json),
             "summary" => Ok(Self::Summary),
+            "refs" => Ok(Self::Refs),
             other => Err(Error::Other(format!(
-                "unknown format '{other}', expected 'table', 'json', or 'summary'"
+                "unknown format '{other}', expected 'table', 'json', 'summary', or 'refs'"
             ))),
         }
     }
@@ -1862,9 +1864,13 @@ pub fn run_apply(dry_run: bool) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_decide(
     issue_ref_strs: Vec<String>,
     decision: String,
+    all_pending: bool,
+    min_confidence: Option<f64>,
+    max_confidence: Option<f64>,
     node: Option<String>,
     labels: Option<String>,
     note: Option<String>,
@@ -1881,6 +1887,18 @@ pub fn run_decide(
             )));
         }
     };
+
+    if !all_pending && issue_ref_strs.is_empty() {
+        return Err(Error::Other(
+            "provide issue references or use --all-pending".to_string(),
+        ));
+    }
+
+    if !all_pending && (min_confidence.is_some() || max_confidence.is_some()) {
+        return Err(Error::Other(
+            "--min-confidence and --max-confidence can only be used with --all-pending".to_string(),
+        ));
+    }
 
     if decision_type != "modify" && (node.is_some() || labels.is_some()) {
         return Err(Error::Other(
@@ -1899,6 +1917,21 @@ pub fn run_decide(
         ));
     }
 
+    // Resolve the list of issue refs to process
+    let resolved_refs: Vec<String> = if all_pending {
+        let pending = db::get_pending_suggestions_filtered(&conn, min_confidence, max_confidence)?;
+        if pending.is_empty() {
+            println!("No pending suggestions found");
+            return Ok(());
+        }
+        pending
+            .iter()
+            .map(|(issue, _)| format!("{}#{}", issue.repo, issue.number))
+            .collect()
+    } else {
+        issue_ref_strs
+    };
+
     let note = note.unwrap_or_default();
     let parsed_labels: Option<Vec<String>> = labels.as_ref().map(|l| {
         l.split(',')
@@ -1909,7 +1942,7 @@ pub fn run_decide(
 
     let mut errors: Vec<String> = Vec::new();
 
-    for issue_ref_str in &issue_ref_strs {
+    for issue_ref_str in &resolved_refs {
         if let Err(e) = decide_one(
             &conn,
             &org_root,
@@ -1931,7 +1964,7 @@ pub fn run_decide(
         Err(Error::Other(format!(
             "Failed on {} of {} issues:\n  {}",
             errors.len(),
-            issue_ref_strs.len(),
+            resolved_refs.len(),
             errors.join("\n  ")
         )))
     }
@@ -2291,6 +2324,11 @@ pub fn run_suggestions(
                 println!("{:<30} {:<55} {:<25} {:>6}", issue_ref, title, node, conf);
             }
             println!("\n{} suggestion(s)", results.len());
+        }
+        OutputFormat::Refs => {
+            for (issue, _) in &results {
+                println!("{}#{}", issue.repo, issue.number);
+            }
         }
     }
     Ok(())
