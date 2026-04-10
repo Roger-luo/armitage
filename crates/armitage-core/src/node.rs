@@ -52,18 +52,11 @@ fn to_multiline_toml(input: &str) -> String {
                 let lines = wrap_str(inner, MULTILINE_THRESHOLD);
                 out.push_str(key);
                 out.push_str(" = \"\"\"\n");
-                for (i, wrapped) in lines.iter().enumerate() {
+                for wrapped in &lines {
                     out.push_str(wrapped);
-                    if i + 1 < lines.len() {
-                        // Trailing backslash joins lines in TOML multi-line strings
-                        out.push_str(" \\\n");
-                    } else {
-                        out.push_str("\"\"\"\n");
-                    }
+                    out.push('\n');
                 }
-                if lines.is_empty() {
-                    out.push_str("\"\"\"\n");
-                }
+                out.push_str("\"\"\"\n");
                 continue;
             }
         }
@@ -348,9 +341,11 @@ mod tests {
                 line.len()
             );
         }
-        // Verify it roundtrips correctly
+        // Verify it roundtrips (description now contains newlines from wrapping)
         let parsed: Node = toml::from_str(&toml_str).expect("deserialize");
-        assert_eq!(parsed.description, desc);
+        // Collapsing newlines should recover the original
+        let collapsed: String = parsed.description.lines().collect::<Vec<_>>().join(" ");
+        assert_eq!(collapsed.trim(), desc);
     }
 
     #[test]
