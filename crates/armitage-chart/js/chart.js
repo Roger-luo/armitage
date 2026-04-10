@@ -8,7 +8,8 @@
   var visibleNodes = [];
   var chartEl = document.getElementById("chart");
   var breadcrumbEl = document.getElementById("breadcrumb");
-  var toggleBtn = document.getElementById("toggle-range");
+  var btnFitted = document.getElementById("btn-fitted");
+  var btnGlobal = document.getElementById("btn-global");
   var panelEl = document.getElementById("panel");
   var panelContentEl = document.getElementById("panel-content");
   var chart = echarts.init(chartEl);
@@ -592,11 +593,12 @@
   function renderChart() {
     chart.setOption(buildOption(), true);
   }
-  toggleBtn.addEventListener("click", () => {
-    useGlobalRange = !useGlobalRange;
-    toggleBtn.textContent = useGlobalRange ? "Show Fitted Range" : "Show Global Range";
+  window.__setRange = (global) => {
+    useGlobalRange = global;
+    btnFitted.classList.toggle("active", !useGlobalRange);
+    btnGlobal.classList.toggle("active", useGlobalRange);
     renderChart();
-  });
+  };
   window.addEventListener("resize", () => chart.resize());
   updateBreadcrumb();
   renderChart();
