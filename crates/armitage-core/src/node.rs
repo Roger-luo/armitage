@@ -23,6 +23,44 @@ pub struct Node {
     pub status: NodeStatus,
 }
 
+/// Max single-line string length before converting to multi-line TOML.
+const MULTILINE_THRESHOLD: usize = 80;
+
+impl Node {
+    /// Serialize to TOML, using multi-line strings for long values.
+    pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
+        let raw = toml::to_string(self)?;
+        Ok(to_multiline_toml(&raw))
+    }
+}
+
+/// Post-process serialized TOML to convert long string values to multi-line (`"""`).
+fn to_multiline_toml(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for line in input.lines() {
+        if let Some((key, val)) = line.split_once(" = ") {
+            // Only convert basic strings (starting with `"`, not arrays or inline tables)
+            let trimmed = val.trim();
+            if trimmed.starts_with('"')
+                && trimmed.ends_with('"')
+                && !trimmed.starts_with("\"\"\"")
+                && trimmed.len() > MULTILINE_THRESHOLD
+            {
+                // Strip outer quotes to get the raw escaped content
+                let inner = &trimmed[1..trimmed.len() - 1];
+                out.push_str(key);
+                out.push_str(" = \"\"\"\n");
+                out.push_str(inner);
+                out.push_str("\"\"\"\n");
+                continue;
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Timeline {
     pub start: NaiveDate,
@@ -229,5 +267,48 @@ mod tests {
 
         // Exact same range -- a timeline contains itself
         assert!(parent.contains(&parent));
+    }
+
+    #[test]
+    fn to_toml_uses_multiline_for_long_description() {
+        let node = Node {
+            name: "test".to_string(),
+            description: "A".repeat(100),
+            github_issue: None,
+            labels: vec![],
+            repos: vec![],
+            owners: vec![],
+            team: None,
+            timeline: None,
+            status: NodeStatus::Active,
+        };
+        let toml_str = node.to_toml().expect("serialize");
+        assert!(
+            toml_str.contains("\"\"\""),
+            "long description should use multi-line string"
+        );
+        // Verify it roundtrips correctly
+        let parsed: Node = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(parsed.description, node.description);
+    }
+
+    #[test]
+    fn to_toml_keeps_short_description_inline() {
+        let node = Node {
+            name: "test".to_string(),
+            description: "Short".to_string(),
+            github_issue: None,
+            labels: vec![],
+            repos: vec![],
+            owners: vec![],
+            team: None,
+            timeline: None,
+            status: NodeStatus::Active,
+        };
+        let toml_str = node.to_toml().expect("serialize");
+        assert!(
+            !toml_str.contains("\"\"\""),
+            "short description should stay inline"
+        );
     }
 }

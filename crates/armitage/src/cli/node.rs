@@ -858,7 +858,7 @@ pub(crate) fn create_node_full(
     };
 
     std::fs::create_dir_all(&node_dir)?;
-    let toml_content = toml::to_string(&node)?;
+    let toml_content = node.to_toml()?;
     std::fs::write(node_dir.join("node.toml"), toml_content)?;
 
     println!("Created node at '{}'", path);
@@ -1248,7 +1248,7 @@ pub fn run_edit(path: String) -> Result<()> {
         status,
     };
 
-    let toml_content = toml::to_string(&updated)?;
+    let toml_content = updated.to_toml()?;
     std::fs::write(&node_toml_path, toml_content)?;
 
     println!("\nSaved '{path}'");
@@ -1593,7 +1593,7 @@ pub fn run_set(
         node.status = parse_status(&s)?;
     }
 
-    let toml_content = toml::to_string(&node)?;
+    let toml_content = node.to_toml()?;
     std::fs::write(entry.dir.join("node.toml"), toml_content)?;
     println!("Updated '{path}'");
     Ok(())

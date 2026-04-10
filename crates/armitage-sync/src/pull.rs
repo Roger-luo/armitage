@@ -47,7 +47,7 @@ fn apply_remote_to_local(entry: &NodeEntry, issue: &GitHubIssue) -> Result<()> {
 
     // Write node.toml
     let node_toml_path = entry.dir.join("node.toml");
-    let content = toml::to_string(&node)?;
+    let content = node.to_toml()?;
     std::fs::write(&node_toml_path, content)?;
 
     // Write issue.md
@@ -147,7 +147,7 @@ pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNode
         match merge_result {
             MergeResult::Clean(merged_node) => {
                 // Write merged node.toml
-                let content = toml::to_string(&merged_node)?;
+                let content = merged_node.to_toml()?;
                 std::fs::write(entry.dir.join("node.toml"), content)?;
 
                 match body_merge {
@@ -166,7 +166,7 @@ pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNode
                 conflicts,
             } => {
                 // Write provisional merged node.toml
-                let content = toml::to_string(&merged_node)?;
+                let content = merged_node.to_toml()?;
                 std::fs::write(entry.dir.join("node.toml"), content)?;
 
                 let body_conflict_pair = match &body_merge {
