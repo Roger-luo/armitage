@@ -29,6 +29,9 @@ pub struct ChartNode {
     pub children: Vec<ChartNode>,
     pub milestones: Vec<ChartMilestone>,
     pub issues: Vec<ChartIssue>,
+    pub overflow_end: Option<String>,
+    pub issue_start: Option<String>,
+    pub issue_end: Option<String>,
 }
 
 /// An issue reference for the chart panel.
@@ -36,6 +39,8 @@ pub struct ChartNode {
 pub struct ChartIssue {
     pub issue_ref: String,
     pub title: Option<String>,
+    pub start_date: Option<String>,
+    pub target_date: Option<String>,
 }
 
 /// A milestone or OKR marker on the timeline.
@@ -56,19 +61,31 @@ pub struct ChartData {
     pub global_end: Option<String>,
 }
 
+/// Project metadata for a single issue, passed into chart data builder.
+#[derive(Debug, Clone, Default)]
+pub struct IssueDates {
+    pub start_date: Option<String>,
+    pub target_date: Option<String>,
+}
+
 fn date_to_str(d: &NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()
 }
 
-fn read_issues(node_dir: &Path) -> Vec<ChartIssue> {
+fn read_issues(node_dir: &Path, dates_map: &HashMap<String, IssueDates>) -> Vec<ChartIssue> {
     let Ok(file) = IssuesFile::read(node_dir) else {
         return vec![];
     };
     file.issues
         .into_iter()
-        .map(|e| ChartIssue {
-            issue_ref: e.issue_ref,
-            title: e.title,
+        .map(|e| {
+            let dates = dates_map.get(&e.issue_ref);
+            ChartIssue {
+                issue_ref: e.issue_ref,
+                title: e.title,
+                start_date: dates.and_then(|d| d.start_date.clone()),
+                target_date: dates.and_then(|d| d.target_date.clone()),
+            }
         })
         .collect()
 }
@@ -93,13 +110,16 @@ fn read_milestones(node_dir: &Path) -> Vec<ChartMilestone> {
 }
 
 /// Build a `ChartNode` tree recursively from a parent-to-children map.
-fn build_node(entry: &NodeEntry, children_map: &HashMap<String, Vec<&NodeEntry>>) -> ChartNode {
-    // Recursively build children first (bottom-up for effective timeline).
+fn build_node(
+    entry: &NodeEntry,
+    children_map: &HashMap<String, Vec<&NodeEntry>>,
+    dates_map: &HashMap<String, IssueDates>,
+) -> ChartNode {
     let children: Vec<ChartNode> = children_map
         .get(&entry.path)
         .map(|kids| {
             kids.iter()
-                .map(|kid| build_node(kid, children_map))
+                .map(|kid| build_node(kid, children_map, dates_map))
                 .collect()
         })
         .unwrap_or_default();
@@ -108,7 +128,6 @@ fn build_node(entry: &NodeEntry, children_map: &HashMap<String, Vec<&NodeEntry>>
     let start = entry.node.timeline.as_ref().map(|t| date_to_str(&t.start));
     let end = entry.node.timeline.as_ref().map(|t| date_to_str(&t.end));
 
-    // Compute effective timeline: own timeline, or min/max of children's effective timelines.
     let (eff_start, eff_end) = if has_timeline {
         (start.clone(), end.clone())
     } else {
@@ -126,7 +145,26 @@ fn build_node(entry: &NodeEntry, children_map: &HashMap<String, Vec<&NodeEntry>>
     };
 
     let milestones = read_milestones(&entry.dir);
-    let issues = read_issues(&entry.dir);
+    let issues = read_issues(&entry.dir, dates_map);
+
+    let issue_start = issues
+        .iter()
+        .filter_map(|i| i.start_date.as_deref())
+        .min()
+        .map(String::from);
+    let issue_end = issues
+        .iter()
+        .filter_map(|i| i.target_date.as_deref())
+        .max()
+        .map(String::from);
+    let overflow_end = end.as_deref().and_then(|node_end| {
+        issues
+            .iter()
+            .filter_map(|i| i.target_date.as_deref())
+            .filter(|t| *t > node_end)
+            .max()
+            .map(String::from)
+    });
 
     ChartNode {
         path: entry.path.clone(),
@@ -143,6 +181,9 @@ fn build_node(entry: &NodeEntry, children_map: &HashMap<String, Vec<&NodeEntry>>
         children,
         milestones,
         issues,
+        overflow_end,
+        issue_start,
+        issue_end,
     }
 }
 
@@ -151,7 +192,11 @@ fn build_node(entry: &NodeEntry, children_map: &HashMap<String, Vec<&NodeEntry>>
 /// Walks the flat `NodeEntry` list, reconstructs the tree hierarchy, reads
 /// milestones, computes effective timelines, and returns the full `ChartData`
 /// for embedding in the HTML template.
-pub fn build_chart_data(entries: &[NodeEntry], org_name: &str) -> Result<ChartData> {
+pub fn build_chart_data(
+    entries: &[NodeEntry],
+    org_name: &str,
+    issue_dates: &HashMap<String, IssueDates>,
+) -> Result<ChartData> {
     // Group entries by parent path.
     let mut children_map: HashMap<String, Vec<&NodeEntry>> = HashMap::new();
     let mut root_entries: Vec<&NodeEntry> = Vec::new();
@@ -171,7 +216,7 @@ pub fn build_chart_data(entries: &[NodeEntry], org_name: &str) -> Result<ChartDa
     // Build the tree from root entries.
     let nodes: Vec<ChartNode> = root_entries
         .iter()
-        .map(|entry| build_node(entry, &children_map))
+        .map(|entry| build_node(entry, &children_map, issue_dates))
         .collect();
 
     // Compute global date range across all effective timelines.
@@ -248,7 +293,7 @@ mod tests {
         write_node(&root.join("init/proj"), &proj_node);
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, "test").unwrap();
+        let data = build_chart_data(&entries, "test", &HashMap::new()).unwrap();
 
         assert_eq!(data.nodes.len(), 1);
         let init = &data.nodes[0];
@@ -285,7 +330,7 @@ mod tests {
         write_node(&root.join("parent/b"), &child_b);
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, "test").unwrap();
+        let data = build_chart_data(&entries, "test", &HashMap::new()).unwrap();
 
         let parent = &data.nodes[0];
         assert_eq!(parent.eff_start.as_deref(), Some("2026-01-15"));
@@ -310,7 +355,7 @@ mod tests {
         write_node(&root.join("b"), &b);
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, "test").unwrap();
+        let data = build_chart_data(&entries, "test", &HashMap::new()).unwrap();
 
         assert_eq!(data.global_start.as_deref(), Some("2026-01-01"));
         assert_eq!(data.global_end.as_deref(), Some("2026-12-31"));
@@ -348,7 +393,7 @@ type = "okr"
         .unwrap();
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, "test").unwrap();
+        let data = build_chart_data(&entries, "test", &HashMap::new()).unwrap();
 
         let proj = &data.nodes[0];
         assert_eq!(proj.milestones.len(), 2);
@@ -373,7 +418,7 @@ type = "okr"
         write_node(&root.join("lonely"), &node);
 
         let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, "test").unwrap();
+        let data = build_chart_data(&entries, "test", &HashMap::new()).unwrap();
 
         let lonely = &data.nodes[0];
         assert!(!lonely.has_timeline);
