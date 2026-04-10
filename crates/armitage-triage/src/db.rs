@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS issue_project_items (
     issue_id     INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
     project_url  TEXT NOT NULL,
     target_date  TEXT,
-    end_date     TEXT,
+    start_date     TEXT,
     status       TEXT,
     fetched_at   TEXT NOT NULL,
     UNIQUE(issue_id, project_url)
@@ -101,7 +101,7 @@ const MIGRATIONS: &[Option<&str>] = &[
             issue_id     INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
             project_url  TEXT NOT NULL,
             target_date  TEXT,
-            end_date     TEXT,
+            start_date     TEXT,
             status       TEXT,
             fetched_at   TEXT NOT NULL,
             UNIQUE(issue_id, project_url)
@@ -163,7 +163,7 @@ pub struct IssueProjectItem {
     pub issue_id: i64,
     pub project_url: String,
     pub target_date: Option<String>,
-    pub end_date: Option<String>,
+    pub start_date: Option<String>,
     pub status: Option<String>,
     pub fetched_at: String,
 }
@@ -418,18 +418,18 @@ fn row_to_issue(row: &rusqlite::Row) -> rusqlite::Result<StoredIssue> {
 /// Insert or update a project-item row for an issue.
 pub fn upsert_project_item(conn: &Connection, item: &IssueProjectItem) -> Result<i64> {
     conn.execute(
-        "INSERT INTO issue_project_items (issue_id, project_url, target_date, end_date, status, fetched_at)
+        "INSERT INTO issue_project_items (issue_id, project_url, target_date, start_date, status, fetched_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(issue_id, project_url) DO UPDATE SET
             target_date = excluded.target_date,
-            end_date    = excluded.end_date,
+            start_date    = excluded.start_date,
             status      = excluded.status,
             fetched_at  = excluded.fetched_at",
         params![
             item.issue_id,
             item.project_url,
             item.target_date,
-            item.end_date,
+            item.start_date,
             item.status,
             item.fetched_at,
         ],

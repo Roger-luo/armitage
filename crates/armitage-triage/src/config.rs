@@ -44,7 +44,7 @@ pub struct TriageConfig {
     /// url = "https://github.com/orgs/MyOrg/projects/42"
     /// [triage.project.fields]
     /// target_date = "Target date"
-    /// end_date = "End date"
+    /// start_date = "Start date"
     /// status = "Status"
     /// ```
     #[serde(default)]
@@ -56,7 +56,7 @@ pub struct TriageConfig {
 pub struct ProjectConfig {
     /// Full URL of the project, e.g. `https://github.com/orgs/MyOrg/projects/42`.
     pub url: String,
-    /// Map from DB column names (`target_date`, `end_date`, `status`) to the
+    /// Map from DB column names (`target_date`, `start_date`, `status`) to the
     /// display names of the corresponding project fields.
     #[serde(default)]
     pub fields: HashMap<String, String>,

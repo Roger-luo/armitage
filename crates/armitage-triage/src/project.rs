@@ -317,8 +317,8 @@ fn map_item_to_project_record(
         .and_then(|display| fields.get(display))
         .cloned();
 
-    let end_date = field_map
-        .get("end_date")
+    let start_date = field_map
+        .get("start_date")
         .and_then(|display| fields.get(display))
         .cloned();
 
@@ -332,7 +332,7 @@ fn map_item_to_project_record(
         issue_id,
         project_url: project_url.to_string(),
         target_date,
-        end_date,
+        start_date,
         status,
         fetched_at: now.to_string(),
     }))
@@ -388,7 +388,10 @@ pub fn fetch_project_items(
         }
 
         if items_connection.page_info.has_next_page {
-            cursor = items_connection.page_info.end_cursor.clone();
+            match &items_connection.page_info.end_cursor {
+                Some(c) => cursor = Some(c.clone()),
+                None => break, // no cursor to advance — stop to avoid infinite loop
+            }
         } else {
             break;
         }
