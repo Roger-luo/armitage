@@ -52,10 +52,12 @@ pub fn apply_all(
     // under [triage.repo_labels]).
     let repo_labels = read_repo_implied_labels(org_root);
     for (issue, decision) in &mut decisions {
+        let implied = repo_labels.get(issue.repo.as_str());
+
+        // Inject node labels (skipping repo-implied ones)
         if let Some(node_path) = &decision.final_node
             && let Some(labels) = node_labels.get(node_path.as_str())
         {
-            let implied = repo_labels.get(issue.repo.as_str());
             // Start with what's already in final_labels + current issue labels
             let mut all: BTreeSet<String> = decision.final_labels.iter().cloned().collect();
             all.extend(issue.labels.iter().cloned());
@@ -67,6 +69,13 @@ pub fn apply_all(
                 all.insert(label.clone());
             }
             decision.final_labels = all.into_iter().collect();
+        }
+
+        // Remove repo-implied labels from final_labels (clean up redundancy)
+        if let Some(implied_set) = implied {
+            decision
+                .final_labels
+                .retain(|l| !implied_set.contains(l.as_str()));
         }
     }
 
