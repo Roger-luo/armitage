@@ -451,7 +451,7 @@
     // Use overflow_start as the boundary — it's the earliest violated deadline
     // from any descendant. Falls back to the node's own end / eff_end.
     const issueDeadline = node.overflow_start || node.end || node.eff_end;
-    for (const issue of allIssues(node)) {
+    for (const issue of node.issues) {
       if (issue.start_date || issue.target_date) {
         const iStart = issue.start_date || issue.target_date;
         const iEnd = issue.target_date || issue.start_date;
