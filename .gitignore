@@ -1,4 +1,5 @@
 /target
+crates/armitage-chart/js/echarts.min.js
 /quera
 /.worktrees
 .claude/worktrees

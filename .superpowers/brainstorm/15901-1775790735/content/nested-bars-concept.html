@@ -1,0 +1,126 @@
+<h2>Nested Bar Concept — Is this what you have in mind?</h2>
+<p class="subtitle">Top-level initiative view with aggregated subproject bars inside</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">Roadmap — Initiative View</div>
+    <div class="mockup-body" style="padding: 24px; background: #0d1117; font-family: system-ui, -apple-system, sans-serif; min-height: 400px;">
+
+      <!-- Time axis -->
+      <div style="display: flex; margin-left: 180px; margin-bottom: 8px; color: #8b949e; font-size: 12px;">
+        <div style="flex: 1; text-align: center;">Q1 2026</div>
+        <div style="flex: 1; text-align: center;">Q2 2026</div>
+        <div style="flex: 1; text-align: center;">Q3 2026</div>
+        <div style="flex: 1; text-align: center;">Q4 2026</div>
+      </div>
+      <div style="display: flex; margin-left: 180px; margin-bottom: 16px;">
+        <div style="flex: 1; border-left: 1px solid #30363d;"></div>
+        <div style="flex: 1; border-left: 1px solid #30363d;"></div>
+        <div style="flex: 1; border-left: 1px solid #30363d;"></div>
+        <div style="flex: 1; border-left: 1px solid #30363d; border-right: 1px solid #30363d;"></div>
+      </div>
+
+      <!-- Initiative: Stela (has timeline, with subproject bars) -->
+      <div style="display: flex; align-items: center; margin-bottom: 20px; height: 52px;">
+        <div style="width: 170px; text-align: right; padding-right: 10px; color: #e6edf3; font-weight: 600; font-size: 14px;">Stela</div>
+        <div style="flex: 1; position: relative; height: 52px;">
+          <!-- Initiative outer bar: spans Q1-Q3 -->
+          <div style="position: absolute; left: 5%; right: 35%; height: 100%; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 6px; display: flex; flex-direction: column; justify-content: center; padding: 4px 8px; gap: 3px;">
+            <!-- Milestone marker at start -->
+            <div style="position: absolute; left: 0; top: -6px; width: 10px; height: 10px; background: #3b82f6; transform: rotate(45deg); border-radius: 2px;"></div>
+            <!-- Subproject bars (cross-grained / nested) -->
+            <div style="height: 10px; background: linear-gradient(90deg, #3b82f6 0%, #3b82f6 100%); border-radius: 3px; margin-left: 8%; width: 35%; opacity: 0.85;"></div>
+            <div style="height: 10px; background: linear-gradient(90deg, #3b82f6 0%, #3b82f6 100%); border-radius: 3px; margin-left: 25%; width: 45%; opacity: 0.7;"></div>
+            <div style="height: 10px; background: linear-gradient(90deg, #3b82f6 0%, #3b82f6 100%); border-radius: 3px; margin-left: 50%; width: 40%; opacity: 0.55;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Initiative: Gemini (has timeline, with subprojects) -->
+      <div style="display: flex; align-items: center; margin-bottom: 20px; height: 52px;">
+        <div style="width: 170px; text-align: right; padding-right: 10px; color: #e6edf3; font-weight: 600; font-size: 14px;">Gemini</div>
+        <div style="flex: 1; position: relative; height: 52px;">
+          <div style="position: absolute; left: 15%; right: 10%; height: 100%; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 6px; display: flex; flex-direction: column; justify-content: center; padding: 4px 8px; gap: 3px;">
+            <div style="position: absolute; left: 0; top: -6px; width: 10px; height: 10px; background: #3b82f6; transform: rotate(45deg); border-radius: 2px;"></div>
+            <div style="height: 10px; background: #3b82f6; border-radius: 3px; margin-left: 5%; width: 30%; opacity: 0.85;"></div>
+            <div style="height: 10px; background: #3b82f6; border-radius: 3px; margin-left: 20%; width: 50%; opacity: 0.7;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Initiative: Scope (has timeline) -->
+      <div style="display: flex; align-items: center; margin-bottom: 20px; height: 52px;">
+        <div style="width: 170px; text-align: right; padding-right: 10px; color: #e6edf3; font-weight: 600; font-size: 14px;">Scope</div>
+        <div style="flex: 1; position: relative; height: 52px;">
+          <div style="position: absolute; left: 0%; right: 45%; height: 100%; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 6px; display: flex; flex-direction: column; justify-content: center; padding: 4px 8px; gap: 3px;">
+            <div style="position: absolute; left: 0; top: -6px; width: 10px; height: 10px; background: #3b82f6; transform: rotate(45deg); border-radius: 2px;"></div>
+            <div style="height: 10px; background: #3b82f6; border-radius: 3px; margin-left: 10%; width: 60%; opacity: 0.85;"></div>
+            <div style="height: 10px; background: #3b82f6; border-radius: 3px; margin-left: 40%; width: 50%; opacity: 0.7;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div style="border-top: 1px dashed #30363d; margin: 12px 0 16px 180px;"></div>
+
+      <!-- Initiative: Circuit (no timeline — dotted/light bar) -->
+      <div style="display: flex; align-items: center; margin-bottom: 20px; height: 52px;">
+        <div style="width: 170px; text-align: right; padding-right: 10px; color: #8b949e; font-weight: 600; font-size: 14px;">Circuit</div>
+        <div style="flex: 1; position: relative; height: 52px;">
+          <div style="position: absolute; left: 0%; right: 5%; height: 100%; background: rgba(139, 148, 158, 0.06); border: 1px dashed rgba(139, 148, 158, 0.3); border-radius: 6px; display: flex; flex-direction: column; justify-content: center; padding: 4px 8px; gap: 3px;">
+            <div style="height: 10px; background: #6b7280; border-radius: 3px; margin-left: 5%; width: 25%; opacity: 0.5;"></div>
+            <div style="height: 10px; background: #6b7280; border-radius: 3px; margin-left: 15%; width: 35%; opacity: 0.4;"></div>
+            <div style="height: 10px; background: #6b7280; border-radius: 3px; margin-left: 55%; width: 30%; opacity: 0.3;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Initiative: Flare (no timeline) -->
+      <div style="display: flex; align-items: center; margin-bottom: 20px; height: 52px;">
+        <div style="width: 170px; text-align: right; padding-right: 10px; color: #8b949e; font-weight: 600; font-size: 14px;">Flare</div>
+        <div style="flex: 1; position: relative; height: 52px;">
+          <div style="position: absolute; left: 0%; right: 5%; height: 100%; background: rgba(139, 148, 158, 0.06); border: 1px dashed rgba(139, 148, 158, 0.3); border-radius: 6px; display: flex; flex-direction: column; justify-content: center; padding: 4px 8px; gap: 3px;">
+            <div style="height: 10px; background: #6b7280; border-radius: 3px; margin-left: 30%; width: 40%; opacity: 0.5;"></div>
+            <div style="height: 10px; background: #6b7280; border-radius: 3px; margin-left: 60%; width: 25%; opacity: 0.4;"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>Design notes</h3>
+  <ul style="color: #c9d1d9; line-height: 1.8;">
+    <li><strong>Top section:</strong> Initiatives with timelines — outer bar anchored by first milestone (diamond), subproject bars nested inside</li>
+    <li><strong>Bottom section:</strong> Long-running initiatives without timelines — dashed border, lighter color, still show subproject bars inside</li>
+    <li><strong>Clicking any initiative</strong> drills down to show its projects as full rows with their own nested bars</li>
+    <li><strong>Subproject bars</strong> inside are aggregated — no labels, just visual density showing where work is concentrated</li>
+  </ul>
+</div>
+
+<h3 style="margin-top: 24px;">Does this capture the concept?</h3>
+<div class="options">
+  <div class="option" data-choice="yes" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Yes, this is the right direction</h3>
+      <p>The nested bars-within-bars concept is correct</p>
+    </div>
+  </div>
+  <div class="option" data-choice="adjust" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Close but needs adjustment</h3>
+      <p>The concept is right but some details need changing</p>
+    </div>
+  </div>
+  <div class="option" data-choice="rethink" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Not quite what I meant</h3>
+      <p>Let me clarify the visualization I have in mind</p>
+    </div>
+  </div>
+</div>

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }} — Roadmap</title>
   {% if inline_js %}
-  <script>{{ echart_js }}</script>
+  <script>{{ echart_js|safe }}</script>
   {% else %}
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   {% endif %}
@@ -150,6 +150,28 @@
       color: #c9d1d9;
     }
     #panel .panel-milestones .ms-date {
+      color: #8b949e;
+      font-size: 11px;
+    }
+    #panel .panel-issues {
+      list-style: none;
+      font-size: 13px;
+    }
+    #panel .panel-issues li {
+      padding: 4px 0;
+      border-bottom: 1px solid #21262d;
+    }
+    #panel .panel-issues li:last-child {
+      border-bottom: none;
+    }
+    #panel .panel-issues a {
+      color: #58a6ff;
+      text-decoration: none;
+    }
+    #panel .panel-issues a:hover {
+      text-decoration: underline;
+    }
+    #panel .panel-issues .issue-ref {
       color: #8b949e;
       font-size: 11px;
     }
