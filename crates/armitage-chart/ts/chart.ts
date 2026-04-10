@@ -1,65 +1,39 @@
+/**
+ * Chart entry point: state management, rendering orchestration, event wiring.
+ */
+
 import type { ChartData, ChartNode, ChartMilestone, ChartIssue } from "./types";
+import { getLayoutElements, getTimelineWidth, syncSvgHeight, getAxisHeight, getRowHeight, type LayoutElements } from "./layout";
+import { createScale, setupZoom, resetZoom, updateScaleRange, parseDate, type ScaleState } from "./scale";
+import { renderAxis, renderGridLines, renderTodayLine, renderMilestoneLines } from "./render-axis";
+import { renderNodeRow, sortIssues, formatOverdue, type RenderedRow } from "./render-nodes";
+import { renderIssueRows, issueUrl } from "./render-issues";
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-const data: ChartData = window.__CHART_DATA__;
-let currentPath = ""; // "" = root
+const data: ChartData = (window as any).__CHART_DATA__;
+let currentPath = "";
 let useGlobalRange = false;
 let selectedNode: ChartNode | null = null;
 let expandedNode: string | null = null;
 let expandedShowAll = false;
 
-// Current visible nodes — shared between buildOption() and renderBar()
-let visibleNodes: ChartNode[] = [];
-
-// Series data entries — tracks what each data index represents
-interface NodeEntry { type: "node"; node: ChartNode }
-interface IssueEntry { type: "issue"; issue: ChartIssue; parentNode: ChartNode }
-interface ShowMoreEntry { type: "show-more"; parentNode: ChartNode; remaining: number }
-interface SeparatorEntry { type: "separator" }
-type SeriesEntry = NodeEntry | IssueEntry | ShowMoreEntry | SeparatorEntry;
-let seriesEntries: SeriesEntry[] = [];
-
-// ---------------------------------------------------------------------------
-// DOM references
-// ---------------------------------------------------------------------------
-
-const chartEl = document.getElementById("chart")!;
-const breadcrumbEl = document.getElementById("breadcrumb")!;
-const btnFitted = document.getElementById("btn-fitted");
-const btnGlobal = document.getElementById("btn-global");
-const panelEl = document.getElementById("panel")!;
-const panelContentEl = document.getElementById("panel-content")!;
-const chart = echarts.init(chartEl);
+let layout: LayoutElements;
+let scaleState: ScaleState;
+let renderedRows: RenderedRow[] = [];
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const STATUS_COLORS: Record<string, string> = {
-  active: "#3b82f6",
-  completed: "#6b7280",
-  paused: "#f59e0b",
-  cancelled: "#ef4444",
-};
-
-const NO_TIMELINE_COLOR = "rgba(107, 114, 128, 0.15)";
-const NO_TIMELINE_BORDER = "rgba(107, 114, 128, 0.4)";
-
-function parseDate(s: string): number {
-  return new Date(s + "T00:00:00").getTime();
-}
-
-/** Find nodes to display at the current navigation level. */
 function getVisibleNodes(): ChartNode[] {
   if (currentPath === "") return data.nodes;
   const node = findNode(data.nodes, currentPath);
   return node ? node.children : [];
 }
 
-/** Recursively find a node by path. */
 function findNode(nodes: ChartNode[], path: string): ChartNode | null {
   for (const n of nodes) {
     if (n.path === path) return n;
@@ -69,7 +43,24 @@ function findNode(nodes: ChartNode[], path: string): ChartNode | null {
   return null;
 }
 
-/** Collect checkpoints only (not OKRs) from a node and descendants. */
+function collectOkrs(nodes: ChartNode[]): ChartMilestone[] {
+  const seen = new Set<string>();
+  const result: ChartMilestone[] = [];
+  function walk(ns: ChartNode[]) {
+    for (const n of ns) {
+      for (const m of n.milestones) {
+        if (m.milestone_type === "okr") {
+          const key = `${m.name}|${m.date}`;
+          if (!seen.has(key)) { seen.add(key); result.push(m); }
+        }
+      }
+      walk(n.children);
+    }
+  }
+  walk(nodes);
+  return result;
+}
+
 function allCheckpoints(node: ChartNode): ChartMilestone[] {
   const result: ChartMilestone[] = [];
   function walk(n: ChartNode) {
@@ -82,30 +73,7 @@ function allCheckpoints(node: ChartNode): ChartMilestone[] {
   return result;
 }
 
-/** Collect all OKRs across all nodes in the entire tree (org-wide). */
-function collectOkrs(nodes: ChartNode[]): ChartMilestone[] {
-  const seen = new Set<string>();
-  const result: ChartMilestone[] = [];
-  function walk(ns: ChartNode[]) {
-    for (const n of ns) {
-      for (const m of n.milestones) {
-        if (m.milestone_type === "okr") {
-          const key = `${m.name}|${m.date}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            result.push(m);
-          }
-        }
-      }
-      walk(n.children);
-    }
-  }
-  walk(nodes);
-  return result;
-}
-
-/** Compute time range for visible nodes. */
-function computeTimeRange(nodes: ChartNode[]): [number, number] {
+function computeTimeRange(nodes: ChartNode[]): [Date, Date] {
   if (useGlobalRange && data.global_start && data.global_end) {
     return [parseDate(data.global_start), parseDate(data.global_end)];
   }
@@ -113,24 +81,20 @@ function computeTimeRange(nodes: ChartNode[]): [number, number] {
   let min = Infinity;
   let max = -Infinity;
   for (const n of nodes) {
-    const s = n.eff_start;
-    const e = n.eff_end;
-    if (s) min = Math.min(min, parseDate(s));
-    if (e) max = Math.max(max, parseDate(e));
+    if (n.eff_start) min = Math.min(min, parseDate(n.eff_start).getTime());
+    if (n.eff_end) max = Math.max(max, parseDate(n.eff_end).getTime());
   }
 
-  // Extend range to include expanded issue dates (overdue issues may exceed eff_end)
+  // Extend for expanded issue dates
   if (expandedNode) {
     const expNode = nodes.find((n) => n.path === expandedNode);
     if (expNode) {
       for (const issue of expNode.issues) {
-        if (issue.start_date) min = Math.min(min, parseDate(issue.start_date));
-        if (issue.target_date) max = Math.max(max, parseDate(issue.target_date));
+        if (issue.start_date) min = Math.min(min, parseDate(issue.start_date).getTime());
+        if (issue.target_date) max = Math.max(max, parseDate(issue.target_date).getTime());
       }
-      // Also include today if there are overdue issues (red extension goes to today)
-      const todayMs = new Date().setHours(0, 0, 0, 0);
       if (expNode.overflow_end) {
-        max = Math.max(max, todayMs);
+        max = Math.max(max, new Date().setHours(0, 0, 0, 0));
       }
     }
   }
@@ -142,121 +106,114 @@ function computeTimeRange(nodes: ChartNode[]): [number, number] {
   }
 
   const pad = 30 * 24 * 3600 * 1000;
-  return [min - pad, max + pad];
+  return [new Date(min - pad), new Date(max + pad)];
+}
+
+function escapeHtml(s: string): string {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
 }
 
 // ---------------------------------------------------------------------------
-// Issue helpers
+// Side Panel
 // ---------------------------------------------------------------------------
 
-interface SortedIssues {
-  overdue: ChartIssue[];
-  onTrack: ChartIssue[];
-  noDates: ChartIssue[];
-}
+const panelEl = document.getElementById("panel")!;
+const panelContentEl = document.getElementById("panel-content")!;
 
-/** Sort issues into overdue / on-track / no-dates buckets. */
-function sortIssues(issues: ChartIssue[], nodeEnd: string | null): SortedIssues {
-  const overdue: ChartIssue[] = [];
-  const onTrack: ChartIssue[] = [];
-  const noDates: ChartIssue[] = [];
+function showNodePanel(node: ChartNode): void {
+  selectedNode = node;
+  let html = "";
+  html += `<h2>${escapeHtml(node.name)}</h2>`;
+  html += `<span class="panel-status ${node.status}">${node.status}</span>`;
 
-  for (const issue of issues) {
-    if (!issue.target_date) {
-      noDates.push(issue);
-    } else if (nodeEnd && issue.target_date > nodeEnd) {
-      overdue.push(issue);
-    } else {
-      onTrack.push(issue);
+  if (node.description) {
+    html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${escapeHtml(node.description)}</div></div>`;
+  }
+
+  html += `<div class="panel-section"><h3>Timeline</h3><div class="panel-meta">`;
+  if (node.has_timeline) {
+    html += `<span class="label">Start:</span> ${node.start}<br/><span class="label">End:</span> ${node.end}`;
+  } else if (node.eff_start) {
+    html += `<span class="label">Derived:</span> ${node.eff_start} &rarr; ${node.eff_end}`;
+  } else {
+    html += `<span class="label">No timeline</span>`;
+  }
+  html += `</div></div>`;
+
+  if (node.owners.length > 0 || node.team) {
+    html += `<div class="panel-section"><h3>People</h3><div class="panel-meta">`;
+    if (node.owners.length > 0) html += `<span class="label">Owners:</span> ${node.owners.map(escapeHtml).join(", ")}<br/>`;
+    if (node.team) html += `<span class="label">Team:</span> ${escapeHtml(node.team)}`;
+    html += `</div></div>`;
+  }
+
+  if (node.children.length > 0) {
+    html += `<div class="panel-section"><h3>Children (${node.children.length})</h3>`;
+    html += `<ul class="panel-children">`;
+    for (const c of node.children) {
+      html += `<li><span class="child-name">${escapeHtml(c.name)}</span></li>`;
     }
+    html += `</ul>`;
+    html += `<button class="btn-drill" onclick="window.__nav('${node.path}')">Drill into ${escapeHtml(node.name)} &rsaquo;</button>`;
+    html += `</div>`;
   }
 
-  // Overdue: most overdue first (latest target_date first, since all exceed nodeEnd)
-  overdue.sort((a, b) => b.target_date!.localeCompare(a.target_date!));
-  // On-track: nearest deadline first
-  onTrack.sort((a, b) => a.target_date!.localeCompare(b.target_date!));
-
-  return { overdue, onTrack, noDates };
-}
-
-interface TickCluster {
-  /** X position as fraction of bar width (0-1). */
-  relX: number;
-  count: number;
-  overdue: boolean;
-}
-
-/** Cluster issue ticks that are within `threshold` fraction of each other. */
-function clusterTicks(
-  issues: ChartIssue[],
-  parentStart: number,
-  parentRange: number,
-  threshold: number,
-): TickCluster[] {
-  const dated = issues.filter((i) => i.target_date);
-  if (dated.length === 0) return [];
-
-  // Sort by target_date
-  const sorted = [...dated].sort((a, b) =>
-    a.target_date!.localeCompare(b.target_date!),
-  );
-
-  const clusters: TickCluster[] = [];
-  let curCluster: { relXs: number[]; overdueCount: number } = {
-    relXs: [],
-    overdueCount: 0,
-  };
-
-  for (const issue of sorted) {
-    const relX = (parseDate(issue.target_date!) - parentStart) / parentRange;
-    if (
-      curCluster.relXs.length > 0 &&
-      relX - curCluster.relXs[curCluster.relXs.length - 1] > threshold
-    ) {
-      // Flush current cluster
-      const avg =
-        curCluster.relXs.reduce((a, b) => a + b, 0) / curCluster.relXs.length;
-      clusters.push({
-        relX: avg,
-        count: curCluster.relXs.length,
-        overdue: curCluster.overdueCount > 0,
-      });
-      curCluster = { relXs: [], overdueCount: 0 };
+  if (node.issues.length > 0) {
+    html += `<div class="panel-section"><h3>Issues (${node.issues.length})</h3>`;
+    html += `<ul class="panel-issues">`;
+    for (const issue of node.issues) {
+      const url = issueUrl(issue.issue_ref);
+      const label = issue.title
+        ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>`
+        : escapeHtml(issue.issue_ref);
+      html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
     }
-    curCluster.relXs.push(relX);
-    // Mark overdue if tick is beyond parent bar end (relX > 1.0)
-    if (relX > 1.0) curCluster.overdueCount++;
+    html += `</ul></div>`;
   }
 
-  // Flush last cluster
-  if (curCluster.relXs.length > 0) {
-    const avg =
-      curCluster.relXs.reduce((a, b) => a + b, 0) / curCluster.relXs.length;
-    clusters.push({
-      relX: avg,
-      count: curCluster.relXs.length,
-      overdue: curCluster.overdueCount > 0,
-    });
+  panelContentEl.innerHTML = html;
+  panelEl.classList.add("open");
+}
+
+function showIssuePanel(issue: ChartIssue, parentNode: ChartNode): void {
+  selectedNode = null;
+  const url = issueUrl(issue.issue_ref);
+  const isOverdue = issue.target_date && parentNode.end && issue.target_date > parentNode.end;
+
+  let html = "";
+  html += `<h2>${escapeHtml(issue.title || issue.issue_ref)}</h2>`;
+  html += `<a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${escapeHtml(issue.issue_ref)} &rarr; Open on GitHub</a>`;
+  html += `<span class="panel-status ${issue.state === "CLOSED" ? "completed" : "active"}">${(issue.state || "OPEN").toLowerCase()}</span>`;
+
+  html += `<div class="panel-section"><h3>Timeline</h3><div class="panel-meta">`;
+  if (issue.start_date) html += `<span class="label">Start:</span> ${issue.start_date}<br/>`;
+  if (issue.target_date) html += `<span class="label">Target:</span> ${issue.target_date}`;
+  if (isOverdue && parentNode.end) {
+    html += `<br/><span class="issue-overflow">Overdue: ${formatOverdue(issue.target_date!, parentNode.end)} past ${escapeHtml(parentNode.name)} deadline</span>`;
   }
+  html += `</div></div>`;
 
-  return clusters;
+  html += `<div class="panel-section"><h3>Parent</h3>`;
+  html += `<div class="panel-meta"><span class="crumb" onclick="window.__nav('${parentNode.path}')">${escapeHtml(parentNode.name)}</span></div></div>`;
+
+  panelContentEl.innerHTML = html;
+  panelEl.classList.add("open");
 }
 
-/** Format an overdue duration as "+N days" or "+N wks". */
-function formatOverdue(targetDate: string, nodeEnd: string): string {
-  const target = parseDate(targetDate);
-  const end = parseDate(nodeEnd);
-  const diffMs = target - end;
-  if (diffMs <= 0) return "";
-  const diffDays = Math.ceil(diffMs / (24 * 3600 * 1000));
-  if (diffDays < 14) return `+${diffDays} days`;
-  const diffWeeks = Math.round(diffDays / 7);
-  return `+${diffWeeks} wks`;
+function closePanel(): void {
+  selectedNode = null;
+  panelEl.classList.remove("open");
 }
+
+(window as any).__closePanel = closePanel;
 
 // ---------------------------------------------------------------------------
 // Breadcrumb
 // ---------------------------------------------------------------------------
+
+const breadcrumbEl = document.getElementById("breadcrumb")!;
 
 function updateBreadcrumb(): void {
   const parts: { label: string; path: string }[] = [
@@ -283,881 +240,108 @@ function updateBreadcrumb(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Detail Panel
+// Rendering
 // ---------------------------------------------------------------------------
 
-function escapeHtml(s: string): string {
-  const div = document.createElement("div");
-  div.textContent = s;
-  return div.innerHTML;
-}
-
-function issueUrl(ref: string): string {
-  // "owner/repo#123" → "https://github.com/owner/repo/issues/123"
-  const match = ref.match(/^(.+?)\/(.+?)#(\d+)$/);
-  if (!match) return "#";
-  return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
-}
-
-function showPanel(node: ChartNode): void {
-  selectedNode = node;
-  let html = "";
-
-  // Name
-  html += `<h2>${escapeHtml(node.name)}</h2>`;
-
-  // Status badge
-  html += `<span class="panel-status ${node.status}">${node.status}</span>`;
-
-  // Description
-  if (node.description) {
-    html += `<div class="panel-section">`;
-    html += `<h3>Description</h3>`;
-    html += `<div class="panel-desc">${escapeHtml(node.description)}</div>`;
-    html += `</div>`;
-  }
-
-  // Timeline
-  html += `<div class="panel-section">`;
-  html += `<h3>Timeline</h3>`;
-  html += `<div class="panel-meta">`;
-  if (node.has_timeline) {
-    html += `<span class="label">Start:</span> ${node.start}<br/>`;
-    html += `<span class="label">End:</span> ${node.end}`;
-  } else if (node.eff_start) {
-    html += `<span class="label">Derived:</span> ${node.eff_start} &rarr; ${node.eff_end}`;
-  } else {
-    html += `<span class="label">No timeline</span>`;
-  }
-  html += `</div></div>`;
-
-  // Owners & Team
-  if (node.owners.length > 0 || node.team) {
-    html += `<div class="panel-section">`;
-    html += `<h3>People</h3>`;
-    html += `<div class="panel-meta">`;
-    if (node.owners.length > 0) {
-      html += `<span class="label">Owners:</span> ${node.owners.map(escapeHtml).join(", ")}<br/>`;
-    }
-    if (node.team) {
-      html += `<span class="label">Team:</span> ${escapeHtml(node.team)}`;
-    }
-    html += `</div></div>`;
-  }
-
-  // Milestones (checkpoints)
-  const checkpoints = allCheckpoints(node);
-  if (checkpoints.length > 0) {
-    html += `<div class="panel-section">`;
-    html += `<h3>Milestones</h3>`;
-    html += `<ul class="panel-milestones">`;
-    for (const m of checkpoints) {
-      html += `<li>&diams; ${escapeHtml(m.name)} <span class="ms-date">${m.date}</span>`;
-      if (m.description) html += `<br/><span class="ms-date">${escapeHtml(m.description)}</span>`;
-      html += `</li>`;
-    }
-    html += `</ul></div>`;
-  }
-
-  // Issues
-  if (node.issues.length > 0) {
-    html += `<div class="panel-section">`;
-    html += `<h3>Issues (${node.issues.length})</h3>`;
-    html += `<ul class="panel-issues">`;
-    for (const issue of node.issues) {
-      const url = issueUrl(issue.issue_ref);
-      const label = issue.title
-        ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>`
-        : escapeHtml(issue.issue_ref);
-      html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
-    }
-    html += `</ul></div>`;
-  }
-
-  // Children
-  if (node.children.length > 0) {
-    html += `<div class="panel-section">`;
-    html += `<h3>Children (${node.children.length})</h3>`;
-    html += `<ul class="panel-children">`;
-    for (const c of node.children) {
-      const color = STATUS_COLORS[c.status] || STATUS_COLORS.active;
-      const dates = c.has_timeline ? `${c.start} &rarr; ${c.end}` : c.eff_start ? `~${c.eff_start}` : "";
-      html += `<li>`;
-      html += `<span class="dot" style="background:${color}"></span>`;
-      html += `<span class="child-name">${escapeHtml(c.name)}</span>`;
-      if (dates) html += `<span class="child-dates">${dates}</span>`;
-      html += `</li>`;
-    }
-    html += `</ul>`;
-    html += `<button class="btn-drill" onclick="window.__nav('${node.path}')">Drill into ${escapeHtml(node.name)} &rsaquo;</button>`;
-    html += `</div>`;
-  }
-
-  panelContentEl.innerHTML = html;
-  panelEl.classList.add("open");
-  chart.resize();
-}
-
-function closePanel(): void {
-  selectedNode = null;
-  panelEl.classList.remove("open");
-  chart.resize();
-}
-
-// Expose to HTML onclick handlers
-(window as any).__closePanel = closePanel;
-
-// ---------------------------------------------------------------------------
-// Chart rendering
-// ---------------------------------------------------------------------------
-
-function buildOption(): echarts.EChartsOption {
+function renderChart(): void {
   const nodes = getVisibleNodes();
-  visibleNodes = nodes;
+  const timeRange = computeTimeRange(nodes);
+  const timelineWidth = getTimelineWidth();
 
-  const [xMin, xMax] = computeTimeRange(nodes);
+  // Update scale
+  scaleState.baseScale.domain(timeRange).range([0, timelineWidth]);
+  scaleState.currentScale = scaleState.transform.rescaleX(scaleState.baseScale);
 
-  // Build categories and series data, injecting issue rows when a node is expanded
-  const categories: string[] = [];
-  const seriesData: { value: [number, number, number] }[] = [];
-  const entries: SeriesEntry[] = [];
+  // Clear previous content
+  layout.labelsEl.innerHTML = "";
+  layout.barsGroup.innerHTML = "";
+  renderedRows = [];
 
-  const INITIAL_ISSUE_LIMIT = 7;
+  // Render rows
+  let yOffset = 0;
+  for (const node of nodes) {
+    const isDimmed = expandedNode !== null && expandedNode !== node.path;
+    const isExpanded = expandedNode === node.path;
 
-  for (const node of [...nodes].reverse()) {
-    const catIdx = categories.length;
-    categories.push(node.name);
-    seriesData.push({
-      value: [
-        node.eff_start ? parseDate(node.eff_start) : xMin,
-        node.eff_end ? parseDate(node.eff_end) : xMax,
-        catIdx,
-      ],
-    });
-    entries.push({ type: "node", node });
+    const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded });
+    renderedRows.push(row);
+    yOffset += row.height;
 
-    // If this node is expanded, inject issue rows after it
-    if (expandedNode === node.path && node.issues.length > 0) {
-      const sorted = sortIssues(node.issues, node.end);
-      const allSorted = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
-      const limit = expandedShowAll ? allSorted.length : INITIAL_ISSUE_LIMIT;
-      const visible = allSorted.slice(0, limit);
-      let insertedOverdue = false;
-      let insertedSeparator = false;
-
-      for (let i = 0; i < visible.length; i++) {
-        const issue = visible[i];
-        const isOverdue = sorted.overdue.includes(issue);
-        const isOnTrackOrNoDates = !isOverdue;
-
-        // Insert separator between overdue and on-track sections
-        if (isOnTrackOrNoDates && !insertedSeparator && insertedOverdue) {
-          const sepIdx = categories.length;
-          categories.push("───");
-          seriesData.push({ value: [xMin, xMin, sepIdx] });
-          entries.push({ type: "separator" });
-          insertedSeparator = true;
-        }
-
-        if (isOverdue) insertedOverdue = true;
-
-        const catLabel = issue.title
-          ? (isOverdue ? "⚠ " : "") + issue.title
-          : issue.issue_ref;
-        const issueIdx = categories.length;
-        categories.push(catLabel);
-
-        const iStart = issue.start_date ? parseDate(issue.start_date) : xMin;
-        const iEnd = issue.target_date ? parseDate(issue.target_date) : xMax;
-        seriesData.push({ value: [iStart, iEnd, issueIdx] });
-        entries.push({ type: "issue", issue, parentNode: node });
-      }
-
-      // "Show more" row if there are remaining issues
-      if (!expandedShowAll && allSorted.length > INITIAL_ISSUE_LIMIT) {
-        const remaining = allSorted.length - INITIAL_ISSUE_LIMIT;
-        const moreIdx = categories.length;
-        categories.push(`▾ Show all ${allSorted.length} issues (${remaining} more)`);
-        seriesData.push({ value: [xMin, xMin, moreIdx] });
-        entries.push({ type: "show-more", parentNode: node, remaining });
-      }
+    // Expanded issue rows
+    if (isExpanded && node.issues.length > 0) {
+      const issueRows = renderIssueRows(node, scaleState, layout, yOffset, expandedShowAll);
+      renderedRows.push(...issueRows);
+      yOffset += issueRows.reduce((sum, r) => sum + r.height, 0);
     }
   }
 
-  seriesEntries = entries;
+  // Sync SVG height
+  syncSvgHeight(layout, yOffset);
 
-  // OKRs: org-wide full-height vertical lines (always visible)
+  // Render axis, grid, markers
+  const totalHeight = yOffset + getAxisHeight();
+  renderAxis(scaleState, layout, totalHeight);
+  renderGridLines(scaleState, layout, totalHeight);
+  renderTodayLine(scaleState, layout, totalHeight);
+
+  // Milestone lines
   const okrs = collectOkrs(data.nodes);
-  const okrLines = okrs.map((m) => ({
-    xAxis: parseDate(m.date),
-    name: m.name,
-    _okr: m,
-  }));
+  renderMilestoneLines(scaleState, layout, totalHeight, okrs);
 
-  // When drilled into a node, show that node's subtree checkpoints
-  // as full-height lines (they're project-wide context at this level).
-  const parentCheckpointLines: typeof okrLines = [];
   if (currentPath !== "") {
     const parentNode = findNode(data.nodes, currentPath);
     if (parentNode) {
-      const seen = new Set(okrs.map((m) => `${m.name}|${m.date}`));
-      for (const m of allCheckpoints(parentNode)) {
-        const key = `${m.name}|${m.date}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          parentCheckpointLines.push({
-            xAxis: parseDate(m.date),
-            name: m.name,
-            _okr: m, // reuse same shape for tooltip
-          });
-        }
+      const checkpoints = allCheckpoints(parentNode);
+      const filtered = checkpoints.filter((m) => !okrs.some((o) => o.name === m.name && o.date === m.date));
+      renderMilestoneLines(scaleState, layout, totalHeight, filtered);
+    }
+  }
+}
+
+function onZoom(): void {
+  // Only update SVG positions, not rebuild DOM
+  const totalHeight = renderedRows.reduce((sum, r) => sum + r.height, 0) + getAxisHeight();
+  renderAxis(scaleState, layout, totalHeight);
+  renderGridLines(scaleState, layout, totalHeight);
+  renderTodayLine(scaleState, layout, totalHeight);
+
+  // Update bar positions
+  layout.barsGroup.innerHTML = "";
+  let yOffset = 0;
+  const nodes = getVisibleNodes();
+  for (const node of nodes) {
+    const isDimmed = expandedNode !== null && expandedNode !== node.path;
+    const isExpanded = expandedNode === node.path;
+
+    // Re-render SVG bars only (labels stay)
+    renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded });
+    yOffset += getRowHeight("node");
+
+    if (isExpanded && node.issues.length > 0) {
+      renderIssueRows(node, scaleState, layout, yOffset, expandedShowAll);
+      const sorted = sortIssues(node.issues, node.end);
+      const all = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
+      const limit = expandedShowAll ? all.length : 7;
+      const visible = all.slice(0, limit);
+      // Account for rows
+      for (const issue of visible) {
+        yOffset += getRowHeight("issue");
       }
-    }
-  }
-  // "Today" marker
-  const todayLine = {
-    xAxis: new Date().setHours(0, 0, 0, 0),
-    name: "Today",
-    _okr: null as ChartMilestone | null,
-  };
-
-  const allVerticalLines = [todayLine, ...okrLines, ...parentCheckpointLines];
-
-  return {
-    tooltip: {
-      trigger: "item",
-      formatter: (params: any) => {
-        const idx = params.dataIndex;
-        const entry = seriesEntries[idx];
-        if (!entry) return "";
-
-        if (entry.type === "separator" || entry.type === "show-more") return "";
-
-        if (entry.type === "issue") {
-          const issue = entry.issue;
-          const parts = [
-            `<b>${issue.title || issue.issue_ref}</b>`,
-            issue.issue_ref,
-          ];
-          if (issue.start_date) parts.push(`Start: ${issue.start_date}`);
-          if (issue.target_date) parts.push(`Target: ${issue.target_date}`);
-          if (
-            issue.target_date &&
-            entry.parentNode.end &&
-            issue.target_date > entry.parentNode.end
-          ) {
-            parts.push(
-              `<span style="color:#f85149">Overdue: ${formatOverdue(issue.target_date, entry.parentNode.end)}</span>`,
-            );
-          }
-          parts.push("", "<i>Click to open on GitHub</i>");
-          return parts.join("<br/>");
-        }
-
-        const n = entry.node;
-        const dates = n.has_timeline
-          ? `${n.start} &rarr; ${n.end}`
-          : n.eff_start
-            ? `~${n.eff_start} &rarr; ~${n.eff_end} (derived)`
-            : "No fixed timeline";
-        const parts = [`<b>${n.name}</b>`, dates, `Status: ${n.status}`];
-        if (n.owners.length > 0) parts.push(`Owners: ${n.owners.join(", ")}`);
-        if (n.team) parts.push(`Team: ${n.team}`);
-        const ms = allCheckpoints(n);
-        if (ms.length > 0) {
-          parts.push("");
-          parts.push(`<b>Milestones:</b>`);
-          for (const m of ms) {
-            parts.push(`&diams; ${m.name} (${m.date})`);
-          }
-        }
-        if (n.children.length === 0 && n.issues.length > 0) {
-          parts.push("", "<i>Click to expand issues</i>");
-        } else {
-          parts.push("", "<i>Click for details</i>");
-        }
-        return parts.join("<br/>");
-      },
-    },
-    grid: {
-      top: 40,
-      bottom: 40,
-      left: 20,
-      right: 20,
-      containLabel: true,
-    },
-    xAxis: {
-      type: "time",
-      min: xMin,
-      max: xMax,
-      axisLabel: { color: "#8b949e" },
-      axisLine: { lineStyle: { color: "#30363d" } },
-      splitLine: {
-        show: true,
-        lineStyle: { color: "#21262d", type: "dashed" },
-      },
-    },
-    yAxis: {
-      type: "category",
-      data: categories,
-      axisLabel: {
-        formatter: (value: string) => value,
-        rich: {},
-        color: (value: string, index: number) => {
-          const entry = seriesEntries[index];
-          if (!entry) return "#e6edf3";
-          if (entry.type === "separator") return "#21262d";
-          if (entry.type === "show-more") return "#484f58";
-          if (entry.type === "issue") {
-            const isOverdue =
-              entry.issue.target_date &&
-              entry.parentNode.end &&
-              entry.issue.target_date > entry.parentNode.end;
-            return isOverdue ? "#f85149" : "#8b949e";
-          }
-          return "#e6edf3";
-        },
-        fontWeight: (value: string, index: number) => {
-          const entry = seriesEntries[index];
-          return entry?.type === "node" ? "bold" : "normal";
-        },
-        fontSize: (value: string, index: number) => {
-          const entry = seriesEntries[index];
-          if (entry?.type === "issue") return 11;
-          if (entry?.type === "separator") return 9;
-          if (entry?.type === "show-more") return 11;
-          return 13;
-        },
-      } as any,
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-    series: [
-      {
-        type: "custom",
-        renderItem: renderBar,
-        encode: { x: [0, 1], y: 2 },
-        data: seriesData,
-      },
-      // Invisible line series that carries markLine for vertical lines
-      // (today, OKRs, checkpoints). markLine on custom series is unreliable.
-      {
-        type: "line",
-        data: [],
-        symbol: "none",
-        silent: true,
-        markLine: {
-          silent: false,
-          symbol: ["none", "none"],
-          label: {
-            show: true,
-            position: "start",
-            formatter: (p: any) => p.name,
-            fontSize: 10,
-            color: "#8b949e",
-          },
-          lineStyle: {
-            type: "dashed",
-            width: 1,
-          },
-          data: allVerticalLines.map((line) => {
-            const isToday = line === todayLine;
-            const isOkr = okrLines.includes(line);
-            if (isToday) {
-              return {
-                ...line,
-                lineStyle: {
-                  color: "rgba(239, 68, 68, 0.7)",
-                  type: "solid" as const,
-                  width: 2,
-                },
-                label: {
-                  color: "#ef4444",
-                },
-              };
-            }
-            return {
-              ...line,
-              lineStyle: {
-                color: isOkr
-                  ? "rgba(167, 139, 250, 0.5)"
-                  : "rgba(245, 158, 11, 0.5)",
-              },
-              label: {
-                color: isOkr ? "#a78bfa" : "#f59e0b",
-              },
-            };
-          }),
-          tooltip: {
-            formatter: (p: any) => {
-              if (p.name === "Today") return "Today";
-              const m = p.data?._okr as ChartMilestone | undefined;
-              if (!m) return p.name;
-              return [
-                `<b>${m.name}</b>`,
-                m.date,
-                m.description || "",
-              ]
-                .filter(Boolean)
-                .join("<br/>");
-            },
-          },
-        },
-      },
-    ],
-    backgroundColor: "transparent",
-  };
-}
-
-/** Render a single issue row in the expanded view. */
-function renderIssueRow(
-  params: any,
-  api: any,
-  issue: ChartIssue,
-  parentNode: ChartNode,
-): echarts.CustomSeriesRenderItemReturn {
-  const yIdx = api.value(2);
-  const bandWidth = api.size([0, 1])[1];
-  const yCenter = api.coord([0, yIdx])[1];
-
-  const children: any[] = [];
-
-  if (!issue.start_date || !issue.target_date) {
-    // No-date issue: just show a dimmed text placeholder
-    // (The label is already rendered by the Y-axis)
-    return { type: "group", children: [] };
-  }
-
-  const startX = api.coord([parseDate(issue.start_date), yIdx])[0];
-  const endX = api.coord([parseDate(issue.target_date), yIdx])[0];
-  const barY = yCenter - 3; // 6px tall, centered
-  const barW = Math.max(endX - startX, 2);
-
-  // On-track portion
-  children.push({
-    type: "rect",
-    shape: { x: startX, y: barY, width: barW, height: 6, r: 2 },
-    style: {
-      fill: "#58a6ff",
-      opacity: 0.6,
-    },
-  });
-
-  // Overdue red extension (target_date → today)
-  const isOverdue =
-    parentNode.end && issue.target_date > parentNode.end;
-  if (isOverdue) {
-    const todayMs = new Date().setHours(0, 0, 0, 0);
-    const targetMs = parseDate(issue.target_date);
-    if (todayMs > targetMs) {
-      const overdueStartX = endX;
-      const overdueEndX = api.coord([todayMs, yIdx])[0];
-      const overdueW = Math.max(overdueEndX - overdueStartX, 2);
-
-      children.push({
-        type: "rect",
-        shape: { x: overdueStartX, y: barY, width: overdueW, height: 6, r: 2 },
-        style: {
-          fill: "#f85149",
-          opacity: 0.6,
-        },
-      });
-    }
-
-    // Right-side overdue label
-    const overdueLabel = formatOverdue(issue.target_date, parentNode.end!);
-    if (overdueLabel) {
-      const labelX = Math.max(
-        endX + 4,
-        api.coord([new Date().setHours(0, 0, 0, 0), yIdx])[0] + 4,
-      );
-      children.push({
-        type: "text",
-        style: {
-          text: overdueLabel,
-          x: labelX,
-          y: yCenter,
-          fill: "#f85149",
-          fontSize: 10,
-          textAlign: "left",
-          textVerticalAlign: "middle",
-        },
-      });
-    }
-  } else {
-    // Right-side issue ref label for on-track issues
-    const refMatch = issue.issue_ref.match(/#(\d+)$/);
-    const refLabel = refMatch ? `#${refMatch[1]}` : issue.issue_ref;
-    children.push({
-      type: "text",
-      style: {
-        text: refLabel,
-        x: endX + 4,
-        y: yCenter,
-        fill: "#484f58",
-        fontSize: 10,
-        textAlign: "left",
-        textVerticalAlign: "middle",
-      },
-    });
-  }
-
-  return { type: "group", children };
-}
-
-/** Render the dashed separator between overdue and on-track issues. */
-function renderSeparatorRow(
-  params: any,
-  api: any,
-): echarts.CustomSeriesRenderItemReturn {
-  const yIdx = api.value(2);
-  const yCenter = api.coord([0, yIdx])[1];
-  const gridLeft = (params.coordSys as any).x;
-  const gridRight = (params.coordSys as any).x + (params.coordSys as any).width;
-
-  return {
-    type: "group",
-    children: [
-      {
-        type: "line",
-        shape: { x1: gridLeft, y1: yCenter, x2: gridRight, y2: yCenter },
-        style: {
-          stroke: "#21262d",
-          lineWidth: 1,
-          lineDash: [4, 3],
-        },
-      },
-    ],
-  };
-}
-
-/** Render the "show N more" clickable row. */
-function renderShowMoreRow(
-  params: any,
-  api: any,
-  entry: ShowMoreEntry,
-): echarts.CustomSeriesRenderItemReturn {
-  // The label is already rendered by the Y-axis category.
-  // We just return an empty group — the click handler on the
-  // chart series handles the interaction.
-  return { type: "group", children: [] };
-}
-
-/** Custom renderItem: draws the outer bar + nested child bars. */
-function renderBar(
-  params: any,
-  api: any,
-): echarts.CustomSeriesRenderItemReturn {
-  const entry = seriesEntries[params.dataIndex];
-  if (!entry) return { type: "group", children: [] };
-
-  // Dispatch based on entry type
-  if (entry.type === "separator") {
-    return renderSeparatorRow(params, api);
-  }
-  if (entry.type === "issue") {
-    return renderIssueRow(params, api, entry.issue, entry.parentNode);
-  }
-  if (entry.type === "show-more") {
-    return renderShowMoreRow(params, api, entry);
-  }
-
-  const node = entry.node;
-
-  const yIdx = api.value(2);
-  const start = api.coord([api.value(0), yIdx]);
-  const end = api.coord([api.value(1), yIdx]);
-  const bandWidth = api.size([0, 1])[1];
-
-  const x = start[0];
-  const y = start[1] - bandWidth * 0.4;
-  const width = end[0] - start[0];
-  const height = bandWidth * 0.8;
-
-  if (width <= 0) return { type: "group", children: [] };
-
-  const children: any[] = [];
-
-  // Highlight selected node
-  const isSelected = selectedNode?.path === node.path;
-
-  // Dim non-expanded bars when a node is expanded
-  const isDimmed = expandedNode !== null && expandedNode !== node.path;
-  const groupOpacity = isDimmed ? 0.4 : 1.0;
-  const isExpanded = expandedNode === node.path;
-
-  // Outer bar
-  const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
-  const hasTimeline = node.has_timeline;
-  children.push({
-    type: "rect",
-    shape: { x, y, width, height, r: 4 },
-    style: {
-      fill: hasTimeline
-        ? isExpanded
-          ? `${statusColor}30`
-          : `${statusColor}22`
-        : NO_TIMELINE_COLOR,
-      stroke: isSelected
-        ? "#e6edf3"
-        : isExpanded
-          ? "rgba(88, 166, 255, 0.6)"
-          : hasTimeline
-            ? `${statusColor}55`
-            : NO_TIMELINE_BORDER,
-      lineWidth: isSelected ? 2 : isExpanded ? 2 : 1,
-      lineDash: hasTimeline || isSelected || isExpanded ? null : [4, 3],
-    },
-  });
-
-  // Heat bar fill for non-leaf nodes
-  if (node.children.length > 0) {
-    const childrenWithTimeline = node.children.filter(
-      (c) => c.eff_start && c.eff_end,
-    );
-
-    if (childrenWithTimeline.length > 0) {
-      const outerStart = api.value(0) as number;
-      const outerEnd = api.value(1) as number;
-      const outerRange = outerEnd - outerStart;
-
-      const childStarts = childrenWithTimeline.map((c) =>
-        parseDate(c.eff_start!),
-      );
-      const childEnds = childrenWithTimeline.map((c) =>
-        parseDate(c.eff_end!),
-      );
-      const spanStart = Math.min(...childStarts);
-      const spanEnd = Math.max(...childEnds);
-
-      const relStart = Math.max(0, (spanStart - outerStart) / outerRange);
-      const relEnd = Math.min(1, (spanEnd - outerStart) / outerRange);
-
-      const fillX = x + relStart * width;
-      const fillW = (relEnd - relStart) * width;
-
-      // Gradient fill rectangle
-      children.push({
-        type: "rect",
-        shape: { x: fillX, y: y + 1, width: fillW, height: height - 2, r: 4 },
-        style: {
-          fill: {
-            type: "linear",
-            x: 0, y: 0, x2: 1, y2: 0,
-            colorStops: [
-              { offset: 0, color: "rgba(88, 166, 255, 0.35)" },
-              { offset: 1, color: "rgba(88, 166, 255, 0.15)" },
-            ],
-          } as any,
-        },
-      });
-    }
-
-    // Count badge
-    const badgeText = `×${node.children.length} children`;
-    // Position badge to the left of the drillable arrow (arrow is at x+width-12)
-    const badgeX = x + width - 20;
-    const badgeY = y + height / 2;
-
-    children.push({
-      type: "text",
-      style: {
-        text: badgeText,
-        x: badgeX,
-        y: badgeY,
-        fill: "#58a6ff",
-        fontSize: 11,
-        fontWeight: 600,
-        textAlign: "right",
-        textVerticalAlign: "middle",
-        backgroundColor: "rgba(13, 17, 23, 0.7)",
-        borderRadius: 3,
-        padding: [2, 6],
-      },
-    });
-  }
-
-  // Issue tick marks for leaf nodes (no children, has issues)
-  if (node.children.length === 0 && node.issues.length > 0) {
-    const outerStart = api.value(0) as number;
-    const outerEnd = api.value(1) as number;
-    const outerRange = outerEnd - outerStart;
-
-    const clusters = clusterTicks(node.issues, outerStart, outerRange, 0.02);
-
-    for (const cluster of clusters) {
-      const clampedX = Math.max(0, Math.min(1, cluster.relX));
-      const tickX = x + clampedX * width;
-      const tickW = cluster.count > 1 ? 6 : 3;
-      const tickH = 14;
-      const tickY = y + (height - tickH) / 2;
-      const tickColor = cluster.overdue ? "#f85149" : "#58a6ff";
-      const tickOpacity = cluster.overdue ? 0.9 : 0.7;
-
-      children.push({
-        type: "rect",
-        shape: {
-          x: tickX - tickW / 2,
-          y: tickY,
-          width: tickW,
-          height: tickH,
-          r: 1,
-        },
-        style: {
-          fill: tickColor,
-          opacity: tickOpacity,
-        },
-      });
-
-      // Show count above clustered ticks
-      if (cluster.count > 1) {
-        children.push({
-          type: "text",
-          style: {
-            text: `${cluster.count}`,
-            x: tickX,
-            y: tickY - 2,
-            fill: tickColor,
-            fontSize: 8,
-            textAlign: "center",
-            textVerticalAlign: "bottom",
-            opacity: 0.8,
-          },
-        });
+      if (sorted.overdue.length > 0 && (sorted.onTrack.length > 0 || sorted.noDates.length > 0)) {
+        yOffset += getRowHeight("separator");
       }
-    }
-
-    // Summary badge
-    const overdueCount = node.issues.filter(
-      (i) => i.target_date && node.end && i.target_date > node.end,
-    ).length;
-    const badgeX = x + width - 8;
-    const badgeY = y + height / 2;
-
-    // Use a rich text label to color the overdue part differently
-    if (overdueCount > 0) {
-      children.push({
-        type: "text",
-        style: {
-          text: `${node.issues.length} issues · {overdue|${overdueCount} overdue}`,
-          x: badgeX,
-          y: badgeY,
-          fill: "#8b949e",
-          fontSize: 11,
-          fontWeight: 600,
-          textAlign: "right",
-          textVerticalAlign: "middle",
-          backgroundColor: "rgba(13, 17, 23, 0.7)",
-          borderRadius: 3,
-          padding: [2, 6],
-          rich: {
-            overdue: {
-              fill: "#f85149",
-              fontSize: 11,
-              fontWeight: 600,
-            },
-          },
-        },
-      });
-    } else {
-      children.push({
-        type: "text",
-        style: {
-          text: `${node.issues.length} issues`,
-          x: badgeX,
-          y: badgeY,
-          fill: "#8b949e",
-          fontSize: 11,
-          fontWeight: 600,
-          textAlign: "right",
-          textVerticalAlign: "middle",
-          backgroundColor: "rgba(13, 17, 23, 0.7)",
-          borderRadius: 3,
-          padding: [2, 6],
-        },
-      });
-    }
-  }
-
-  // Checkpoint markers (diamonds + dashed vertical line within this row)
-  // Only show per-row markers at the root level. When drilled in,
-  // checkpoints are already displayed as full-height project-wide lines.
-  const nodeMilestones = currentPath === "" ? allCheckpoints(node) : [];
-  if (nodeMilestones.length > 0) {
-    for (const m of nodeMilestones) {
-      const mDate = parseDate(m.date);
-      // Position milestone on the time axis directly, not relative to the bar
-      const mx = api.coord([mDate, api.value(2)])[0];
-      const mColor = "#f59e0b";
-
-      children.push({
-        type: "line",
-        shape: { x1: mx, y1: y, x2: mx, y2: y + height },
-        style: {
-          stroke: mColor,
-          lineWidth: 1,
-          lineDash: [3, 2],
-          opacity: 0.7,
-        },
-      });
-
-      const ds = 5;
-      const dy = y + 2 + ds;
-      children.push({
-        type: "path",
-        shape: {
-          d: `M${mx},${dy - ds}L${mx + ds},${dy}L${mx},${dy + ds}L${mx - ds},${dy}Z`,
-        },
-        style: {
-          fill: mColor,
-          opacity: 0.9,
-        },
-      });
-
-      children.push({
-        type: "text",
-        style: {
-          text: m.name,
-          x: mx,
-          y: y - 2,
-          fill: mColor,
-          fontSize: 9,
-          textAlign: "center",
-          textVerticalAlign: "bottom",
-          opacity: 0.8,
-        },
-      });
-    }
-  }
-
-  // Drillable indicator (small arrow if has children)
-  if (node.children.length > 0) {
-    const arrowX = x + width - 12;
-    const arrowY = y + height / 2;
-    children.push({
-      type: "path",
-      shape: {
-        d: `M${arrowX},${arrowY - 4}L${arrowX + 6},${arrowY}L${arrowX},${arrowY + 4}Z`,
-      },
-      style: {
-        fill: hasTimeline ? statusColor : "#6b7280",
-        opacity: 0.6,
-      },
-    });
-  }
-
-  // Apply dimming opacity to each child (groups don't support style.opacity)
-  if (isDimmed) {
-    for (const child of children) {
-      if (child.style) {
-        child.style.opacity = (child.style.opacity ?? 1) * groupOpacity;
-      } else {
-        child.style = { opacity: groupOpacity };
+      if (!expandedShowAll && all.length > 7) {
+        yOffset += getRowHeight("issue");
       }
     }
   }
 
-  return { type: "group", children };
+  // Re-render milestones
+  const okrs = collectOkrs(data.nodes);
+  const totalH = yOffset + getAxisHeight();
+  layout.markersGroup.innerHTML = "";
+  renderTodayLine(scaleState, layout, totalH);
+  renderMilestoneLines(scaleState, layout, totalH, okrs);
 }
 
 // ---------------------------------------------------------------------------
@@ -1171,86 +355,176 @@ function navigateTo(path: string): void {
   expandedShowAll = false;
   closePanel();
   updateBreadcrumb();
+  resetZoom(scaleState, layout);
   renderChart();
 }
 
-// Expose to inline onclick handlers
 (window as any).__nav = navigateTo;
 
-/// Single click: expand leaf nodes, show panel for non-leaf
-chart.on("click", (params: any) => {
-  const idx = params.dataIndex;
-  // Check if this is an issue pseudo-row (see buildOption)
-  const entry = seriesEntries[idx];
-  if (entry && entry.type === "issue") {
-    // Click on issue row — open GitHub issue in new tab
-    const url = issueUrl(entry.issue.issue_ref);
-    if (url !== "#") window.open(url, "_blank", "noopener");
-    return;
-  }
-  if (entry && entry.type === "show-more") {
-    // Click on "show more" row — expand all issues
-    if (expandedNode === entry.parentNode.path) {
+// ---------------------------------------------------------------------------
+// Click Handling
+// ---------------------------------------------------------------------------
+
+function handleRowClick(row: RenderedRow): void {
+  if (row.type === "node" && row.node) {
+    const node = row.node;
+    if (node.children.length === 0 && node.issues.length > 0) {
+      // Leaf node: toggle expand
+      if (expandedNode === node.path) {
+        expandedNode = null;
+        expandedShowAll = false;
+      } else {
+        expandedNode = node.path;
+        expandedShowAll = false;
+      }
+      closePanel();
+      renderChart();
+    } else {
+      // Non-leaf: show panel
+      showNodePanel(node);
+    }
+  } else if (row.type === "issue" && row.issue && row.parentNode) {
+    showIssuePanel(row.issue, row.parentNode);
+  } else if (row.type === "show-more" && row.parentNode) {
+    if (expandedNode === row.parentNode.path) {
       expandedShowAll = true;
       renderChart();
     }
-    return;
   }
-  const node: ChartNode | undefined =
-    entry?.type === "node" ? entry.node : undefined;
-  if (!node) return;
-
-  if (node.children.length === 0 && node.issues.length > 0) {
-    // Leaf node with issues: toggle expand
-    if (expandedNode === node.path) {
-      expandedNode = null;
-      expandedShowAll = false;
-    } else {
-      expandedNode = node.path;
-      expandedShowAll = false;
-    }
-    selectedNode = null;
-    closePanel();
-    renderChart();
-  } else {
-    // Non-leaf node: show panel (existing behavior)
-    showPanel(node);
-    renderChart();
-  }
-});
-
-// Double click: drill into node
-chart.on("dblclick", (params: any) => {
-  const entry = seriesEntries[params.dataIndex];
-  const node = entry?.type === "node" ? entry.node : undefined;
-  if (node && node.children.length > 0) {
-    navigateTo(node.path);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Render
-// ---------------------------------------------------------------------------
-
-function renderChart(): void {
-  chart.setOption(buildOption(), true);
 }
 
-// Toggle range — called from HTML inline onclick via window.__setRange
+function handleRowDblClick(row: RenderedRow): void {
+  if (row.type === "node" && row.node && row.node.children.length > 0) {
+    navigateTo(row.node.path);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Range toggle
+// ---------------------------------------------------------------------------
+
 function setRange(global: boolean): void {
   useGlobalRange = global;
-  btnFitted?.classList.toggle("active", !global);
-  btnGlobal?.classList.toggle("active", global);
+  document.getElementById("btn-fitted")?.classList.toggle("active", !global);
+  document.getElementById("btn-global")?.classList.toggle("active", global);
+  resetZoom(scaleState, layout);
   renderChart();
 }
+
 (window as any).__setRange = setRange;
 
-// Responsive resize
-window.addEventListener("resize", () => chart.resize());
+// ---------------------------------------------------------------------------
+// Tooltip
+// ---------------------------------------------------------------------------
+
+const tooltipEl = document.getElementById("tooltip")!;
+
+function showTooltip(e: MouseEvent, html: string): void {
+  tooltipEl.innerHTML = html;
+  tooltipEl.style.display = "block";
+  tooltipEl.style.left = `${e.clientX + 12}px`;
+  tooltipEl.style.top = `${e.clientY + 12}px`;
+}
+
+function hideTooltip(): void {
+  tooltipEl.style.display = "none";
+}
+
+// ---------------------------------------------------------------------------
+// Expose state for testing
+// ---------------------------------------------------------------------------
+
+(window as any).__chartState = {
+  get currentPath() { return currentPath; },
+  get expandedNode() { return expandedNode; },
+  get visibleNodes() { return getVisibleNodes(); },
+  get renderedRows() { return renderedRows; },
+};
 
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
+layout = getLayoutElements();
+const initialRange = computeTimeRange(getVisibleNodes());
+const initialWidth = getTimelineWidth();
+scaleState = createScale(initialRange, initialWidth);
+
+// Wire up zoom
+setupZoom(scaleState, layout, onZoom);
+
+// Wire up label click events via event delegation
+layout.labelsEl.addEventListener("click", (e) => {
+  const target = (e.target as HTMLElement).closest(".chart-row") as HTMLElement | null;
+  if (!target) return;
+  const idx = Array.from(layout.labelsEl.children).indexOf(target);
+  if (idx >= 0 && renderedRows[idx]) {
+    handleRowClick(renderedRows[idx]);
+  }
+});
+
+layout.labelsEl.addEventListener("dblclick", (e) => {
+  const target = (e.target as HTMLElement).closest(".chart-row") as HTMLElement | null;
+  if (!target) return;
+  const idx = Array.from(layout.labelsEl.children).indexOf(target);
+  if (idx >= 0 && renderedRows[idx]) {
+    handleRowDblClick(renderedRows[idx]);
+  }
+});
+
+// Also handle clicks on SVG bars
+layout.timelineSvg.addEventListener("click", (e) => {
+  const target = e.target as SVGElement;
+  const path = target.dataset?.path;
+  if (path) {
+    const row = renderedRows.find((r) => r.type === "node" && r.node?.path === path);
+    if (row) handleRowClick(row);
+  }
+});
+
+layout.timelineSvg.addEventListener("dblclick", (e) => {
+  const target = e.target as SVGElement;
+  const path = target.dataset?.path;
+  if (path) {
+    const row = renderedRows.find((r) => r.type === "node" && r.node?.path === path);
+    if (row) handleRowDblClick(row);
+  }
+});
+
+// Wire tooltip on label rows via event delegation
+layout.labelsEl.addEventListener("mouseover", (e) => {
+  const target = (e.target as HTMLElement).closest(".chart-row") as HTMLElement | null;
+  if (!target) return;
+  const idx = Array.from(layout.labelsEl.children).indexOf(target);
+  const row = renderedRows[idx];
+  if (!row) return;
+
+  if (row.type === "issue" && row.issue) {
+    const parts = [`<b>${escapeHtml(row.issue.title || row.issue.issue_ref)}</b>`, row.issue.issue_ref];
+    if (row.issue.start_date) parts.push(`Start: ${row.issue.start_date}`);
+    if (row.issue.target_date) parts.push(`Target: ${row.issue.target_date}`);
+    if (row.issue.target_date && row.parentNode?.end && row.issue.target_date > row.parentNode.end) {
+      parts.push(`<span style="color:#f85149">Overdue: ${formatOverdue(row.issue.target_date, row.parentNode.end)}</span>`);
+    }
+    showTooltip(e, parts.join("<br/>"));
+  } else if (row.type === "node" && row.node) {
+    const n = row.node;
+    const dates = n.has_timeline ? `${n.start} → ${n.end}` : n.eff_start ? `~${n.eff_start} → ~${n.eff_end}` : "No timeline";
+    showTooltip(e, `<b>${escapeHtml(n.name)}</b><br/>${dates}<br/>Status: ${n.status}`);
+  }
+});
+
+layout.labelsEl.addEventListener("mouseout", (e) => {
+  const target = (e.target as HTMLElement).closest(".chart-row");
+  if (target) hideTooltip();
+});
+
+// Resize handler
+window.addEventListener("resize", () => {
+  updateScaleRange(scaleState, getTimelineWidth());
+  renderChart();
+});
+
+// Initial render
 updateBreadcrumb();
 renderChart();

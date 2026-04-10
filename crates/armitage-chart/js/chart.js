@@ -1,5 +1,439 @@
 "use strict";
 (() => {
+  // ts/layout.ts
+  var NODE_ROW_HEIGHT = 48;
+  var ISSUE_ROW_HEIGHT = 28;
+  var SEPARATOR_HEIGHT = 12;
+  var AXIS_HEIGHT = 40;
+  function getLayoutElements() {
+    return {
+      labelsEl: document.getElementById("chart-labels"),
+      timelineSvg: document.getElementById("chart-svg"),
+      axisGroup: document.getElementById("axis-group"),
+      gridGroup: document.getElementById("grid-group"),
+      barsGroup: document.getElementById("bars-group"),
+      markersGroup: document.getElementById("markers-group"),
+      scrollEl: document.getElementById("chart-scroll")
+    };
+  }
+  function getTimelineWidth() {
+    const el = document.getElementById("chart-timeline");
+    return el ? el.clientWidth : 800;
+  }
+  function getRowHeight(type) {
+    if (type === "issue") return ISSUE_ROW_HEIGHT;
+    if (type === "separator") return SEPARATOR_HEIGHT;
+    return NODE_ROW_HEIGHT;
+  }
+  function getAxisHeight() {
+    return AXIS_HEIGHT;
+  }
+  function syncSvgHeight(layout2, totalRowHeight) {
+    const totalHeight = totalRowHeight + AXIS_HEIGHT;
+    layout2.timelineSvg.setAttribute("height", `${totalHeight}`);
+    layout2.barsGroup.setAttribute("transform", `translate(0, ${AXIS_HEIGHT})`);
+  }
+
+  // ts/scale.ts
+  function createScale(domain, rangeWidth) {
+    const baseScale = d3.scaleTime().domain(domain).range([0, rangeWidth]);
+    return {
+      baseScale,
+      currentScale: baseScale.copy(),
+      zoom: null,
+      transform: d3.zoomIdentity
+    };
+  }
+  function setupZoom(state, layout2, onZoom2) {
+    const pad = 30 * 24 * 3600 * 1e3;
+    const [domainStart, domainEnd] = state.baseScale.domain();
+    const rangeWidth = state.baseScale.range()[1];
+    state.zoom = d3.zoom().scaleExtent([0.5, 50]).translateExtent([
+      [state.baseScale(domainStart.getTime() - pad), 0],
+      [state.baseScale(domainEnd.getTime() + pad), 0]
+    ]).filter((event) => {
+      return !event.type.startsWith("dblclick");
+    }).on("zoom", (event) => {
+      state.transform = event.transform;
+      state.transform = d3.zoomIdentity.translate(event.transform.x, 0).scale(event.transform.k);
+      state.currentScale = state.transform.rescaleX(state.baseScale);
+      onZoom2(state.currentScale);
+    });
+    d3.select(layout2.timelineSvg).call(state.zoom);
+  }
+  function resetZoom(state, layout2, newDomain) {
+    if (newDomain) {
+      state.baseScale.domain(newDomain);
+    }
+    state.transform = d3.zoomIdentity;
+    state.currentScale = state.baseScale.copy();
+    d3.select(layout2.timelineSvg).call(state.zoom.transform, d3.zoomIdentity);
+  }
+  function updateScaleRange(state, rangeWidth) {
+    state.baseScale.range([0, rangeWidth]);
+    state.currentScale = state.transform.rescaleX(state.baseScale);
+  }
+  function parseDate(s) {
+    return /* @__PURE__ */ new Date(s + "T00:00:00");
+  }
+  function dateToX(state, dateStr) {
+    return state.currentScale(parseDate(dateStr));
+  }
+
+  // ts/render-axis.ts
+  function renderAxis(state, layout2, totalHeight) {
+    const axisHeight = getAxisHeight();
+    layout2.axisGroup.innerHTML = "";
+    const axis = d3.axisTop(state.currentScale).tickSizeOuter(0).tickPadding(8);
+    const g = d3.select(layout2.axisGroup).attr("transform", `translate(0, ${axisHeight})`).call(axis);
+    g.selectAll("text").attr("fill", "var(--chart-axis)").attr("font-size", "11px");
+    g.selectAll("line").attr("stroke", "var(--chart-axis-line)");
+    g.select(".domain").attr("stroke", "var(--chart-axis-line)");
+  }
+  function renderGridLines(state, layout2, totalHeight) {
+    layout2.gridGroup.innerHTML = "";
+    const ticks = state.currentScale.ticks();
+    const axisHeight = getAxisHeight();
+    for (const tick of ticks) {
+      const x = state.currentScale(tick);
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", `${x}`);
+      line.setAttribute("y1", `${axisHeight}`);
+      line.setAttribute("x2", `${x}`);
+      line.setAttribute("y2", `${totalHeight}`);
+      line.setAttribute("stroke", "var(--chart-grid)");
+      line.setAttribute("stroke-dasharray", "4,3");
+      line.setAttribute("stroke-width", "1");
+      layout2.gridGroup.appendChild(line);
+    }
+  }
+  function renderTodayLine(state, layout2, totalHeight) {
+    const existing = layout2.markersGroup.querySelector(".today-line");
+    if (existing) existing.remove();
+    const today = /* @__PURE__ */ new Date();
+    today.setHours(0, 0, 0, 0);
+    const x = state.currentScale(today);
+    const axisHeight = getAxisHeight();
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.classList.add("today-line");
+    line.setAttribute("x1", `${x}`);
+    line.setAttribute("y1", `${axisHeight}`);
+    line.setAttribute("x2", `${x}`);
+    line.setAttribute("y2", `${totalHeight}`);
+    line.setAttribute("stroke", "rgba(239, 68, 68, 0.7)");
+    line.setAttribute("stroke-width", "2");
+    layout2.markersGroup.appendChild(line);
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.classList.add("today-line");
+    text.setAttribute("x", `${x}`);
+    text.setAttribute("y", `${axisHeight - 4}`);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", "#ef4444");
+    text.setAttribute("font-size", "10px");
+    text.textContent = "Today";
+    layout2.markersGroup.appendChild(text);
+  }
+  function renderMilestoneLines(state, layout2, totalHeight, milestones) {
+    layout2.markersGroup.querySelectorAll(".milestone-line").forEach((el) => el.remove());
+    const axisHeight = getAxisHeight();
+    for (const m of milestones) {
+      const x = state.currentScale(parseDate(m.date));
+      const isOkr = m.milestone_type === "okr";
+      const color = isOkr ? "rgba(167, 139, 250, 0.5)" : "rgba(245, 158, 11, 0.5)";
+      const labelColor = isOkr ? "#a78bfa" : "#f59e0b";
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.classList.add("milestone-line");
+      line.setAttribute("x1", `${x}`);
+      line.setAttribute("y1", `${axisHeight}`);
+      line.setAttribute("x2", `${x}`);
+      line.setAttribute("y2", `${totalHeight}`);
+      line.setAttribute("stroke", color);
+      line.setAttribute("stroke-width", "1");
+      line.setAttribute("stroke-dasharray", "4,3");
+      layout2.markersGroup.appendChild(line);
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.classList.add("milestone-line");
+      text.setAttribute("x", `${x}`);
+      text.setAttribute("y", `${axisHeight - 4}`);
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("fill", labelColor);
+      text.setAttribute("font-size", "10px");
+      text.textContent = m.name;
+      layout2.markersGroup.appendChild(text);
+    }
+  }
+
+  // ts/render-nodes.ts
+  var STATUS_COLORS = {
+    active: "#3b82f6",
+    completed: "#6b7280",
+    paused: "#f59e0b",
+    cancelled: "#ef4444"
+  };
+  function sortIssues(issues, nodeEnd) {
+    const overdue = [];
+    const onTrack = [];
+    const noDates = [];
+    for (const issue of issues) {
+      if (!issue.target_date) {
+        noDates.push(issue);
+      } else if (nodeEnd && issue.target_date > nodeEnd) {
+        overdue.push(issue);
+      } else {
+        onTrack.push(issue);
+      }
+    }
+    overdue.sort((a, b) => b.target_date.localeCompare(a.target_date));
+    onTrack.sort((a, b) => a.target_date.localeCompare(b.target_date));
+    return { overdue, onTrack, noDates };
+  }
+  function renderNodeRow(node, state, layout2, yOffset, options) {
+    const height = getRowHeight("node");
+    const row = document.createElement("div");
+    row.className = `chart-row node${options.isDimmed ? " dimmed" : ""}${options.isExpanded ? " expanded" : ""}`;
+    row.style.height = `${height}px`;
+    row.dataset.path = node.path;
+    const label = document.createElement("span");
+    label.className = "chart-label node-name";
+    label.textContent = node.name;
+    label.title = node.description || node.name;
+    row.appendChild(label);
+    if (node.children.length > 0) {
+      const badge = document.createElement("span");
+      badge.className = "chart-badge children";
+      badge.textContent = `\xD7${node.children.length}`;
+      row.appendChild(badge);
+      const arrow = document.createElement("span");
+      arrow.className = "chart-drill";
+      arrow.textContent = "\u25B8";
+      row.appendChild(arrow);
+    } else if (node.issues.length > 0) {
+      const badge = document.createElement("span");
+      badge.className = "chart-badge issues";
+      const overdueCount = node.issues.filter(
+        (i) => i.target_date && node.end && i.target_date > node.end
+      ).length;
+      if (overdueCount > 0) {
+        badge.innerHTML = `${node.issues.length} issues \xB7 <span class="overdue-count">${overdueCount} overdue</span>`;
+      } else {
+        badge.textContent = `${node.issues.length} issues`;
+      }
+      row.appendChild(badge);
+    }
+    layout2.labelsEl.appendChild(row);
+    const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
+    const barY = yOffset;
+    if (node.eff_start && node.eff_end) {
+      const x1 = dateToX(state, node.eff_start);
+      const x2 = dateToX(state, node.eff_end);
+      const barW = Math.max(x2 - x1, 2);
+      const barH = height - 8;
+      const barTop = barY + 4;
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.setAttribute("x", `${x1}`);
+      rect.setAttribute("y", `${barTop}`);
+      rect.setAttribute("width", `${barW}`);
+      rect.setAttribute("height", `${barH}`);
+      rect.setAttribute("rx", "4");
+      rect.setAttribute("fill", node.has_timeline ? `${statusColor}22` : "rgba(107,114,128,0.15)");
+      rect.setAttribute("stroke", options.isExpanded ? "rgba(88,166,255,0.6)" : node.has_timeline ? `${statusColor}55` : "rgba(107,114,128,0.4)");
+      rect.setAttribute("stroke-width", options.isExpanded ? "2" : "1");
+      if (!node.has_timeline && !options.isExpanded) {
+        rect.setAttribute("stroke-dasharray", "4,3");
+      }
+      if (options.isDimmed) rect.setAttribute("opacity", "0.4");
+      rect.dataset.path = node.path;
+      layout2.barsGroup.appendChild(rect);
+      if (node.children.length > 0) {
+        const childrenWithTimeline = node.children.filter((c) => c.eff_start && c.eff_end);
+        if (childrenWithTimeline.length > 0) {
+          const spanStart = childrenWithTimeline.reduce((min, c) => c.eff_start < min ? c.eff_start : min, childrenWithTimeline[0].eff_start);
+          const spanEnd = childrenWithTimeline.reduce((max, c) => c.eff_end > max ? c.eff_end : max, childrenWithTimeline[0].eff_end);
+          const fillX1 = dateToX(state, spanStart);
+          const fillX2 = dateToX(state, spanEnd);
+          const fillW = Math.max(fillX2 - fillX1, 2);
+          const fillRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          fillRect.setAttribute("x", `${fillX1}`);
+          fillRect.setAttribute("y", `${barTop + 1}`);
+          fillRect.setAttribute("width", `${fillW}`);
+          fillRect.setAttribute("height", `${barH - 2}`);
+          fillRect.setAttribute("rx", "3");
+          fillRect.setAttribute("fill", "url(#heat-gradient)");
+          if (options.isDimmed) fillRect.setAttribute("opacity", "0.4");
+          layout2.barsGroup.appendChild(fillRect);
+        }
+      }
+      if (node.children.length === 0 && node.issues.length > 0) {
+        const outerStart = parseDate(node.eff_start).getTime();
+        const outerRange = parseDate(node.eff_end).getTime() - outerStart;
+        for (const issue of node.issues) {
+          if (!issue.target_date) continue;
+          const tickX = dateToX(state, issue.target_date);
+          const isOverdue = node.end && issue.target_date > node.end;
+          const tickColor = isOverdue ? "#f85149" : "#58a6ff";
+          const tick = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          tick.setAttribute("x", `${tickX - 1.5}`);
+          tick.setAttribute("y", `${barTop + (barH - 14) / 2}`);
+          tick.setAttribute("width", "3");
+          tick.setAttribute("height", "14");
+          tick.setAttribute("rx", "1");
+          tick.setAttribute("fill", tickColor);
+          tick.setAttribute("opacity", isOverdue ? "0.9" : "0.7");
+          if (options.isDimmed) tick.setAttribute("opacity", "0.3");
+          layout2.barsGroup.appendChild(tick);
+        }
+      }
+    }
+    return { type: "node", node, labelEl: row, y: yOffset, height };
+  }
+  function formatOverdue(targetDate, nodeEnd) {
+    const target = parseDate(targetDate).getTime();
+    const end = parseDate(nodeEnd).getTime();
+    const diffMs = target - end;
+    if (diffMs <= 0) return "";
+    const diffDays = Math.ceil(diffMs / (24 * 3600 * 1e3));
+    if (diffDays < 14) return `+${diffDays} days`;
+    const diffWeeks = Math.round(diffDays / 7);
+    return `+${diffWeeks} wks`;
+  }
+
+  // ts/render-issues.ts
+  var INITIAL_ISSUE_LIMIT = 7;
+  function issueUrl(ref) {
+    const match = ref.match(/^(.+?)\/(.+?)#(\d+)$/);
+    if (!match) return "#";
+    return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
+  }
+  function renderIssueRows(node, state, layout2, yOffset, showAll) {
+    const rows = [];
+    const sorted = sortIssues(node.issues, node.end);
+    const allSorted = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
+    const limit = showAll ? allSorted.length : INITIAL_ISSUE_LIMIT;
+    const visible = allSorted.slice(0, limit);
+    let y = yOffset;
+    let insertedOverdue = false;
+    let insertedSeparator = false;
+    for (const issue of visible) {
+      const isOverdue = sorted.overdue.includes(issue);
+      const isOnTrackOrNoDates = !isOverdue;
+      if (isOnTrackOrNoDates && !insertedSeparator && insertedOverdue) {
+        const sepRow = renderSeparatorRow(layout2, y);
+        rows.push(sepRow);
+        y += sepRow.height;
+        insertedSeparator = true;
+      }
+      if (isOverdue) insertedOverdue = true;
+      const issueRow = renderSingleIssueRow(issue, node, state, layout2, y, isOverdue);
+      rows.push(issueRow);
+      y += issueRow.height;
+    }
+    if (!showAll && allSorted.length > INITIAL_ISSUE_LIMIT) {
+      const remaining = allSorted.length - INITIAL_ISSUE_LIMIT;
+      const showMoreRow = renderShowMoreRow(node, layout2, y, allSorted.length, remaining);
+      rows.push(showMoreRow);
+      y += showMoreRow.height;
+    }
+    return rows;
+  }
+  function renderSingleIssueRow(issue, parentNode, state, layout2, yOffset, isOverdue) {
+    const height = getRowHeight("issue");
+    const row = document.createElement("div");
+    row.className = `chart-row issue`;
+    row.style.height = `${height}px`;
+    const label = document.createElement("span");
+    label.className = `chart-label issue-title${isOverdue ? " overdue" : ""}`;
+    label.textContent = issue.title || issue.issue_ref;
+    label.title = `${issue.title || ""} (${issue.issue_ref})`;
+    row.appendChild(label);
+    const meta = document.createElement("span");
+    meta.className = "chart-badge issues";
+    if (isOverdue && parentNode.end) {
+      meta.textContent = formatOverdue(issue.target_date, parentNode.end);
+      meta.style.color = "#f85149";
+    } else {
+      const refMatch = issue.issue_ref.match(/#(\d+)$/);
+      meta.textContent = refMatch ? `#${refMatch[1]}` : issue.issue_ref;
+    }
+    row.appendChild(meta);
+    layout2.labelsEl.appendChild(row);
+    if (issue.start_date && issue.target_date) {
+      const x1 = dateToX(state, issue.start_date);
+      const x2 = dateToX(state, issue.target_date);
+      const barW = Math.max(x2 - x1, 2);
+      const barY = yOffset + (height - 6) / 2;
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.setAttribute("x", `${x1}`);
+      rect.setAttribute("y", `${barY}`);
+      rect.setAttribute("width", `${barW}`);
+      rect.setAttribute("height", "6");
+      rect.setAttribute("rx", "2");
+      rect.setAttribute("fill", "#58a6ff");
+      rect.setAttribute("opacity", "0.6");
+      layout2.barsGroup.appendChild(rect);
+      if (isOverdue) {
+        const today = /* @__PURE__ */ new Date();
+        today.setHours(0, 0, 0, 0);
+        const targetMs = parseDate(issue.target_date).getTime();
+        if (today.getTime() > targetMs) {
+          const overdueX = x2;
+          const todayX = state.currentScale(today);
+          const overdueW = Math.max(todayX - overdueX, 2);
+          const overdueRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          overdueRect.setAttribute("x", `${overdueX}`);
+          overdueRect.setAttribute("y", `${barY}`);
+          overdueRect.setAttribute("width", `${overdueW}`);
+          overdueRect.setAttribute("height", "6");
+          overdueRect.setAttribute("rx", "2");
+          overdueRect.setAttribute("fill", "#f85149");
+          overdueRect.setAttribute("opacity", "0.6");
+          layout2.barsGroup.appendChild(overdueRect);
+        }
+      }
+    }
+    return {
+      type: "issue",
+      issue,
+      parentNode,
+      labelEl: row,
+      y: yOffset,
+      height
+    };
+  }
+  function renderSeparatorRow(layout2, yOffset) {
+    const height = getRowHeight("separator");
+    const row = document.createElement("div");
+    row.className = "chart-row separator";
+    row.style.height = `${height}px`;
+    layout2.labelsEl.appendChild(row);
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", "0");
+    line.setAttribute("y1", `${yOffset + height / 2}`);
+    line.setAttribute("x2", "100%");
+    line.setAttribute("y2", `${yOffset + height / 2}`);
+    line.setAttribute("stroke", "#21262d");
+    line.setAttribute("stroke-dasharray", "4,3");
+    layout2.barsGroup.appendChild(line);
+    return { type: "separator", labelEl: row, y: yOffset, height };
+  }
+  function renderShowMoreRow(parentNode, layout2, yOffset, total, remaining) {
+    const height = getRowHeight("issue");
+    const row = document.createElement("div");
+    row.className = "chart-row";
+    row.style.height = `${height}px`;
+    const link = document.createElement("span");
+    link.className = "show-more-link";
+    link.textContent = `\u25BE Show all ${total} issues (${remaining} more)`;
+    row.appendChild(link);
+    layout2.labelsEl.appendChild(row);
+    return {
+      type: "show-more",
+      parentNode,
+      labelEl: row,
+      y: yOffset,
+      height
+    };
+  }
+
   // ts/chart.ts
   var data = window.__CHART_DATA__;
   var currentPath = "";
@@ -7,26 +441,9 @@
   var selectedNode = null;
   var expandedNode = null;
   var expandedShowAll = false;
-  var visibleNodes = [];
-  var seriesEntries = [];
-  var chartEl = document.getElementById("chart");
-  var breadcrumbEl = document.getElementById("breadcrumb");
-  var btnFitted = document.getElementById("btn-fitted");
-  var btnGlobal = document.getElementById("btn-global");
-  var panelEl = document.getElementById("panel");
-  var panelContentEl = document.getElementById("panel-content");
-  var chart = echarts.init(chartEl);
-  var STATUS_COLORS = {
-    active: "#3b82f6",
-    completed: "#6b7280",
-    paused: "#f59e0b",
-    cancelled: "#ef4444"
-  };
-  var NO_TIMELINE_COLOR = "rgba(107, 114, 128, 0.15)";
-  var NO_TIMELINE_BORDER = "rgba(107, 114, 128, 0.4)";
-  function parseDate(s) {
-    return (/* @__PURE__ */ new Date(s + "T00:00:00")).getTime();
-  }
+  var layout;
+  var scaleState;
+  var renderedRows = [];
   function getVisibleNodes() {
     if (currentPath === "") return data.nodes;
     const node = findNode(data.nodes, currentPath);
@@ -39,17 +456,6 @@
       if (found) return found;
     }
     return null;
-  }
-  function allCheckpoints(node) {
-    const result = [];
-    function walk(n) {
-      for (const m of n.milestones) {
-        if (m.milestone_type !== "okr") result.push(m);
-      }
-      for (const c of n.children) walk(c);
-    }
-    walk(node);
-    return result;
   }
   function collectOkrs(nodes) {
     const seen = /* @__PURE__ */ new Set();
@@ -71,6 +477,17 @@
     walk(nodes);
     return result;
   }
+  function allCheckpoints(node) {
+    const result = [];
+    function walk(n) {
+      for (const m of n.milestones) {
+        if (m.milestone_type !== "okr") result.push(m);
+      }
+      for (const c of n.children) walk(c);
+    }
+    walk(node);
+    return result;
+  }
   function computeTimeRange(nodes) {
     if (useGlobalRange && data.global_start && data.global_end) {
       return [parseDate(data.global_start), parseDate(data.global_end)];
@@ -78,21 +495,18 @@
     let min = Infinity;
     let max = -Infinity;
     for (const n of nodes) {
-      const s = n.eff_start;
-      const e = n.eff_end;
-      if (s) min = Math.min(min, parseDate(s));
-      if (e) max = Math.max(max, parseDate(e));
+      if (n.eff_start) min = Math.min(min, parseDate(n.eff_start).getTime());
+      if (n.eff_end) max = Math.max(max, parseDate(n.eff_end).getTime());
     }
     if (expandedNode) {
       const expNode = nodes.find((n) => n.path === expandedNode);
       if (expNode) {
         for (const issue of expNode.issues) {
-          if (issue.start_date) min = Math.min(min, parseDate(issue.start_date));
-          if (issue.target_date) max = Math.max(max, parseDate(issue.target_date));
+          if (issue.start_date) min = Math.min(min, parseDate(issue.start_date).getTime());
+          if (issue.target_date) max = Math.max(max, parseDate(issue.target_date).getTime());
         }
-        const todayMs = (/* @__PURE__ */ new Date()).setHours(0, 0, 0, 0);
         if (expNode.overflow_end) {
-          max = Math.max(max, todayMs);
+          max = Math.max(max, (/* @__PURE__ */ new Date()).setHours(0, 0, 0, 0));
         }
       }
     }
@@ -102,70 +516,87 @@
       max = new Date(now.getFullYear(), 11, 31).getTime();
     }
     const pad = 30 * 24 * 3600 * 1e3;
-    return [min - pad, max + pad];
+    return [new Date(min - pad), new Date(max + pad)];
   }
-  function sortIssues(issues, nodeEnd) {
-    const overdue = [];
-    const onTrack = [];
-    const noDates = [];
-    for (const issue of issues) {
-      if (!issue.target_date) {
-        noDates.push(issue);
-      } else if (nodeEnd && issue.target_date > nodeEnd) {
-        overdue.push(issue);
-      } else {
-        onTrack.push(issue);
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
+  var panelEl = document.getElementById("panel");
+  var panelContentEl = document.getElementById("panel-content");
+  function showNodePanel(node) {
+    selectedNode = node;
+    let html = "";
+    html += `<h2>${escapeHtml(node.name)}</h2>`;
+    html += `<span class="panel-status ${node.status}">${node.status}</span>`;
+    if (node.description) {
+      html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${escapeHtml(node.description)}</div></div>`;
+    }
+    html += `<div class="panel-section"><h3>Timeline</h3><div class="panel-meta">`;
+    if (node.has_timeline) {
+      html += `<span class="label">Start:</span> ${node.start}<br/><span class="label">End:</span> ${node.end}`;
+    } else if (node.eff_start) {
+      html += `<span class="label">Derived:</span> ${node.eff_start} &rarr; ${node.eff_end}`;
+    } else {
+      html += `<span class="label">No timeline</span>`;
+    }
+    html += `</div></div>`;
+    if (node.owners.length > 0 || node.team) {
+      html += `<div class="panel-section"><h3>People</h3><div class="panel-meta">`;
+      if (node.owners.length > 0) html += `<span class="label">Owners:</span> ${node.owners.map(escapeHtml).join(", ")}<br/>`;
+      if (node.team) html += `<span class="label">Team:</span> ${escapeHtml(node.team)}`;
+      html += `</div></div>`;
+    }
+    if (node.children.length > 0) {
+      html += `<div class="panel-section"><h3>Children (${node.children.length})</h3>`;
+      html += `<ul class="panel-children">`;
+      for (const c of node.children) {
+        html += `<li><span class="child-name">${escapeHtml(c.name)}</span></li>`;
       }
+      html += `</ul>`;
+      html += `<button class="btn-drill" onclick="window.__nav('${node.path}')">Drill into ${escapeHtml(node.name)} &rsaquo;</button>`;
+      html += `</div>`;
     }
-    overdue.sort((a, b) => b.target_date.localeCompare(a.target_date));
-    onTrack.sort((a, b) => a.target_date.localeCompare(b.target_date));
-    return { overdue, onTrack, noDates };
-  }
-  function clusterTicks(issues, parentStart, parentRange, threshold) {
-    const dated = issues.filter((i) => i.target_date);
-    if (dated.length === 0) return [];
-    const sorted = [...dated].sort(
-      (a, b) => a.target_date.localeCompare(b.target_date)
-    );
-    const clusters = [];
-    let curCluster = {
-      relXs: [],
-      overdueCount: 0
-    };
-    for (const issue of sorted) {
-      const relX = (parseDate(issue.target_date) - parentStart) / parentRange;
-      if (curCluster.relXs.length > 0 && relX - curCluster.relXs[curCluster.relXs.length - 1] > threshold) {
-        const avg = curCluster.relXs.reduce((a, b) => a + b, 0) / curCluster.relXs.length;
-        clusters.push({
-          relX: avg,
-          count: curCluster.relXs.length,
-          overdue: curCluster.overdueCount > 0
-        });
-        curCluster = { relXs: [], overdueCount: 0 };
+    if (node.issues.length > 0) {
+      html += `<div class="panel-section"><h3>Issues (${node.issues.length})</h3>`;
+      html += `<ul class="panel-issues">`;
+      for (const issue of node.issues) {
+        const url = issueUrl(issue.issue_ref);
+        const label = issue.title ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>` : escapeHtml(issue.issue_ref);
+        html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
       }
-      curCluster.relXs.push(relX);
-      if (relX > 1) curCluster.overdueCount++;
+      html += `</ul></div>`;
     }
-    if (curCluster.relXs.length > 0) {
-      const avg = curCluster.relXs.reduce((a, b) => a + b, 0) / curCluster.relXs.length;
-      clusters.push({
-        relX: avg,
-        count: curCluster.relXs.length,
-        overdue: curCluster.overdueCount > 0
-      });
+    panelContentEl.innerHTML = html;
+    panelEl.classList.add("open");
+  }
+  function showIssuePanel(issue, parentNode) {
+    selectedNode = null;
+    const url = issueUrl(issue.issue_ref);
+    const isOverdue = issue.target_date && parentNode.end && issue.target_date > parentNode.end;
+    let html = "";
+    html += `<h2>${escapeHtml(issue.title || issue.issue_ref)}</h2>`;
+    html += `<a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${escapeHtml(issue.issue_ref)} &rarr; Open on GitHub</a>`;
+    html += `<span class="panel-status ${issue.state === "CLOSED" ? "completed" : "active"}">${(issue.state || "OPEN").toLowerCase()}</span>`;
+    html += `<div class="panel-section"><h3>Timeline</h3><div class="panel-meta">`;
+    if (issue.start_date) html += `<span class="label">Start:</span> ${issue.start_date}<br/>`;
+    if (issue.target_date) html += `<span class="label">Target:</span> ${issue.target_date}`;
+    if (isOverdue && parentNode.end) {
+      html += `<br/><span class="issue-overflow">Overdue: ${formatOverdue(issue.target_date, parentNode.end)} past ${escapeHtml(parentNode.name)} deadline</span>`;
     }
-    return clusters;
+    html += `</div></div>`;
+    html += `<div class="panel-section"><h3>Parent</h3>`;
+    html += `<div class="panel-meta"><span class="crumb" onclick="window.__nav('${parentNode.path}')">${escapeHtml(parentNode.name)}</span></div></div>`;
+    panelContentEl.innerHTML = html;
+    panelEl.classList.add("open");
   }
-  function formatOverdue(targetDate, nodeEnd) {
-    const target = parseDate(targetDate);
-    const end = parseDate(nodeEnd);
-    const diffMs = target - end;
-    if (diffMs <= 0) return "";
-    const diffDays = Math.ceil(diffMs / (24 * 3600 * 1e3));
-    if (diffDays < 14) return `+${diffDays} days`;
-    const diffWeeks = Math.round(diffDays / 7);
-    return `+${diffWeeks} wks`;
+  function closePanel() {
+    selectedNode = null;
+    panelEl.classList.remove("open");
   }
+  window.__closePanel = closePanel;
+  var breadcrumbEl = document.getElementById("breadcrumb");
   function updateBreadcrumb() {
     const parts = [
       { label: data.org_name || "Root", path: "" }
@@ -186,707 +617,79 @@
       return `<span class="crumb" onclick="window.__nav('${p.path}')">${p.label}</span>`;
     }).join('<span class="crumb-sep"> &rsaquo; </span>');
   }
-  function escapeHtml(s) {
-    const div = document.createElement("div");
-    div.textContent = s;
-    return div.innerHTML;
-  }
-  function issueUrl(ref) {
-    const match = ref.match(/^(.+?)\/(.+?)#(\d+)$/);
-    if (!match) return "#";
-    return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
-  }
-  function showPanel(node) {
-    selectedNode = node;
-    let html = "";
-    html += `<h2>${escapeHtml(node.name)}</h2>`;
-    html += `<span class="panel-status ${node.status}">${node.status}</span>`;
-    if (node.description) {
-      html += `<div class="panel-section">`;
-      html += `<h3>Description</h3>`;
-      html += `<div class="panel-desc">${escapeHtml(node.description)}</div>`;
-      html += `</div>`;
-    }
-    html += `<div class="panel-section">`;
-    html += `<h3>Timeline</h3>`;
-    html += `<div class="panel-meta">`;
-    if (node.has_timeline) {
-      html += `<span class="label">Start:</span> ${node.start}<br/>`;
-      html += `<span class="label">End:</span> ${node.end}`;
-    } else if (node.eff_start) {
-      html += `<span class="label">Derived:</span> ${node.eff_start} &rarr; ${node.eff_end}`;
-    } else {
-      html += `<span class="label">No timeline</span>`;
-    }
-    html += `</div></div>`;
-    if (node.owners.length > 0 || node.team) {
-      html += `<div class="panel-section">`;
-      html += `<h3>People</h3>`;
-      html += `<div class="panel-meta">`;
-      if (node.owners.length > 0) {
-        html += `<span class="label">Owners:</span> ${node.owners.map(escapeHtml).join(", ")}<br/>`;
-      }
-      if (node.team) {
-        html += `<span class="label">Team:</span> ${escapeHtml(node.team)}`;
-      }
-      html += `</div></div>`;
-    }
-    const checkpoints = allCheckpoints(node);
-    if (checkpoints.length > 0) {
-      html += `<div class="panel-section">`;
-      html += `<h3>Milestones</h3>`;
-      html += `<ul class="panel-milestones">`;
-      for (const m of checkpoints) {
-        html += `<li>&diams; ${escapeHtml(m.name)} <span class="ms-date">${m.date}</span>`;
-        if (m.description) html += `<br/><span class="ms-date">${escapeHtml(m.description)}</span>`;
-        html += `</li>`;
-      }
-      html += `</ul></div>`;
-    }
-    if (node.issues.length > 0) {
-      html += `<div class="panel-section">`;
-      html += `<h3>Issues (${node.issues.length})</h3>`;
-      html += `<ul class="panel-issues">`;
-      for (const issue of node.issues) {
-        const url = issueUrl(issue.issue_ref);
-        const label = issue.title ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>` : escapeHtml(issue.issue_ref);
-        html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
-      }
-      html += `</ul></div>`;
-    }
-    if (node.children.length > 0) {
-      html += `<div class="panel-section">`;
-      html += `<h3>Children (${node.children.length})</h3>`;
-      html += `<ul class="panel-children">`;
-      for (const c of node.children) {
-        const color = STATUS_COLORS[c.status] || STATUS_COLORS.active;
-        const dates = c.has_timeline ? `${c.start} &rarr; ${c.end}` : c.eff_start ? `~${c.eff_start}` : "";
-        html += `<li>`;
-        html += `<span class="dot" style="background:${color}"></span>`;
-        html += `<span class="child-name">${escapeHtml(c.name)}</span>`;
-        if (dates) html += `<span class="child-dates">${dates}</span>`;
-        html += `</li>`;
-      }
-      html += `</ul>`;
-      html += `<button class="btn-drill" onclick="window.__nav('${node.path}')">Drill into ${escapeHtml(node.name)} &rsaquo;</button>`;
-      html += `</div>`;
-    }
-    panelContentEl.innerHTML = html;
-    panelEl.classList.add("open");
-    chart.resize();
-  }
-  function closePanel() {
-    selectedNode = null;
-    panelEl.classList.remove("open");
-    chart.resize();
-  }
-  window.__closePanel = closePanel;
-  function buildOption() {
+  function renderChart() {
     const nodes = getVisibleNodes();
-    visibleNodes = nodes;
-    const [xMin, xMax] = computeTimeRange(nodes);
-    const categories = [];
-    const seriesData = [];
-    const entries = [];
-    const INITIAL_ISSUE_LIMIT = 7;
-    for (const node of [...nodes].reverse()) {
-      const catIdx = categories.length;
-      categories.push(node.name);
-      seriesData.push({
-        value: [
-          node.eff_start ? parseDate(node.eff_start) : xMin,
-          node.eff_end ? parseDate(node.eff_end) : xMax,
-          catIdx
-        ]
-      });
-      entries.push({ type: "node", node });
-      if (expandedNode === node.path && node.issues.length > 0) {
-        const sorted = sortIssues(node.issues, node.end);
-        const allSorted = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
-        const limit = expandedShowAll ? allSorted.length : INITIAL_ISSUE_LIMIT;
-        const visible = allSorted.slice(0, limit);
-        let insertedOverdue = false;
-        let insertedSeparator = false;
-        for (let i = 0; i < visible.length; i++) {
-          const issue = visible[i];
-          const isOverdue = sorted.overdue.includes(issue);
-          const isOnTrackOrNoDates = !isOverdue;
-          if (isOnTrackOrNoDates && !insertedSeparator && insertedOverdue) {
-            const sepIdx = categories.length;
-            categories.push("\u2500\u2500\u2500");
-            seriesData.push({ value: [xMin, xMin, sepIdx] });
-            entries.push({ type: "separator" });
-            insertedSeparator = true;
-          }
-          if (isOverdue) insertedOverdue = true;
-          const catLabel = issue.title ? (isOverdue ? "\u26A0 " : "") + issue.title : issue.issue_ref;
-          const issueIdx = categories.length;
-          categories.push(catLabel);
-          const iStart = issue.start_date ? parseDate(issue.start_date) : xMin;
-          const iEnd = issue.target_date ? parseDate(issue.target_date) : xMax;
-          seriesData.push({ value: [iStart, iEnd, issueIdx] });
-          entries.push({ type: "issue", issue, parentNode: node });
-        }
-        if (!expandedShowAll && allSorted.length > INITIAL_ISSUE_LIMIT) {
-          const remaining = allSorted.length - INITIAL_ISSUE_LIMIT;
-          const moreIdx = categories.length;
-          categories.push(`\u25BE Show all ${allSorted.length} issues (${remaining} more)`);
-          seriesData.push({ value: [xMin, xMin, moreIdx] });
-          entries.push({ type: "show-more", parentNode: node, remaining });
-        }
+    const timeRange = computeTimeRange(nodes);
+    const timelineWidth = getTimelineWidth();
+    scaleState.baseScale.domain(timeRange).range([0, timelineWidth]);
+    scaleState.currentScale = scaleState.transform.rescaleX(scaleState.baseScale);
+    layout.labelsEl.innerHTML = "";
+    layout.barsGroup.innerHTML = "";
+    renderedRows = [];
+    let yOffset = 0;
+    for (const node of nodes) {
+      const isDimmed = expandedNode !== null && expandedNode !== node.path;
+      const isExpanded = expandedNode === node.path;
+      const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded });
+      renderedRows.push(row);
+      yOffset += row.height;
+      if (isExpanded && node.issues.length > 0) {
+        const issueRows = renderIssueRows(node, scaleState, layout, yOffset, expandedShowAll);
+        renderedRows.push(...issueRows);
+        yOffset += issueRows.reduce((sum, r) => sum + r.height, 0);
       }
     }
-    seriesEntries = entries;
+    syncSvgHeight(layout, yOffset);
+    const totalHeight = yOffset + getAxisHeight();
+    renderAxis(scaleState, layout, totalHeight);
+    renderGridLines(scaleState, layout, totalHeight);
+    renderTodayLine(scaleState, layout, totalHeight);
     const okrs = collectOkrs(data.nodes);
-    const okrLines = okrs.map((m) => ({
-      xAxis: parseDate(m.date),
-      name: m.name,
-      _okr: m
-    }));
-    const parentCheckpointLines = [];
+    renderMilestoneLines(scaleState, layout, totalHeight, okrs);
     if (currentPath !== "") {
       const parentNode = findNode(data.nodes, currentPath);
       if (parentNode) {
-        const seen = new Set(okrs.map((m) => `${m.name}|${m.date}`));
-        for (const m of allCheckpoints(parentNode)) {
-          const key = `${m.name}|${m.date}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            parentCheckpointLines.push({
-              xAxis: parseDate(m.date),
-              name: m.name,
-              _okr: m
-              // reuse same shape for tooltip
-            });
-          }
-        }
+        const checkpoints = allCheckpoints(parentNode);
+        const filtered = checkpoints.filter((m) => !okrs.some((o) => o.name === m.name && o.date === m.date));
+        renderMilestoneLines(scaleState, layout, totalHeight, filtered);
       }
     }
-    const todayLine = {
-      xAxis: (/* @__PURE__ */ new Date()).setHours(0, 0, 0, 0),
-      name: "Today",
-      _okr: null
-    };
-    const allVerticalLines = [todayLine, ...okrLines, ...parentCheckpointLines];
-    return {
-      tooltip: {
-        trigger: "item",
-        formatter: (params) => {
-          const idx = params.dataIndex;
-          const entry = seriesEntries[idx];
-          if (!entry) return "";
-          if (entry.type === "separator" || entry.type === "show-more") return "";
-          if (entry.type === "issue") {
-            const issue = entry.issue;
-            const parts2 = [
-              `<b>${issue.title || issue.issue_ref}</b>`,
-              issue.issue_ref
-            ];
-            if (issue.start_date) parts2.push(`Start: ${issue.start_date}`);
-            if (issue.target_date) parts2.push(`Target: ${issue.target_date}`);
-            if (issue.target_date && entry.parentNode.end && issue.target_date > entry.parentNode.end) {
-              parts2.push(
-                `<span style="color:#f85149">Overdue: ${formatOverdue(issue.target_date, entry.parentNode.end)}</span>`
-              );
-            }
-            parts2.push("", "<i>Click to open on GitHub</i>");
-            return parts2.join("<br/>");
-          }
-          const n = entry.node;
-          const dates = n.has_timeline ? `${n.start} &rarr; ${n.end}` : n.eff_start ? `~${n.eff_start} &rarr; ~${n.eff_end} (derived)` : "No fixed timeline";
-          const parts = [`<b>${n.name}</b>`, dates, `Status: ${n.status}`];
-          if (n.owners.length > 0) parts.push(`Owners: ${n.owners.join(", ")}`);
-          if (n.team) parts.push(`Team: ${n.team}`);
-          const ms = allCheckpoints(n);
-          if (ms.length > 0) {
-            parts.push("");
-            parts.push(`<b>Milestones:</b>`);
-            for (const m of ms) {
-              parts.push(`&diams; ${m.name} (${m.date})`);
-            }
-          }
-          if (n.children.length === 0 && n.issues.length > 0) {
-            parts.push("", "<i>Click to expand issues</i>");
-          } else {
-            parts.push("", "<i>Click for details</i>");
-          }
-          return parts.join("<br/>");
-        }
-      },
-      grid: {
-        top: 40,
-        bottom: 40,
-        left: 20,
-        right: 20,
-        containLabel: true
-      },
-      xAxis: {
-        type: "time",
-        min: xMin,
-        max: xMax,
-        axisLabel: { color: "#8b949e" },
-        axisLine: { lineStyle: { color: "#30363d" } },
-        splitLine: {
-          show: true,
-          lineStyle: { color: "#21262d", type: "dashed" }
-        }
-      },
-      yAxis: {
-        type: "category",
-        data: categories,
-        axisLabel: {
-          formatter: (value) => value,
-          rich: {},
-          color: (value, index) => {
-            const entry = seriesEntries[index];
-            if (!entry) return "#e6edf3";
-            if (entry.type === "separator") return "#21262d";
-            if (entry.type === "show-more") return "#484f58";
-            if (entry.type === "issue") {
-              const isOverdue = entry.issue.target_date && entry.parentNode.end && entry.issue.target_date > entry.parentNode.end;
-              return isOverdue ? "#f85149" : "#8b949e";
-            }
-            return "#e6edf3";
-          },
-          fontWeight: (value, index) => {
-            const entry = seriesEntries[index];
-            return entry?.type === "node" ? "bold" : "normal";
-          },
-          fontSize: (value, index) => {
-            const entry = seriesEntries[index];
-            if (entry?.type === "issue") return 11;
-            if (entry?.type === "separator") return 9;
-            if (entry?.type === "show-more") return 11;
-            return 13;
-          }
-        },
-        axisLine: { show: false },
-        axisTick: { show: false }
-      },
-      series: [
-        {
-          type: "custom",
-          renderItem: renderBar,
-          encode: { x: [0, 1], y: 2 },
-          data: seriesData
-        },
-        // Invisible line series that carries markLine for vertical lines
-        // (today, OKRs, checkpoints). markLine on custom series is unreliable.
-        {
-          type: "line",
-          data: [],
-          symbol: "none",
-          silent: true,
-          markLine: {
-            silent: false,
-            symbol: ["none", "none"],
-            label: {
-              show: true,
-              position: "start",
-              formatter: (p) => p.name,
-              fontSize: 10,
-              color: "#8b949e"
-            },
-            lineStyle: {
-              type: "dashed",
-              width: 1
-            },
-            data: allVerticalLines.map((line) => {
-              const isToday = line === todayLine;
-              const isOkr = okrLines.includes(line);
-              if (isToday) {
-                return {
-                  ...line,
-                  lineStyle: {
-                    color: "rgba(239, 68, 68, 0.7)",
-                    type: "solid",
-                    width: 2
-                  },
-                  label: {
-                    color: "#ef4444"
-                  }
-                };
-              }
-              return {
-                ...line,
-                lineStyle: {
-                  color: isOkr ? "rgba(167, 139, 250, 0.5)" : "rgba(245, 158, 11, 0.5)"
-                },
-                label: {
-                  color: isOkr ? "#a78bfa" : "#f59e0b"
-                }
-              };
-            }),
-            tooltip: {
-              formatter: (p) => {
-                if (p.name === "Today") return "Today";
-                const m = p.data?._okr;
-                if (!m) return p.name;
-                return [
-                  `<b>${m.name}</b>`,
-                  m.date,
-                  m.description || ""
-                ].filter(Boolean).join("<br/>");
-              }
-            }
-          }
-        }
-      ],
-      backgroundColor: "transparent"
-    };
   }
-  function renderIssueRow(params, api, issue, parentNode) {
-    const yIdx = api.value(2);
-    const bandWidth = api.size([0, 1])[1];
-    const yCenter = api.coord([0, yIdx])[1];
-    const children = [];
-    if (!issue.start_date || !issue.target_date) {
-      return { type: "group", children: [] };
-    }
-    const startX = api.coord([parseDate(issue.start_date), yIdx])[0];
-    const endX = api.coord([parseDate(issue.target_date), yIdx])[0];
-    const barY = yCenter - 3;
-    const barW = Math.max(endX - startX, 2);
-    children.push({
-      type: "rect",
-      shape: { x: startX, y: barY, width: barW, height: 6, r: 2 },
-      style: {
-        fill: "#58a6ff",
-        opacity: 0.6
-      }
-    });
-    const isOverdue = parentNode.end && issue.target_date > parentNode.end;
-    if (isOverdue) {
-      const todayMs = (/* @__PURE__ */ new Date()).setHours(0, 0, 0, 0);
-      const targetMs = parseDate(issue.target_date);
-      if (todayMs > targetMs) {
-        const overdueStartX = endX;
-        const overdueEndX = api.coord([todayMs, yIdx])[0];
-        const overdueW = Math.max(overdueEndX - overdueStartX, 2);
-        children.push({
-          type: "rect",
-          shape: { x: overdueStartX, y: barY, width: overdueW, height: 6, r: 2 },
-          style: {
-            fill: "#f85149",
-            opacity: 0.6
-          }
-        });
-      }
-      const overdueLabel = formatOverdue(issue.target_date, parentNode.end);
-      if (overdueLabel) {
-        const labelX = Math.max(
-          endX + 4,
-          api.coord([(/* @__PURE__ */ new Date()).setHours(0, 0, 0, 0), yIdx])[0] + 4
-        );
-        children.push({
-          type: "text",
-          style: {
-            text: overdueLabel,
-            x: labelX,
-            y: yCenter,
-            fill: "#f85149",
-            fontSize: 10,
-            textAlign: "left",
-            textVerticalAlign: "middle"
-          }
-        });
-      }
-    } else {
-      const refMatch = issue.issue_ref.match(/#(\d+)$/);
-      const refLabel = refMatch ? `#${refMatch[1]}` : issue.issue_ref;
-      children.push({
-        type: "text",
-        style: {
-          text: refLabel,
-          x: endX + 4,
-          y: yCenter,
-          fill: "#484f58",
-          fontSize: 10,
-          textAlign: "left",
-          textVerticalAlign: "middle"
+  function onZoom() {
+    const totalHeight = renderedRows.reduce((sum, r) => sum + r.height, 0) + getAxisHeight();
+    renderAxis(scaleState, layout, totalHeight);
+    renderGridLines(scaleState, layout, totalHeight);
+    renderTodayLine(scaleState, layout, totalHeight);
+    layout.barsGroup.innerHTML = "";
+    let yOffset = 0;
+    const nodes = getVisibleNodes();
+    for (const node of nodes) {
+      const isDimmed = expandedNode !== null && expandedNode !== node.path;
+      const isExpanded = expandedNode === node.path;
+      renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded });
+      yOffset += getRowHeight("node");
+      if (isExpanded && node.issues.length > 0) {
+        renderIssueRows(node, scaleState, layout, yOffset, expandedShowAll);
+        const sorted = sortIssues(node.issues, node.end);
+        const all = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
+        const limit = expandedShowAll ? all.length : 7;
+        const visible = all.slice(0, limit);
+        for (const issue of visible) {
+          yOffset += getRowHeight("issue");
         }
-      });
-    }
-    return { type: "group", children };
-  }
-  function renderSeparatorRow(params, api) {
-    const yIdx = api.value(2);
-    const yCenter = api.coord([0, yIdx])[1];
-    const gridLeft = params.coordSys.x;
-    const gridRight = params.coordSys.x + params.coordSys.width;
-    return {
-      type: "group",
-      children: [
-        {
-          type: "line",
-          shape: { x1: gridLeft, y1: yCenter, x2: gridRight, y2: yCenter },
-          style: {
-            stroke: "#21262d",
-            lineWidth: 1,
-            lineDash: [4, 3]
-          }
+        if (sorted.overdue.length > 0 && (sorted.onTrack.length > 0 || sorted.noDates.length > 0)) {
+          yOffset += getRowHeight("separator");
         }
-      ]
-    };
-  }
-  function renderShowMoreRow(params, api, entry) {
-    return { type: "group", children: [] };
-  }
-  function renderBar(params, api) {
-    const entry = seriesEntries[params.dataIndex];
-    if (!entry) return { type: "group", children: [] };
-    if (entry.type === "separator") {
-      return renderSeparatorRow(params, api);
-    }
-    if (entry.type === "issue") {
-      return renderIssueRow(params, api, entry.issue, entry.parentNode);
-    }
-    if (entry.type === "show-more") {
-      return renderShowMoreRow(params, api, entry);
-    }
-    const node = entry.node;
-    const yIdx = api.value(2);
-    const start = api.coord([api.value(0), yIdx]);
-    const end = api.coord([api.value(1), yIdx]);
-    const bandWidth = api.size([0, 1])[1];
-    const x = start[0];
-    const y = start[1] - bandWidth * 0.4;
-    const width = end[0] - start[0];
-    const height = bandWidth * 0.8;
-    if (width <= 0) return { type: "group", children: [] };
-    const children = [];
-    const isSelected = selectedNode?.path === node.path;
-    const isDimmed = expandedNode !== null && expandedNode !== node.path;
-    const groupOpacity = isDimmed ? 0.4 : 1;
-    const isExpanded = expandedNode === node.path;
-    const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
-    const hasTimeline = node.has_timeline;
-    children.push({
-      type: "rect",
-      shape: { x, y, width, height, r: 4 },
-      style: {
-        fill: hasTimeline ? isExpanded ? `${statusColor}30` : `${statusColor}22` : NO_TIMELINE_COLOR,
-        stroke: isSelected ? "#e6edf3" : isExpanded ? "rgba(88, 166, 255, 0.6)" : hasTimeline ? `${statusColor}55` : NO_TIMELINE_BORDER,
-        lineWidth: isSelected ? 2 : isExpanded ? 2 : 1,
-        lineDash: hasTimeline || isSelected || isExpanded ? null : [4, 3]
-      }
-    });
-    if (node.children.length > 0) {
-      const childrenWithTimeline = node.children.filter(
-        (c) => c.eff_start && c.eff_end
-      );
-      if (childrenWithTimeline.length > 0) {
-        const outerStart = api.value(0);
-        const outerEnd = api.value(1);
-        const outerRange = outerEnd - outerStart;
-        const childStarts = childrenWithTimeline.map(
-          (c) => parseDate(c.eff_start)
-        );
-        const childEnds = childrenWithTimeline.map(
-          (c) => parseDate(c.eff_end)
-        );
-        const spanStart = Math.min(...childStarts);
-        const spanEnd = Math.max(...childEnds);
-        const relStart = Math.max(0, (spanStart - outerStart) / outerRange);
-        const relEnd = Math.min(1, (spanEnd - outerStart) / outerRange);
-        const fillX = x + relStart * width;
-        const fillW = (relEnd - relStart) * width;
-        children.push({
-          type: "rect",
-          shape: { x: fillX, y: y + 1, width: fillW, height: height - 2, r: 4 },
-          style: {
-            fill: {
-              type: "linear",
-              x: 0,
-              y: 0,
-              x2: 1,
-              y2: 0,
-              colorStops: [
-                { offset: 0, color: "rgba(88, 166, 255, 0.35)" },
-                { offset: 1, color: "rgba(88, 166, 255, 0.15)" }
-              ]
-            }
-          }
-        });
-      }
-      const badgeText = `\xD7${node.children.length} children`;
-      const badgeX = x + width - 20;
-      const badgeY = y + height / 2;
-      children.push({
-        type: "text",
-        style: {
-          text: badgeText,
-          x: badgeX,
-          y: badgeY,
-          fill: "#58a6ff",
-          fontSize: 11,
-          fontWeight: 600,
-          textAlign: "right",
-          textVerticalAlign: "middle",
-          backgroundColor: "rgba(13, 17, 23, 0.7)",
-          borderRadius: 3,
-          padding: [2, 6]
-        }
-      });
-    }
-    if (node.children.length === 0 && node.issues.length > 0) {
-      const outerStart = api.value(0);
-      const outerEnd = api.value(1);
-      const outerRange = outerEnd - outerStart;
-      const clusters = clusterTicks(node.issues, outerStart, outerRange, 0.02);
-      for (const cluster of clusters) {
-        const clampedX = Math.max(0, Math.min(1, cluster.relX));
-        const tickX = x + clampedX * width;
-        const tickW = cluster.count > 1 ? 6 : 3;
-        const tickH = 14;
-        const tickY = y + (height - tickH) / 2;
-        const tickColor = cluster.overdue ? "#f85149" : "#58a6ff";
-        const tickOpacity = cluster.overdue ? 0.9 : 0.7;
-        children.push({
-          type: "rect",
-          shape: {
-            x: tickX - tickW / 2,
-            y: tickY,
-            width: tickW,
-            height: tickH,
-            r: 1
-          },
-          style: {
-            fill: tickColor,
-            opacity: tickOpacity
-          }
-        });
-        if (cluster.count > 1) {
-          children.push({
-            type: "text",
-            style: {
-              text: `${cluster.count}`,
-              x: tickX,
-              y: tickY - 2,
-              fill: tickColor,
-              fontSize: 8,
-              textAlign: "center",
-              textVerticalAlign: "bottom",
-              opacity: 0.8
-            }
-          });
-        }
-      }
-      const overdueCount = node.issues.filter(
-        (i) => i.target_date && node.end && i.target_date > node.end
-      ).length;
-      const badgeX = x + width - 8;
-      const badgeY = y + height / 2;
-      if (overdueCount > 0) {
-        children.push({
-          type: "text",
-          style: {
-            text: `${node.issues.length} issues \xB7 {overdue|${overdueCount} overdue}`,
-            x: badgeX,
-            y: badgeY,
-            fill: "#8b949e",
-            fontSize: 11,
-            fontWeight: 600,
-            textAlign: "right",
-            textVerticalAlign: "middle",
-            backgroundColor: "rgba(13, 17, 23, 0.7)",
-            borderRadius: 3,
-            padding: [2, 6],
-            rich: {
-              overdue: {
-                fill: "#f85149",
-                fontSize: 11,
-                fontWeight: 600
-              }
-            }
-          }
-        });
-      } else {
-        children.push({
-          type: "text",
-          style: {
-            text: `${node.issues.length} issues`,
-            x: badgeX,
-            y: badgeY,
-            fill: "#8b949e",
-            fontSize: 11,
-            fontWeight: 600,
-            textAlign: "right",
-            textVerticalAlign: "middle",
-            backgroundColor: "rgba(13, 17, 23, 0.7)",
-            borderRadius: 3,
-            padding: [2, 6]
-          }
-        });
-      }
-    }
-    const nodeMilestones = currentPath === "" ? allCheckpoints(node) : [];
-    if (nodeMilestones.length > 0) {
-      for (const m of nodeMilestones) {
-        const mDate = parseDate(m.date);
-        const mx = api.coord([mDate, api.value(2)])[0];
-        const mColor = "#f59e0b";
-        children.push({
-          type: "line",
-          shape: { x1: mx, y1: y, x2: mx, y2: y + height },
-          style: {
-            stroke: mColor,
-            lineWidth: 1,
-            lineDash: [3, 2],
-            opacity: 0.7
-          }
-        });
-        const ds = 5;
-        const dy = y + 2 + ds;
-        children.push({
-          type: "path",
-          shape: {
-            d: `M${mx},${dy - ds}L${mx + ds},${dy}L${mx},${dy + ds}L${mx - ds},${dy}Z`
-          },
-          style: {
-            fill: mColor,
-            opacity: 0.9
-          }
-        });
-        children.push({
-          type: "text",
-          style: {
-            text: m.name,
-            x: mx,
-            y: y - 2,
-            fill: mColor,
-            fontSize: 9,
-            textAlign: "center",
-            textVerticalAlign: "bottom",
-            opacity: 0.8
-          }
-        });
-      }
-    }
-    if (node.children.length > 0) {
-      const arrowX = x + width - 12;
-      const arrowY = y + height / 2;
-      children.push({
-        type: "path",
-        shape: {
-          d: `M${arrowX},${arrowY - 4}L${arrowX + 6},${arrowY}L${arrowX},${arrowY + 4}Z`
-        },
-        style: {
-          fill: hasTimeline ? statusColor : "#6b7280",
-          opacity: 0.6
-        }
-      });
-    }
-    if (isDimmed) {
-      for (const child of children) {
-        if (child.style) {
-          child.style.opacity = (child.style.opacity ?? 1) * groupOpacity;
-        } else {
-          child.style = { opacity: groupOpacity };
+        if (!expandedShowAll && all.length > 7) {
+          yOffset += getRowHeight("issue");
         }
       }
     }
-    return { type: "group", children };
+    const okrs = collectOkrs(data.nodes);
+    const totalH = yOffset + getAxisHeight();
+    layout.markersGroup.innerHTML = "";
+    renderTodayLine(scaleState, layout, totalH);
+    renderMilestoneLines(scaleState, layout, totalH, okrs);
   }
   function navigateTo(path) {
     currentPath = path;
@@ -895,60 +698,137 @@
     expandedShowAll = false;
     closePanel();
     updateBreadcrumb();
+    resetZoom(scaleState, layout);
     renderChart();
   }
   window.__nav = navigateTo;
-  chart.on("click", (params) => {
-    const idx = params.dataIndex;
-    const entry = seriesEntries[idx];
-    if (entry && entry.type === "issue") {
-      const url = issueUrl(entry.issue.issue_ref);
-      if (url !== "#") window.open(url, "_blank", "noopener");
-      return;
-    }
-    if (entry && entry.type === "show-more") {
-      if (expandedNode === entry.parentNode.path) {
+  function handleRowClick(row) {
+    if (row.type === "node" && row.node) {
+      const node = row.node;
+      if (node.children.length === 0 && node.issues.length > 0) {
+        if (expandedNode === node.path) {
+          expandedNode = null;
+          expandedShowAll = false;
+        } else {
+          expandedNode = node.path;
+          expandedShowAll = false;
+        }
+        closePanel();
+        renderChart();
+      } else {
+        showNodePanel(node);
+      }
+    } else if (row.type === "issue" && row.issue && row.parentNode) {
+      showIssuePanel(row.issue, row.parentNode);
+    } else if (row.type === "show-more" && row.parentNode) {
+      if (expandedNode === row.parentNode.path) {
         expandedShowAll = true;
         renderChart();
       }
-      return;
     }
-    const node = entry?.type === "node" ? entry.node : void 0;
-    if (!node) return;
-    if (node.children.length === 0 && node.issues.length > 0) {
-      if (expandedNode === node.path) {
-        expandedNode = null;
-        expandedShowAll = false;
-      } else {
-        expandedNode = node.path;
-        expandedShowAll = false;
-      }
-      selectedNode = null;
-      closePanel();
-      renderChart();
-    } else {
-      showPanel(node);
-      renderChart();
+  }
+  function handleRowDblClick(row) {
+    if (row.type === "node" && row.node && row.node.children.length > 0) {
+      navigateTo(row.node.path);
     }
-  });
-  chart.on("dblclick", (params) => {
-    const entry = seriesEntries[params.dataIndex];
-    const node = entry?.type === "node" ? entry.node : void 0;
-    if (node && node.children.length > 0) {
-      navigateTo(node.path);
-    }
-  });
-  function renderChart() {
-    chart.setOption(buildOption(), true);
   }
   function setRange(global) {
     useGlobalRange = global;
-    btnFitted?.classList.toggle("active", !global);
-    btnGlobal?.classList.toggle("active", global);
+    document.getElementById("btn-fitted")?.classList.toggle("active", !global);
+    document.getElementById("btn-global")?.classList.toggle("active", global);
+    resetZoom(scaleState, layout);
     renderChart();
   }
   window.__setRange = setRange;
-  window.addEventListener("resize", () => chart.resize());
+  var tooltipEl = document.getElementById("tooltip");
+  function showTooltip(e, html) {
+    tooltipEl.innerHTML = html;
+    tooltipEl.style.display = "block";
+    tooltipEl.style.left = `${e.clientX + 12}px`;
+    tooltipEl.style.top = `${e.clientY + 12}px`;
+  }
+  function hideTooltip() {
+    tooltipEl.style.display = "none";
+  }
+  window.__chartState = {
+    get currentPath() {
+      return currentPath;
+    },
+    get expandedNode() {
+      return expandedNode;
+    },
+    get visibleNodes() {
+      return getVisibleNodes();
+    },
+    get renderedRows() {
+      return renderedRows;
+    }
+  };
+  layout = getLayoutElements();
+  var initialRange = computeTimeRange(getVisibleNodes());
+  var initialWidth = getTimelineWidth();
+  scaleState = createScale(initialRange, initialWidth);
+  setupZoom(scaleState, layout, onZoom);
+  layout.labelsEl.addEventListener("click", (e) => {
+    const target = e.target.closest(".chart-row");
+    if (!target) return;
+    const idx = Array.from(layout.labelsEl.children).indexOf(target);
+    if (idx >= 0 && renderedRows[idx]) {
+      handleRowClick(renderedRows[idx]);
+    }
+  });
+  layout.labelsEl.addEventListener("dblclick", (e) => {
+    const target = e.target.closest(".chart-row");
+    if (!target) return;
+    const idx = Array.from(layout.labelsEl.children).indexOf(target);
+    if (idx >= 0 && renderedRows[idx]) {
+      handleRowDblClick(renderedRows[idx]);
+    }
+  });
+  layout.timelineSvg.addEventListener("click", (e) => {
+    const target = e.target;
+    const path = target.dataset?.path;
+    if (path) {
+      const row = renderedRows.find((r) => r.type === "node" && r.node?.path === path);
+      if (row) handleRowClick(row);
+    }
+  });
+  layout.timelineSvg.addEventListener("dblclick", (e) => {
+    const target = e.target;
+    const path = target.dataset?.path;
+    if (path) {
+      const row = renderedRows.find((r) => r.type === "node" && r.node?.path === path);
+      if (row) handleRowDblClick(row);
+    }
+  });
+  layout.labelsEl.addEventListener("mouseover", (e) => {
+    const target = e.target.closest(".chart-row");
+    if (!target) return;
+    const idx = Array.from(layout.labelsEl.children).indexOf(target);
+    const row = renderedRows[idx];
+    if (!row) return;
+    if (row.type === "issue" && row.issue) {
+      const parts = [`<b>${escapeHtml(row.issue.title || row.issue.issue_ref)}</b>`, row.issue.issue_ref];
+      if (row.issue.start_date) parts.push(`Start: ${row.issue.start_date}`);
+      if (row.issue.target_date) parts.push(`Target: ${row.issue.target_date}`);
+      if (row.issue.target_date && row.parentNode?.end && row.issue.target_date > row.parentNode.end) {
+        parts.push(`<span style="color:#f85149">Overdue: ${formatOverdue(row.issue.target_date, row.parentNode.end)}</span>`);
+      }
+      showTooltip(e, parts.join("<br/>"));
+    } else if (row.type === "node" && row.node) {
+      const n = row.node;
+      const dates = n.has_timeline ? `${n.start} \u2192 ${n.end}` : n.eff_start ? `~${n.eff_start} \u2192 ~${n.eff_end}` : "No timeline";
+      showTooltip(e, `<b>${escapeHtml(n.name)}</b><br/>${dates}<br/>Status: ${n.status}`);
+    }
+  });
+  layout.labelsEl.addEventListener("mouseout", (e) => {
+    const target = e.target.closest(".chart-row");
+    if (target) hideTooltip();
+  });
+  window.addEventListener("resize", () => {
+    updateScaleRange(scaleState, getTimelineWidth());
+    renderChart();
+  });
   updateBreadcrumb();
   renderChart();
 })();
