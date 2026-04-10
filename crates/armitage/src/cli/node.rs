@@ -852,6 +852,7 @@ pub(crate) fn create_node_full(
         labels: labels_vec,
         repos: repos.to_vec(),
         owners: owners.to_vec(),
+        team: None,
         timeline,
         status: node_status,
     };
@@ -953,6 +954,9 @@ pub fn run_show(path: String) -> Result<()> {
     }
     if !entry.node.owners.is_empty() {
         println!("owners:      {}", entry.node.owners.join(", "));
+    }
+    if let Some(ref team) = entry.node.team {
+        println!("team:        {team}");
     }
     if let Some(ref tl) = entry.node.timeline {
         println!("timeline:    {} — {}", tl.start, tl.end);
@@ -1239,6 +1243,7 @@ pub fn run_edit(path: String) -> Result<()> {
         labels,
         repos,
         owners,
+        team: node.team.clone(),
         timeline,
         status,
     };
@@ -1807,6 +1812,7 @@ mod tests {
                 labels: vec![],
                 repos: vec![],
                 owners: vec![],
+                team: None,
                 timeline: None,
             },
         }

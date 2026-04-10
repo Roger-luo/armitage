@@ -16,6 +16,8 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub owners: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeline: Option<Timeline>,
     #[serde(default)]
     pub status: NodeStatus,
@@ -148,6 +150,7 @@ mod tests {
             labels: vec!["area:core".to_string()],
             repos: vec!["acme/widget".to_string()],
             owners: vec!["alice".to_string()],
+            team: Some("circuit".to_string()),
             timeline: Some(Timeline {
                 start: NaiveDate::from_ymd_opt(2025, 3, 1).unwrap(),
                 end: NaiveDate::from_ymd_opt(2025, 9, 30).unwrap(),
