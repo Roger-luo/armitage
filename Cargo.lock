@@ -120,6 +120,7 @@ dependencies = [
  "armitage-milestones",
  "askama",
  "chrono",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
