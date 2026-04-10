@@ -118,11 +118,12 @@ armitage triage review -i [--min-confidence N] [--max-confidence N]
 armitage triage review --list [--min-confidence N] [--max-confidence N] [--format table|json]
 armitage triage review --auto-approve <threshold>
 armitage triage decide <issue-ref>... --decision <approve|reject|modify|stale|inquire> [--node <path>] [--labels <l,...>] [--note <text>] [--question <text>]
+armitage triage decide --all-pending --decision <approve|reject|stale> [--min-confidence N] [--max-confidence N] [--note <text>]
 armitage triage apply [--dry-run]
 armitage triage reset [--below <threshold> | --node <path> | --issue <owner/repo#N> | --all | --unreviewed]
 armitage triage status [--format table|json]
 armitage triage summary [--repo <r>] [--format table|json]
-armitage triage suggestions [--issues 247,276,32] [--node <prefix>] [--repo <r>] [--min-confidence N] [--max-confidence N] [--status pending|approved|rejected|applied] [--tracking-only] [--unclassified] [--stale-only] [--sort confidence|node|repo] [--limit N] [--format table|json|summary] [--body-max N]
+armitage triage suggestions [--issues 247,276,32] [--node <prefix>] [--repo <r>] [--min-confidence N] [--max-confidence N] [--status pending|approved|rejected|applied] [--tracking-only] [--unclassified] [--stale-only] [--sort confidence|node|repo] [--limit N] [--format table|json|summary|refs] [--body-max N]
 armitage triage decisions [--status <s>] [--unapplied] [--node <prefix>] [--repo <r>] [--limit N] [--format table|json]
 ```
 
@@ -148,10 +149,10 @@ armitage triage decisions [--status <s>] [--unapplied] [--node <prefix>] [--repo
   shows the full merged label set so the reviewer can edit freely — including removing existing
   labels when appropriate. This is the only way to remove labels through the triage pipeline.
 - **apply** — pushes approved label changes to GitHub. Computes a diff between the decision's final labels and the issue's current labels, adding new ones and removing only those explicitly removed by a modify decision. For **inquired** and **stale-with-question** decisions, posts the stored question as a comment on the GitHub issue instead of changing labels. Stale decisions without a question are marked as applied with no GitHub action
-- **decide** — submit review decisions non-interactively for one or more issues. Accepts multiple issue refs in a single command (e.g., `triage decide ref1 ref2 ref3 --decision stale`). Used by agents and scripts. Supports `approve`, `reject`, `modify` (with optional `--node`/`--labels` overrides), `stale` (with optional `--question` for staleness inquiry), and `inquire` (with required `--question`). Auto-saves examples on reject/modify/stale (same as interactive mode). Errors on individual issues are reported but don't stop the batch; a summary error is returned at the end if any failed. Errors if a decision has already been applied to GitHub
+- **decide** — submit review decisions non-interactively for one or more issues. Accepts multiple issue refs in a single command (e.g., `triage decide ref1 ref2 ref3 --decision stale`). Use `--all-pending` to decide on all pending suggestions at once (e.g., `triage decide --all-pending --decision approve`), optionally filtered with `--min-confidence`/`--max-confidence`. Used by agents and scripts. Supports `approve`, `reject`, `modify` (with optional `--node`/`--labels` overrides), `stale` (with optional `--question` for staleness inquiry), and `inquire` (with required `--question`). Auto-saves examples on reject/modify/stale (same as interactive mode). Errors on individual issues are reported but don't stop the batch; a summary error is returned at the end if any failed. Errors if a decision has already been applied to GitHub
 - **reset** — clears suggestions so issues can be re-classified, then refreshes the issue cache. Modes: `--below <threshold>` (confidence), `--node <path>` (subtree), `--issue <owner/repo#N>` (single issue), `--all`, or `--unreviewed` (deletes unreviewed and rejected suggestions while preserving approved/modified ones — useful for reclassifying with improved examples after a partial review)
 - **summary** — confidence distribution, per-node breakdown, and suggested new categories
-- **suggestions** — query and filter individual suggestions with flexible criteria. Use `--issues 247,276,32` to select specific issue numbers. The `--format summary` option groups results into **AUTO-APPROVE** (confidence >= 0.80 with a suggested node) and **NEEDS REVIEW** (low confidence or no node), with extra detail (stale flags, new categories, reasoning) for uncertain ones — ideal for agent-driven workflows that need to partition suggestions without post-processing
+- **suggestions** — query and filter individual suggestions with flexible criteria. Use `--issues 247,276,32` to select specific issue numbers. The `--format summary` option groups results into **AUTO-APPROVE** (confidence >= 0.80 with a suggested node) and **NEEDS REVIEW** (low confidence or no node), with extra detail (stale flags, new categories, reasoning) for uncertain ones — ideal for agent-driven workflows that need to partition suggestions without post-processing. Use `--format refs` to output just issue refs one per line (e.g., for piping to `triage decide`)
 - **decisions** — query and filter review decisions
 
 ### Category Management

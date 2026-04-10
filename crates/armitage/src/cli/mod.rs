@@ -311,11 +311,19 @@ enum TriageCommands {
     /// Submit a review decision for one or more issues (non-interactive)
     Decide {
         /// Issue references (owner/repo#number), one or more
-        #[arg(required = true)]
         issue_refs: Vec<String>,
         /// Decision: approve, reject, modify, stale, or inquire
         #[arg(long)]
         decision: String,
+        /// Apply the decision to all pending suggestions (instead of listing refs)
+        #[arg(long)]
+        all_pending: bool,
+        /// Minimum confidence filter (only with --all-pending)
+        #[arg(long)]
+        min_confidence: Option<f64>,
+        /// Maximum confidence filter (only with --all-pending)
+        #[arg(long)]
+        max_confidence: Option<f64>,
         /// Override the suggested node (only with --decision modify)
         #[arg(long)]
         node: Option<String>,
@@ -853,12 +861,25 @@ pub fn run() -> Result<()> {
             TriageCommands::Decide {
                 issue_refs,
                 decision,
+                all_pending,
+                min_confidence,
+                max_confidence,
                 node,
                 labels,
                 note,
                 question,
             } => {
-                triage::run_decide(issue_refs, decision, node, labels, note, question)?;
+                triage::run_decide(
+                    issue_refs,
+                    decision,
+                    all_pending,
+                    min_confidence,
+                    max_confidence,
+                    node,
+                    labels,
+                    note,
+                    question,
+                )?;
             }
             TriageCommands::Reset {
                 below,
