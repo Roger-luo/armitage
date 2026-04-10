@@ -215,6 +215,16 @@ After the LLM pass, a deterministic sweep catches remote labels whose bare name 
 prefixed label (e.g. remote `stim` → local `area: STIM`). This ensures the LLM's blind spots
 are covered for obvious prefix-match duplicates.
 
+### Roadmap Chart
+
+```
+armitage chart [--output PATH] [--no-open] [--offline]
+# Generates an interactive HTML roadmap timeline at .armitage/chart.html
+# --output PATH   custom output path
+# --no-open       don't auto-open in browser
+# --offline       inline ECharts JS for offline viewing
+```
+
 ### Configuration
 
 ```

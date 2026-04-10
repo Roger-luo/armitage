@@ -12,6 +12,8 @@ pub enum Error {
     Sync(#[from] armitage_sync::error::Error),
     #[error(transparent)]
     Triage(#[from] armitage_triage::error::Error),
+    #[error(transparent)]
+    Chart(#[from] armitage_chart::error::Error),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("TOML serialize error: {0}")]
