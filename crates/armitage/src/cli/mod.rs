@@ -145,6 +145,8 @@ enum NodeCommands {
         #[arg(long)]
         description: Option<String>,
         #[arg(long)]
+        triage_hint: Option<String>,
+        #[arg(long)]
         owners: Option<String>,
         #[arg(long)]
         team: Option<String>,
@@ -667,13 +669,24 @@ pub fn run() -> Result<()> {
                 path,
                 name,
                 description,
+                triage_hint,
                 owners,
                 team,
                 repos,
                 labels,
                 status,
             } => {
-                node::run_set(path, name, description, owners, team, repos, labels, status)?;
+                node::run_set(
+                    path,
+                    name,
+                    description,
+                    triage_hint,
+                    owners,
+                    team,
+                    repos,
+                    labels,
+                    status,
+                )?;
             }
             NodeCommands::Tree { depth } => {
                 node::run_tree(depth)?;

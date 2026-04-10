@@ -8,6 +8,8 @@ pub struct Node {
     pub name: String,
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub triage_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github_issue: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
@@ -32,18 +34,20 @@ impl Node {
     /// so re-formatting is idempotent.
     pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
         let mut normalized = self.clone();
-        // Collapse any existing newlines in description to spaces
-        if normalized.description.contains('\n') {
-            normalized.description = normalized
-                .description
-                .lines()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .trim()
-                .to_string();
+        // Collapse any existing newlines to spaces for idempotent wrapping
+        normalize_newlines(&mut normalized.description);
+        if let Some(ref mut hint) = normalized.triage_hint {
+            normalize_newlines(hint);
         }
         let raw = toml::to_string(&normalized)?;
         Ok(to_multiline_toml(&raw))
+    }
+}
+
+/// Collapse newlines in a string to spaces.
+fn normalize_newlines(s: &mut String) {
+    if s.contains('\n') {
+        *s = s.lines().collect::<Vec<_>>().join(" ").trim().to_string();
     }
 }
 
@@ -235,6 +239,7 @@ mod tests {
         let original = Node {
             name: "round-trip".to_string(),
             description: "Testing roundtrip".to_string(),
+            triage_hint: None,
             github_issue: Some("acme/widget#7".to_string()),
             labels: vec!["area:core".to_string()],
             repos: vec!["acme/widget".to_string()],
@@ -326,6 +331,7 @@ mod tests {
         let node = Node {
             name: "test".to_string(),
             description: desc.to_string(),
+            triage_hint: None,
             github_issue: None,
             labels: vec![],
             repos: vec![],
@@ -366,6 +372,7 @@ mod tests {
         let node = Node {
             name: "test".to_string(),
             description: "Short".to_string(),
+            triage_hint: None,
             github_issue: None,
             labels: vec![],
             repos: vec![],

@@ -116,6 +116,7 @@ pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNode
         let remote_node = Node {
             name: remote_issue.title.clone(),
             description: local_node.description.clone(), // not in GitHub issue
+            triage_hint: local_node.triage_hint.clone(), // not in GitHub issue
             github_issue: local_node.github_issue.clone(), // keep local ref
             labels: remote_issue
                 .labels

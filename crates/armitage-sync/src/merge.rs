@@ -102,6 +102,15 @@ pub fn merge_nodes(base: &Node, local: &Node, remote: &Node) -> MergeResult {
         &mut conflicts,
     );
 
+    // --- triage_hint ---
+    let triage_hint = merge_option_string_field(
+        "triage_hint",
+        base.triage_hint.as_deref(),
+        local.triage_hint.as_deref(),
+        remote.triage_hint.as_deref(),
+        &mut conflicts,
+    );
+
     // --- team ---
     let team = merge_option_string_field(
         "team",
@@ -123,6 +132,7 @@ pub fn merge_nodes(base: &Node, local: &Node, remote: &Node) -> MergeResult {
     let merged = Node {
         name,
         description,
+        triage_hint,
         github_issue,
         labels,
         repos,
@@ -426,6 +436,7 @@ mod tests {
             repos: vec!["owner/repo".to_string()],
             owners: vec![],
             team: None,
+            triage_hint: None,
             timeline: None,
             status: NodeStatus::Active,
         }
