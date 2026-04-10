@@ -29,6 +29,7 @@ pub struct ChartNode {
     pub children: Vec<ChartNode>,
     pub milestones: Vec<ChartMilestone>,
     pub issues: Vec<ChartIssue>,
+    pub overflow_start: Option<String>,
     pub overflow_end: Option<String>,
     pub issue_start: Option<String>,
     pub issue_end: Option<String>,
@@ -182,6 +183,27 @@ fn build_node(
         .max()
         .map(String::from);
 
+    // overflow_start = earliest deadline that was violated (where blue ends, red begins).
+    // For own overflow: the node's end date. For children: their overflow_start.
+    let own_overflow_start = if own_overflow.is_some() {
+        end.as_deref().map(String::from)
+    } else {
+        None
+    };
+    let child_overflow_start = children
+        .iter()
+        .filter_map(|c| c.overflow_start.as_deref())
+        .min()
+        .map(String::from);
+    let overflow_start = [
+        own_overflow_start.as_deref(),
+        child_overflow_start.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .min()
+    .map(String::from);
+
     ChartNode {
         path: entry.path.clone(),
         name: entry.node.name.clone(),
@@ -197,6 +219,7 @@ fn build_node(
         children,
         milestones,
         issues,
+        overflow_start,
         overflow_end,
         issue_start,
         issue_end,

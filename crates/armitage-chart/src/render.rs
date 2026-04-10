@@ -60,6 +60,7 @@ mod tests {
                 children: vec![],
                 milestones: vec![],
                 issues: vec![],
+                overflow_start: None,
                 overflow_end: None,
                 issue_start: None,
                 issue_end: None,
