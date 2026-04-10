@@ -400,15 +400,74 @@ function buildOption(): echarts.EChartsOption {
 
   const [xMin, xMax] = computeTimeRange(nodes);
 
-  const categories = nodes.map((n) => n.name).reverse();
+  // Build categories and series data, injecting issue rows when a node is expanded
+  const categories: string[] = [];
+  const seriesData: { value: [number, number, number] }[] = [];
+  const entries: SeriesEntry[] = [];
 
-  const seriesData = nodes.map((n, i) => ({
-    value: [
-      n.eff_start ? parseDate(n.eff_start) : xMin,
-      n.eff_end ? parseDate(n.eff_end) : xMax,
-      categories.length - 1 - i,
-    ],
-  }));
+  const INITIAL_ISSUE_LIMIT = 7;
+
+  for (const node of [...nodes].reverse()) {
+    const catIdx = categories.length;
+    categories.push(node.name);
+    seriesData.push({
+      value: [
+        node.eff_start ? parseDate(node.eff_start) : xMin,
+        node.eff_end ? parseDate(node.eff_end) : xMax,
+        catIdx,
+      ],
+    });
+    entries.push({ type: "node", node });
+
+    // If this node is expanded, inject issue rows after it
+    if (expandedNode === node.path && node.issues.length > 0) {
+      const sorted = sortIssues(node.issues, node.end);
+      const allSorted = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
+      const limit = expandedShowAll ? allSorted.length : INITIAL_ISSUE_LIMIT;
+      const visible = allSorted.slice(0, limit);
+      let insertedOverdue = false;
+      let insertedSeparator = false;
+
+      for (let i = 0; i < visible.length; i++) {
+        const issue = visible[i];
+        const isOverdue = sorted.overdue.includes(issue);
+        const isOnTrackOrNoDates = !isOverdue;
+
+        // Insert separator between overdue and on-track sections
+        if (isOnTrackOrNoDates && !insertedSeparator && insertedOverdue) {
+          const sepIdx = categories.length;
+          categories.push("───");
+          seriesData.push({ value: [xMin, xMin, sepIdx] });
+          entries.push({ type: "separator" });
+          insertedSeparator = true;
+        }
+
+        if (isOverdue) insertedOverdue = true;
+
+        const catLabel = issue.title
+          ? (isOverdue ? "⚠ " : "") + issue.title
+          : issue.issue_ref;
+        const issueIdx = categories.length;
+        categories.push(catLabel);
+
+        const iStart = issue.start_date ? parseDate(issue.start_date) : xMin;
+        const iEnd = issue.target_date ? parseDate(issue.target_date) : xMax;
+        seriesData.push({ value: [iStart, iEnd, issueIdx] });
+        entries.push({ type: "issue", issue, parentNode: node });
+      }
+
+      // "Show more" row if there are remaining issues
+      if (!expandedShowAll && allSorted.length > INITIAL_ISSUE_LIMIT) {
+        const remaining = allSorted.length - INITIAL_ISSUE_LIMIT;
+        const moreIdx = categories.length;
+        categories.push(`▾ Show all ${allSorted.length} issues (${remaining} more)`);
+        seriesData.push({ value: [xMin, xMin, moreIdx] });
+        entries.push({ type: "show-more", parentNode: node, remaining });
+      }
+    }
+  }
+
+  seriesEntries = entries;
 
   // OKRs: org-wide full-height vertical lines (always visible)
   const okrs = collectOkrs(data.nodes);
@@ -496,10 +555,34 @@ function buildOption(): echarts.EChartsOption {
       type: "category",
       data: categories,
       axisLabel: {
-        color: "#e6edf3",
-        fontWeight: "bold",
-        fontSize: 13,
-      },
+        formatter: (value: string) => value,
+        rich: {},
+        color: (value: string, index: number) => {
+          const entry = seriesEntries[index];
+          if (!entry) return "#e6edf3";
+          if (entry.type === "separator") return "#21262d";
+          if (entry.type === "show-more") return "#484f58";
+          if (entry.type === "issue") {
+            const isOverdue =
+              entry.issue.target_date &&
+              entry.parentNode.end &&
+              entry.issue.target_date > entry.parentNode.end;
+            return isOverdue ? "#f85149" : "#8b949e";
+          }
+          return "#e6edf3";
+        },
+        fontWeight: (value: string, index: number) => {
+          const entry = seriesEntries[index];
+          return entry?.type === "node" ? "bold" : "normal";
+        },
+        fontSize: (value: string, index: number) => {
+          const entry = seriesEntries[index];
+          if (entry?.type === "issue") return 11;
+          if (entry?.type === "separator") return 9;
+          if (entry?.type === "show-more") return 11;
+          return 13;
+        },
+      } as any,
       axisLine: { show: false },
       axisTick: { show: false },
     },

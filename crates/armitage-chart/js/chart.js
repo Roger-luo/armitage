@@ -90,6 +90,23 @@
     const pad = 30 * 24 * 3600 * 1e3;
     return [min - pad, max + pad];
   }
+  function sortIssues(issues, nodeEnd) {
+    const overdue = [];
+    const onTrack = [];
+    const noDates = [];
+    for (const issue of issues) {
+      if (!issue.target_date) {
+        noDates.push(issue);
+      } else if (nodeEnd && issue.target_date > nodeEnd) {
+        overdue.push(issue);
+      } else {
+        onTrack.push(issue);
+      }
+    }
+    overdue.sort((a, b) => b.target_date.localeCompare(a.target_date));
+    onTrack.sort((a, b) => a.target_date.localeCompare(b.target_date));
+    return { overdue, onTrack, noDates };
+  }
   function clusterTicks(issues, parentStart, parentRange, threshold) {
     const dated = issues.filter((i) => i.target_date);
     if (dated.length === 0) return [];
@@ -244,14 +261,58 @@
     const nodes = getVisibleNodes();
     visibleNodes = nodes;
     const [xMin, xMax] = computeTimeRange(nodes);
-    const categories = nodes.map((n) => n.name).reverse();
-    const seriesData = nodes.map((n, i) => ({
-      value: [
-        n.eff_start ? parseDate(n.eff_start) : xMin,
-        n.eff_end ? parseDate(n.eff_end) : xMax,
-        categories.length - 1 - i
-      ]
-    }));
+    const categories = [];
+    const seriesData = [];
+    const entries = [];
+    const INITIAL_ISSUE_LIMIT = 7;
+    for (const node of [...nodes].reverse()) {
+      const catIdx = categories.length;
+      categories.push(node.name);
+      seriesData.push({
+        value: [
+          node.eff_start ? parseDate(node.eff_start) : xMin,
+          node.eff_end ? parseDate(node.eff_end) : xMax,
+          catIdx
+        ]
+      });
+      entries.push({ type: "node", node });
+      if (expandedNode === node.path && node.issues.length > 0) {
+        const sorted = sortIssues(node.issues, node.end);
+        const allSorted = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
+        const limit = expandedShowAll ? allSorted.length : INITIAL_ISSUE_LIMIT;
+        const visible = allSorted.slice(0, limit);
+        let insertedOverdue = false;
+        let insertedSeparator = false;
+        for (let i = 0; i < visible.length; i++) {
+          const issue = visible[i];
+          const isOverdue = sorted.overdue.includes(issue);
+          const isOnTrackOrNoDates = !isOverdue;
+          if (isOnTrackOrNoDates && !insertedSeparator && insertedOverdue) {
+            const sepIdx = categories.length;
+            categories.push("\u2500\u2500\u2500");
+            seriesData.push({ value: [xMin, xMin, sepIdx] });
+            entries.push({ type: "separator" });
+            insertedSeparator = true;
+          }
+          if (isOverdue) insertedOverdue = true;
+          const catLabel = issue.title ? (isOverdue ? "\u26A0 " : "") + issue.title : issue.issue_ref;
+          const issueIdx = categories.length;
+          categories.push(catLabel);
+          const iStart = issue.start_date ? parseDate(issue.start_date) : xMin;
+          const iEnd = issue.target_date ? parseDate(issue.target_date) : xMax;
+          seriesData.push({ value: [iStart, iEnd, issueIdx] });
+          entries.push({ type: "issue", issue, parentNode: node });
+        }
+        if (!expandedShowAll && allSorted.length > INITIAL_ISSUE_LIMIT) {
+          const remaining = allSorted.length - INITIAL_ISSUE_LIMIT;
+          const moreIdx = categories.length;
+          categories.push(`\u25BE Show all ${allSorted.length} issues (${remaining} more)`);
+          seriesData.push({ value: [xMin, xMin, moreIdx] });
+          entries.push({ type: "show-more", parentNode: node, remaining });
+        }
+      }
+    }
+    seriesEntries = entries;
     const okrs = collectOkrs(data.nodes);
     const okrLines = okrs.map((m) => ({
       xAxis: parseDate(m.date),
@@ -328,9 +389,30 @@
         type: "category",
         data: categories,
         axisLabel: {
-          color: "#e6edf3",
-          fontWeight: "bold",
-          fontSize: 13
+          formatter: (value) => value,
+          rich: {},
+          color: (value, index) => {
+            const entry = seriesEntries[index];
+            if (!entry) return "#e6edf3";
+            if (entry.type === "separator") return "#21262d";
+            if (entry.type === "show-more") return "#484f58";
+            if (entry.type === "issue") {
+              const isOverdue = entry.issue.target_date && entry.parentNode.end && entry.issue.target_date > entry.parentNode.end;
+              return isOverdue ? "#f85149" : "#8b949e";
+            }
+            return "#e6edf3";
+          },
+          fontWeight: (value, index) => {
+            const entry = seriesEntries[index];
+            return entry?.type === "node" ? "bold" : "normal";
+          },
+          fontSize: (value, index) => {
+            const entry = seriesEntries[index];
+            if (entry?.type === "issue") return 11;
+            if (entry?.type === "separator") return 9;
+            if (entry?.type === "show-more") return 11;
+            return 13;
+          }
         },
         axisLine: { show: false },
         axisTick: { show: false }
