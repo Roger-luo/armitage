@@ -644,16 +644,17 @@
     const isSelected = selectedNode?.path === node.path;
     const isDimmed = expandedNode !== null && expandedNode !== node.path;
     const groupOpacity = isDimmed ? 0.4 : 1;
+    const isExpanded = expandedNode === node.path;
     const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
     const hasTimeline = node.has_timeline;
     children.push({
       type: "rect",
       shape: { x, y, width, height, r: 4 },
       style: {
-        fill: hasTimeline ? `${statusColor}22` : NO_TIMELINE_COLOR,
-        stroke: isSelected ? "#e6edf3" : hasTimeline ? `${statusColor}55` : NO_TIMELINE_BORDER,
-        lineWidth: isSelected ? 2 : 1,
-        lineDash: hasTimeline || isSelected ? null : [4, 3]
+        fill: hasTimeline ? isExpanded ? `${statusColor}30` : `${statusColor}22` : NO_TIMELINE_COLOR,
+        stroke: isSelected ? "#e6edf3" : isExpanded ? "rgba(88, 166, 255, 0.6)" : hasTimeline ? `${statusColor}55` : NO_TIMELINE_BORDER,
+        lineWidth: isSelected ? 2 : isExpanded ? 2 : 1,
+        lineDash: hasTimeline || isSelected || isExpanded ? null : [4, 3]
       }
     });
     if (node.children.length > 0) {
