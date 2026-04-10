@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use rusqlite::Connection;
@@ -33,10 +33,28 @@ pub fn apply_all(
     dry_run: bool,
 ) -> Result<ApplyStats> {
     let ledger = armitage_labels::rename::read_rename_ledger(org_root)?;
-    let decisions = db::get_unapplied_decisions(conn)?;
+    let mut decisions = db::get_unapplied_decisions(conn)?;
     if decisions.is_empty() {
         println!("No approved changes to apply.");
         return Ok(ApplyStats::default());
+    }
+
+    // Build node-label map: for each node, collect its labels + all ancestor labels.
+    // These are structural labels that must be on every issue classified to the node.
+    let node_labels = build_node_label_map(org_root);
+
+    // Inject node labels into each decision's final_labels before applying.
+    for (_, decision) in &mut decisions {
+        if let Some(node_path) = &decision.final_node
+            && let Some(labels) = node_labels.get(node_path.as_str())
+        {
+            let existing: BTreeSet<String> = decision.final_labels.iter().cloned().collect();
+            for label in labels {
+                if !existing.contains(label) {
+                    decision.final_labels.push(label.clone());
+                }
+            }
+        }
     }
 
     // Pre-create any labels that decisions need but don't exist on the repos yet.
@@ -240,6 +258,56 @@ pub fn compute_label_diff(
         add,
         remove: remove.into_iter().map(|s| s.to_string()).collect(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Node label map
+// ---------------------------------------------------------------------------
+
+/// Build a map from node path → set of labels that must be present on any
+/// issue classified to that node. Includes the node's own labels plus all
+/// ancestor labels (e.g. `gemini/logical-mvp` inherits from `gemini/`).
+fn build_node_label_map(org_root: &Path) -> HashMap<String, Vec<String>> {
+    let nodes = match walk_nodes(org_root) {
+        Ok(n) => n,
+        Err(_) => return HashMap::new(),
+    };
+
+    // First pass: collect direct labels per node
+    let mut direct: HashMap<String, Vec<String>> = HashMap::new();
+    for entry in &nodes {
+        if !entry.node.labels.is_empty() {
+            direct.insert(entry.path.clone(), entry.node.labels.clone());
+        }
+    }
+
+    // Second pass: for each node, walk up ancestors and accumulate labels
+    let mut result: HashMap<String, Vec<String>> = HashMap::new();
+    for entry in &nodes {
+        let mut all_labels = BTreeSet::new();
+
+        // Collect own labels
+        for l in &entry.node.labels {
+            all_labels.insert(l.clone());
+        }
+
+        // Walk ancestors: "a/b/c" → check "a/b", then "a"
+        let mut path = entry.path.as_str();
+        while let Some(pos) = path.rfind('/') {
+            path = &path[..pos];
+            if let Some(ancestor_labels) = direct.get(path) {
+                for l in ancestor_labels {
+                    all_labels.insert(l.clone());
+                }
+            }
+        }
+
+        if !all_labels.is_empty() {
+            result.insert(entry.path.clone(), all_labels.into_iter().collect());
+        }
+    }
+
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -541,5 +609,72 @@ mod tests {
         // "nonexistent" has no node.toml — should not error
         let result = record_issue_in_node(tmp.path(), "nonexistent", "acme/repo#1", None);
         assert!(result.is_ok());
+    }
+
+    // -----------------------------------------------------------------------
+    // build_node_label_map tests
+    // -----------------------------------------------------------------------
+
+    /// Helper: create a node with labels
+    fn make_test_org_with_labels(nodes: &[(&str, &[&str])]) -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("armitage.toml"), "[org]\nname = \"test\"\n").unwrap();
+        for (path, labels) in nodes {
+            let dir = tmp.path().join(path);
+            std::fs::create_dir_all(&dir).unwrap();
+            let labels_toml = if labels.is_empty() {
+                String::new()
+            } else {
+                let items: Vec<String> = labels.iter().map(|l| format!("\"{}\"", l)).collect();
+                format!("labels = [{}]", items.join(", "))
+            };
+            std::fs::write(
+                dir.join("node.toml"),
+                format!(
+                    "name = \"{}\"\ndescription = \"test\"\n{}\n",
+                    path.replace('/', "-"),
+                    labels_toml
+                ),
+            )
+            .unwrap();
+        }
+        tmp
+    }
+
+    #[test]
+    fn node_label_map_includes_own_labels() {
+        let tmp = make_test_org_with_labels(&[
+            ("gemini", &["hardware: Gemini"]),
+            ("circuit", &["area: circuit"]),
+        ]);
+        let map = build_node_label_map(tmp.path());
+        assert_eq!(map.get("gemini").unwrap(), &["hardware: Gemini"]);
+        assert_eq!(map.get("circuit").unwrap(), &["area: circuit"]);
+    }
+
+    #[test]
+    fn node_label_map_inherits_ancestor_labels() {
+        let tmp = make_test_org_with_labels(&[
+            ("gemini", &["hardware: Gemini"]),
+            ("gemini/logical-mvp", &[]),
+            ("gemini/cloud", &["project: cloud"]),
+        ]);
+        let map = build_node_label_map(tmp.path());
+
+        // logical-mvp has no own labels but inherits from gemini
+        let mvp_labels = map.get("gemini/logical-mvp").unwrap();
+        assert!(mvp_labels.contains(&"hardware: Gemini".to_string()));
+
+        // cloud has own label + inherits from gemini
+        let cloud_labels = map.get("gemini/cloud").unwrap();
+        assert!(cloud_labels.contains(&"hardware: Gemini".to_string()));
+        assert!(cloud_labels.contains(&"project: cloud".to_string()));
+    }
+
+    #[test]
+    fn node_label_map_no_labels_no_entry() {
+        let tmp = make_test_org_with_labels(&[("plain", &[])]);
+        let map = build_node_label_map(tmp.path());
+        assert!(map.get("plain").is_none());
     }
 }
