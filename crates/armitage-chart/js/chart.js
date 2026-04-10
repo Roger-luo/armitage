@@ -448,12 +448,14 @@
         subBars.push({ type: "node", start: c.eff_start, end: c.eff_end, color: STATUS_COLORS[c.status] || STATUS_COLORS.active, overflowStart: c.overflow_start, overflowEnd: c.overflow_end, label: c.name });
       }
     }
-    const nodeEnd = node.end || node.eff_end;
+    // Use overflow_start as the boundary — it's the earliest violated deadline
+    // from any descendant. Falls back to the node's own end / eff_end.
+    const issueDeadline = node.overflow_start || node.end || node.eff_end;
     for (const issue of allIssues(node)) {
       if (issue.start_date || issue.target_date) {
         const iStart = issue.start_date || issue.target_date;
         const iEnd = issue.target_date || issue.start_date;
-        const overflows = nodeEnd && iEnd > nodeEnd;
+        const overflows = issueDeadline && iEnd > issueDeadline;
         subBars.push({ type: "issue", start: iStart, end: iEnd, overflows, label: issue.title || issue.issue_ref, issueRef: issue.issue_ref });
       }
     }
@@ -480,9 +482,9 @@
         const cy = barAreaTop + gap + i * (barH + gap);
         const opacity = 0.6 + 0.3 * (1 - i / maxBars);
         if (sub.type === "issue") {
-          if (sub.overflows && nodeEnd) {
-            // Split bar: green up to node end, purple in overflow
-            const splitDate = parseDate(nodeEnd);
+          if (sub.overflows && issueDeadline) {
+            // Split bar: green up to deadline, purple in overflow
+            const splitDate = parseDate(issueDeadline);
             const relSplit = Math.max(relStart, Math.min(relEnd, (splitDate - outerStart) / outerRange));
             const splitX = x + relSplit * width;
             const greenW = Math.max(splitX - cx, 0);
