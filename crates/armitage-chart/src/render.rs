@@ -4,7 +4,7 @@ use crate::data::ChartData;
 use crate::error::Result;
 
 const CHART_JS: &str = include_str!("../js/chart.js");
-const ECHARTS_JS: &str = include_str!("../js/echarts.min.js");
+const D3_JS: &str = include_str!("../js/d3.min.js");
 
 #[derive(Template)]
 #[template(path = "chart.html")]
@@ -13,12 +13,12 @@ struct ChartTemplate {
     chart_data_json: String,
     chart_js: &'static str,
     inline_js: bool,
-    echart_js: String,
+    d3_js: String,
 }
 
 /// Render chart data into a standalone HTML string.
 ///
-/// When `offline` is true, ECharts JS is embedded inline so the chart works
+/// When `offline` is true, D3 JS is embedded inline so the chart works
 /// without network access.
 pub fn render_chart(data: &ChartData, offline: bool) -> Result<String> {
     let chart_data_json = serde_json::to_string(data)?;
@@ -28,8 +28,8 @@ pub fn render_chart(data: &ChartData, offline: bool) -> Result<String> {
         chart_data_json,
         chart_js: CHART_JS,
         inline_js: offline,
-        echart_js: if offline {
-            ECHARTS_JS.to_string()
+        d3_js: if offline {
+            D3_JS.to_string()
         } else {
             String::new()
         },
@@ -76,14 +76,14 @@ mod tests {
         let html = render_chart(&sample_data(), false).unwrap();
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("TestOrg"));
-        assert!(html.contains("cdn.jsdelivr.net/npm/echarts"));
+        assert!(html.contains("cdn.jsdelivr.net/npm/d3@7"));
         assert!(html.contains("__CHART_DATA__"));
         assert!(html.contains("Alpha"));
     }
 
     #[test]
-    fn cdn_mode_includes_script_tag() {
+    fn cdn_mode_includes_d3_script_tag() {
         let html = render_chart(&sample_data(), false).unwrap();
-        assert!(html.contains("cdn.jsdelivr.net/npm/echarts@5"));
+        assert!(html.contains("cdn.jsdelivr.net/npm/d3@7"));
     }
 }
