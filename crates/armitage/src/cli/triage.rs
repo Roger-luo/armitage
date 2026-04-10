@@ -59,6 +59,15 @@ pub fn run_fetch(repo: Vec<String>, since: Option<String>) -> Result<()> {
     )?;
     println!("Total: {count} issues fetched");
 
+    // Fetch GitHub Projects v2 metadata if configured.
+    let triage_config: TriageConfig = org.domain_config::<TriageDomain>()?;
+    if let Some(ref project_config) = triage_config.project {
+        match armitage_triage::project::fetch_project_items(&gh, &conn, project_config) {
+            Ok(n) => println!("Project metadata: {n} items fetched"),
+            Err(e) => eprintln!("Warning: project metadata fetch failed: {e}"),
+        }
+    }
+
     let repos_cached = cache::refresh_all(&conn, &org_root)?;
     println!("Issue cache refreshed ({repos_cached} repos)");
     Ok(())

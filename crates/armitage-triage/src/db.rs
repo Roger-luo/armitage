@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use crate::error::{Error, Result};
@@ -10,10 +10,10 @@ use crate::error::{Error, Result};
 // ---------------------------------------------------------------------------
 
 /// Current schema version. Bump this when adding migrations.
-const SCHEMA_VERSION: u32 = 5;
+const SCHEMA_VERSION: u32 = 6;
 
 /// Full schema for a fresh database (always represents the latest version).
-const SCHEMA_V5: &str = "
+const SCHEMA_V6: &str = "
 CREATE TABLE IF NOT EXISTS issues (
     id                INTEGER PRIMARY KEY,
     repo              TEXT NOT NULL,
@@ -61,6 +61,19 @@ CREATE TABLE IF NOT EXISTS review_decisions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_decisions_applied ON review_decisions(applied_at);
+
+CREATE TABLE IF NOT EXISTS issue_project_items (
+    id           INTEGER PRIMARY KEY,
+    issue_id     INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    project_url  TEXT NOT NULL,
+    target_date  TEXT,
+    end_date     TEXT,
+    status       TEXT,
+    fetched_at   TEXT NOT NULL,
+    UNIQUE(issue_id, project_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_items_issue ON issue_project_items(issue_id);
 ";
 
 /// Migrations from version N to N+1. Index 0 = v0→v1, index 1 = v1→v2, etc.
@@ -81,6 +94,20 @@ const MIGRATIONS: &[Option<&str>] = &[
     Some("ALTER TABLE triage_suggestions ADD COLUMN is_stale INTEGER NOT NULL DEFAULT 0;"),
     // v4 → v5: add question to review_decisions (for "inquired" decision type)
     Some("ALTER TABLE review_decisions ADD COLUMN question TEXT NOT NULL DEFAULT '';"),
+    // v5 → v6: add issue_project_items table for GitHub Projects v2 metadata
+    Some(
+        "CREATE TABLE IF NOT EXISTS issue_project_items (
+            id           INTEGER PRIMARY KEY,
+            issue_id     INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+            project_url  TEXT NOT NULL,
+            target_date  TEXT,
+            end_date     TEXT,
+            status       TEXT,
+            fetched_at   TEXT NOT NULL,
+            UNIQUE(issue_id, project_url)
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_items_issue ON issue_project_items(issue_id);",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -127,6 +154,18 @@ pub struct ReviewDecision {
     pub applied_at: Option<String>,
     /// Clarification question text (non-empty only for "inquired" decisions).
     pub question: String,
+}
+
+/// A row from `issue_project_items` — GitHub Projects v2 metadata for an issue.
+#[derive(Debug, Clone, Serialize)]
+pub struct IssueProjectItem {
+    pub id: i64,
+    pub issue_id: i64,
+    pub project_url: String,
+    pub target_date: Option<String>,
+    pub end_date: Option<String>,
+    pub status: Option<String>,
+    pub fetched_at: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -220,7 +259,7 @@ pub(crate) fn migrate(conn: &Connection) -> Result<()> {
             run_migrations(conn, 1)?;
         } else {
             // Truly fresh — create everything at latest version.
-            conn.execute_batch(SCHEMA_V5)?;
+            conn.execute_batch(SCHEMA_V6)?;
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         }
     } else {
@@ -265,7 +304,7 @@ fn run_migrations(conn: &Connection, from_version: u32) -> Result<()> {
                      DROP TABLE IF EXISTS triage_suggestions;
                      DROP TABLE IF EXISTS issues;",
                 )?;
-                conn.execute_batch(SCHEMA_V5)?;
+                conn.execute_batch(SCHEMA_V6)?;
                 conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
                 return Ok(());
             }
@@ -370,6 +409,42 @@ fn row_to_issue(row: &rusqlite::Row) -> rusqlite::Result<StoredIssue> {
         fetched_at: row.get(8)?,
         sub_issues_count: row.get::<_, i64>(9)? as u64,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Project Item CRUD
+// ---------------------------------------------------------------------------
+
+/// Insert or update a project-item row for an issue.
+pub fn upsert_project_item(conn: &Connection, item: &IssueProjectItem) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO issue_project_items (issue_id, project_url, target_date, end_date, status, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(issue_id, project_url) DO UPDATE SET
+            target_date = excluded.target_date,
+            end_date    = excluded.end_date,
+            status      = excluded.status,
+            fetched_at  = excluded.fetched_at",
+        params![
+            item.issue_id,
+            item.project_url,
+            item.target_date,
+            item.end_date,
+            item.status,
+            item.fetched_at,
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Look up an issue's internal DB id by repo and number.
+/// Returns `None` if the issue is not in the database.
+pub fn lookup_issue_id(conn: &Connection, repo: &str, number: u64) -> Result<Option<i64>> {
+    let mut stmt = conn.prepare("SELECT id FROM issues WHERE repo = ?1 AND number = ?2")?;
+    let result = stmt
+        .query_row(params![repo, number as i64], |row| row.get(0))
+        .optional()?;
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------------

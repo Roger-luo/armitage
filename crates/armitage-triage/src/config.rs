@@ -35,6 +35,31 @@ pub struct TriageConfig {
     /// ```
     #[serde(default)]
     pub repo_labels: HashMap<String, Vec<String>>,
+    /// GitHub Projects v2 configuration for fetching project metadata
+    /// (target dates, status, etc.) into the triage DB.
+    ///
+    /// Example in armitage.toml:
+    /// ```toml
+    /// [triage.project]
+    /// url = "https://github.com/orgs/MyOrg/projects/42"
+    /// [triage.project.fields]
+    /// target_date = "Target date"
+    /// end_date = "End date"
+    /// status = "Status"
+    /// ```
+    #[serde(default)]
+    pub project: Option<ProjectConfig>,
+}
+
+/// Configuration for a GitHub Projects v2 board.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProjectConfig {
+    /// Full URL of the project, e.g. `https://github.com/orgs/MyOrg/projects/42`.
+    pub url: String,
+    /// Map from DB column names (`target_date`, `end_date`, `status`) to the
+    /// display names of the corresponding project fields.
+    #[serde(default)]
+    pub fields: HashMap<String, String>,
 }
 
 /// Optional per-command LLM config that overrides `[triage]` defaults.
