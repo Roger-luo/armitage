@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,11 +10,58 @@
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   {% endif %}
   <style>
+    :root {
+      /* Dark theme (default) */
+      --bg: #0d1117;
+      --bg-surface: #161b22;
+      --bg-elevated: #21262d;
+      --bg-active: #30363d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-secondary: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-faint: #484f58;
+      --link: #58a6ff;
+      --chart-axis: #8b949e;
+      --chart-grid: #21262d;
+      --chart-axis-line: #30363d;
+      --no-tl-fill: rgba(107, 114, 128, 0.15);
+      --no-tl-border: rgba(107, 114, 128, 0.4);
+      --status-active-bg: #1e3a5f;
+      --status-completed-bg: #2d333b;
+      --status-paused-bg: #3d2e00;
+      --status-cancelled-bg: #3d1418;
+      --overflow-bg: rgba(239, 68, 68, 0.08);
+      --overflow-border: rgba(239, 68, 68, 0.3);
+    }
+    [data-theme="light"] {
+      --bg: #ffffff;
+      --bg-surface: #f6f8fa;
+      --bg-elevated: #e9ecef;
+      --bg-active: #d0d7de;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --text-secondary: #31363b;
+      --text-muted: #656d76;
+      --text-faint: #8b949e;
+      --link: #0969da;
+      --chart-axis: #656d76;
+      --chart-grid: #e9ecef;
+      --chart-axis-line: #d0d7de;
+      --no-tl-fill: rgba(107, 114, 128, 0.08);
+      --no-tl-border: rgba(107, 114, 128, 0.3);
+      --status-active-bg: #ddf4ff;
+      --status-completed-bg: #eaeef2;
+      --status-paused-bg: #fff8c5;
+      --status-cancelled-bg: #ffebe9;
+      --overflow-bg: rgba(239, 68, 68, 0.06);
+      --overflow-border: rgba(239, 68, 68, 0.25);
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
+      background: var(--bg);
+      color: var(--text);
       overflow: hidden;
     }
     #nav {
@@ -22,42 +69,39 @@
       align-items: center;
       gap: 12px;
       padding: 12px 20px;
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
       height: 48px;
     }
     #breadcrumb {
       font-size: 14px;
       flex: 1;
     }
-    .crumb {
-      color: #58a6ff;
-      cursor: pointer;
-    }
+    .crumb { color: var(--link); cursor: pointer; }
     .crumb:hover { text-decoration: underline; }
-    .crumb-sep { color: #484f58; margin: 0 2px; }
-    .crumb-current { color: #e6edf3; }
-    .range-toggle {
+    .crumb-sep { color: var(--text-faint); margin: 0 2px; }
+    .crumb-current { color: var(--text); }
+    .seg-toggle {
       display: flex;
-      border: 1px solid #30363d;
+      border: 1px solid var(--border);
       border-radius: 6px;
       overflow: hidden;
       font-size: 12px;
     }
-    .range-toggle button {
-      background: #21262d;
-      color: #8b949e;
+    .seg-toggle button {
+      background: var(--bg-elevated);
+      color: var(--text-muted);
       border: none;
       padding: 4px 12px;
       cursor: pointer;
     }
-    .range-toggle button:not(:last-child) {
-      border-right: 1px solid #30363d;
+    .seg-toggle button:not(:last-child) {
+      border-right: 1px solid var(--border);
     }
-    .range-toggle button:hover { color: #e6edf3; }
-    .range-toggle button.active {
-      background: #30363d;
-      color: #e6edf3;
+    .seg-toggle button:hover { color: var(--text); }
+    .seg-toggle button.active {
+      background: var(--bg-active);
+      color: var(--text);
     }
     #main {
       display: flex;
@@ -69,8 +113,8 @@
     }
     #panel {
       width: 340px;
-      background: #161b22;
-      border-left: 1px solid #30363d;
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border);
       overflow-y: auto;
       padding: 16px;
       display: none;
@@ -81,13 +125,13 @@
       float: right;
       background: none;
       border: none;
-      color: #8b949e;
+      color: var(--text-muted);
       font-size: 18px;
       cursor: pointer;
       padding: 0 4px;
       line-height: 1;
     }
-    #panel-close:hover { color: #e6edf3; }
+    #panel-close:hover { color: var(--text); }
     #panel h2 {
       font-size: 16px;
       margin-bottom: 4px;
@@ -100,39 +144,34 @@
       border-radius: 10px;
       margin-bottom: 12px;
     }
-    #panel .panel-status.active { background: #1e3a5f; color: #58a6ff; }
-    #panel .panel-status.completed { background: #2d333b; color: #8b949e; }
-    #panel .panel-status.paused { background: #3d2e00; color: #f59e0b; }
-    #panel .panel-status.cancelled { background: #3d1418; color: #ef4444; }
+    #panel .panel-status.active { background: var(--status-active-bg); color: var(--link); }
+    #panel .panel-status.completed { background: var(--status-completed-bg); color: var(--text-muted); }
+    #panel .panel-status.paused { background: var(--status-paused-bg); color: #f59e0b; }
+    #panel .panel-status.cancelled { background: var(--status-cancelled-bg); color: #ef4444; }
     #panel .panel-section {
       margin-top: 16px;
       padding-top: 12px;
-      border-top: 1px solid #21262d;
+      border-top: 1px solid var(--bg-elevated);
     }
     #panel .panel-section h3 {
       font-size: 12px;
-      color: #8b949e;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 8px;
     }
     #panel .panel-desc {
       font-size: 13px;
-      color: #c9d1d9;
+      color: var(--text-secondary);
       line-height: 1.5;
     }
     #panel .panel-meta {
       font-size: 13px;
-      color: #c9d1d9;
+      color: var(--text-secondary);
       line-height: 1.8;
     }
-    #panel .panel-meta .label {
-      color: #8b949e;
-    }
-    #panel .panel-children {
-      list-style: none;
-      font-size: 13px;
-    }
+    #panel .panel-meta .label { color: var(--text-muted); }
+    #panel .panel-children { list-style: none; font-size: 13px; }
     #panel .panel-children li {
       padding: 4px 0;
       display: flex;
@@ -145,87 +184,64 @@
       border-radius: 50%;
       flex-shrink: 0;
     }
-    #panel .panel-children .child-name {
-      color: #c9d1d9;
-    }
+    #panel .panel-children .child-name { color: var(--text-secondary); }
     #panel .panel-children .child-dates {
-      color: #484f58;
+      color: var(--text-faint);
       font-size: 11px;
       margin-left: auto;
     }
-    #panel .panel-milestones {
-      list-style: none;
-      font-size: 13px;
-    }
-    #panel .panel-milestones li {
-      padding: 3px 0;
-      color: #c9d1d9;
-    }
-    #panel .panel-milestones .ms-date {
-      color: #8b949e;
-      font-size: 11px;
-    }
+    #panel .panel-milestones { list-style: none; font-size: 13px; }
+    #panel .panel-milestones li { padding: 3px 0; color: var(--text-secondary); }
+    #panel .panel-milestones .ms-date { color: var(--text-muted); font-size: 11px; }
     .btn-drill {
       display: inline-block;
       margin-top: 12px;
-      background: #21262d;
-      color: #58a6ff;
-      border: 1px solid #30363d;
+      background: var(--bg-elevated);
+      color: var(--link);
+      border: 1px solid var(--border);
       border-radius: 6px;
       padding: 6px 14px;
       font-size: 13px;
       cursor: pointer;
     }
-    .btn-drill:hover { background: #30363d; }
-    #panel .panel-issues {
-      list-style: none;
-      font-size: 13px;
-    }
+    .btn-drill:hover { background: var(--bg-active); }
+    #panel .panel-issues { list-style: none; font-size: 13px; }
     #panel .panel-issues li {
       padding: 4px 0;
-      border-bottom: 1px solid #21262d;
+      border-bottom: 1px solid var(--bg-elevated);
     }
-    #panel .panel-issues li:last-child {
-      border-bottom: none;
-    }
+    #panel .panel-issues li:last-child { border-bottom: none; }
     .panel-issue-link {
-      color: #58a6ff;
+      color: var(--link);
       text-decoration: none;
       font-size: 13px;
       line-height: 1.4;
     }
     .panel-issue-link:hover { text-decoration: underline; }
-    .panel-issue-link .issue-ref {
-      color: #484f58;
-      font-size: 11px;
-    }
-    .issue-date {
-      color: #8b949e;
-      font-size: 11px;
-    }
-    .issue-overflow {
-      color: #ef4444;
-      font-size: 11px;
-      font-weight: bold;
-    }
+    .panel-issue-link .issue-ref { color: var(--text-faint); font-size: 11px; }
+    .issue-date { color: var(--text-muted); font-size: 11px; }
+    .issue-overflow { color: #ef4444; font-size: 11px; font-weight: bold; }
     .panel-overflow {
-      background: rgba(239, 68, 68, 0.08);
-      border: 1px solid rgba(239, 68, 68, 0.3);
+      background: var(--overflow-bg);
+      border: 1px solid var(--overflow-border);
       border-radius: 6px;
       padding: 8px 12px !important;
       margin-top: 12px !important;
     }
-    .panel-overflow h3 {
-      color: #ef4444 !important;
-    }
+    .panel-overflow h3 { color: #ef4444 !important; }
   </style>
 </head>
 <body>
   <div id="nav">
     <div id="breadcrumb"></div>
-    <div class="range-toggle">
+    <div class="seg-toggle">
       <button id="btn-fitted" class="active" onclick="window.__setRange(false)">Fitted</button>
       <button id="btn-global" onclick="window.__setRange(true)">Global</button>
+    </div>
+    <div class="seg-toggle" id="theme-toggle">
+      <button onclick="window.__setTheme('light')">☀</button>
+      <button class="active" onclick="window.__setTheme('dark')">☾</button>
+      <button onclick="window.__setTheme('auto')">Auto</button>
     </div>
   </div>
   <div id="main">
@@ -237,9 +253,37 @@
   </div>
 
   <script>
-    window.__CHART_DATA__ = {{ chart_data_json|safe }};
+    // Theme management
+    window.__setTheme = function(mode) {
+      const html = document.documentElement;
+      const btns = document.querySelectorAll('#theme-toggle button');
+      btns.forEach(b => b.classList.remove('active'));
+      if (mode === 'auto') {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        html.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+        btns[2].classList.add('active');
+      } else {
+        html.setAttribute('data-theme', mode);
+        btns[mode === 'light' ? 0 : 1].classList.add('active');
+      }
+      localStorage.setItem('armitage-chart-theme', mode);
+      // Notify chart.js to re-render with new theme colors
+      if (window.__onThemeChange) window.__onThemeChange();
+    };
+    // Restore saved theme
+    (function() {
+      const saved = localStorage.getItem('armitage-chart-theme') || 'dark';
+      window.__setTheme(saved);
+    })();
+    // Listen for system theme changes in auto mode
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (localStorage.getItem('armitage-chart-theme') === 'auto') {
+        window.__setTheme('auto');
+      }
+    });
   </script>
   <script>
+    window.__CHART_DATA__ = {{ chart_data_json|safe }};
     {{ chart_js|safe }}
   </script>
 </body>
