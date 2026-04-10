@@ -3232,6 +3232,7 @@ mod tests {
             api_key_env: None,
             thinking_budget: None,
             labels: None,
+            ..Default::default()
         };
         let err = resolve_classify_config(None, None, None, &triage)
             .unwrap_err()
@@ -3246,9 +3247,7 @@ mod tests {
             backend: Some("claude".to_string()),
             model: Some("sonnet".to_string()),
             effort: Some("medium".to_string()),
-            api_key_env: None,
-            thinking_budget: None,
-            labels: None,
+            ..Default::default()
         };
         let cfg = resolve_classify_config(
             Some("gemini".to_string()),

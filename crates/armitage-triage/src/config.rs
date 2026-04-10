@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the triage pipeline, read from the `[triage]` section
@@ -22,6 +24,17 @@ pub struct TriageConfig {
     /// Per-command LLM overrides for `triage labels merge`
     #[serde(default)]
     pub labels: Option<TriageLlmOverride>,
+    /// Labels implied by each repo. When applying node labels, labels listed
+    /// here for the issue's repo are skipped (they are redundant because the
+    /// repo itself already implies them).
+    ///
+    /// Example in armitage.toml:
+    /// ```toml
+    /// [triage.repo_labels]
+    /// "owner/repo" = ["area: circuit"]
+    /// ```
+    #[serde(default)]
+    pub repo_labels: HashMap<String, Vec<String>>,
 }
 
 /// Optional per-command LLM config that overrides `[triage]` defaults.
