@@ -8,9 +8,19 @@ const data: ChartData = window.__CHART_DATA__;
 let currentPath = ""; // "" = root
 let useGlobalRange = false;
 let selectedNode: ChartNode | null = null;
+let expandedNode: string | null = null;
+let expandedShowAll = false;
 
 // Current visible nodes — shared between buildOption() and renderBar()
 let visibleNodes: ChartNode[] = [];
+
+// Series data entries — tracks what each data index represents
+interface NodeEntry { type: "node"; node: ChartNode }
+interface IssueEntry { type: "issue"; issue: ChartIssue; parentNode: ChartNode }
+interface ShowMoreEntry { type: "show-more"; parentNode: ChartNode; remaining: number }
+interface SeparatorEntry { type: "separator" }
+type SeriesEntry = NodeEntry | IssueEntry | ShowMoreEntry | SeparatorEntry;
+let seriesEntries: SeriesEntry[] = [];
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -855,6 +865,8 @@ function renderBar(
 function navigateTo(path: string): void {
   currentPath = path;
   selectedNode = null;
+  expandedNode = null;
+  expandedShowAll = false;
   closePanel();
   updateBreadcrumb();
   renderChart();
@@ -863,10 +875,41 @@ function navigateTo(path: string): void {
 // Expose to inline onclick handlers
 (window as any).__nav = navigateTo;
 
-// Single click: select node and show panel
+/// Single click: expand leaf nodes, show panel for non-leaf
 chart.on("click", (params: any) => {
-  const node: ChartNode | undefined = visibleNodes[params.dataIndex];
-  if (node) {
+  const idx = params.dataIndex;
+  // Check if this is an issue pseudo-row (see buildOption)
+  const entry = seriesEntries[idx];
+  if (entry && entry.type === "issue") {
+    // Click on issue row — open GitHub issue in new tab
+    const url = issueUrl(entry.issue.issue_ref);
+    if (url !== "#") window.open(url, "_blank", "noopener");
+    return;
+  }
+  if (entry && entry.type === "show-more") {
+    // Click on "show more" row — expand all issues
+    expandedShowAll = true;
+    renderChart();
+    return;
+  }
+  const node: ChartNode | undefined =
+    entry?.type === "node" ? entry.node : undefined;
+  if (!node) return;
+
+  if (node.children.length === 0 && node.issues.length > 0) {
+    // Leaf node with issues: toggle expand
+    if (expandedNode === node.path) {
+      expandedNode = null;
+      expandedShowAll = false;
+    } else {
+      expandedNode = node.path;
+      expandedShowAll = false;
+    }
+    selectedNode = null;
+    closePanel();
+    renderChart();
+  } else {
+    // Non-leaf node: show panel (existing behavior)
     showPanel(node);
     renderChart();
   }

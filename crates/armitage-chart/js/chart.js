@@ -5,7 +5,10 @@
   var currentPath = "";
   var useGlobalRange = false;
   var selectedNode = null;
+  var expandedNode = null;
+  var expandedShowAll = false;
   var visibleNodes = [];
+  var seriesEntries = [];
   var chartEl = document.getElementById("chart");
   var breadcrumbEl = document.getElementById("breadcrumb");
   var toggleBtn = document.getElementById("toggle-range");
@@ -634,14 +637,40 @@
   function navigateTo(path) {
     currentPath = path;
     selectedNode = null;
+    expandedNode = null;
+    expandedShowAll = false;
     closePanel();
     updateBreadcrumb();
     renderChart();
   }
   window.__nav = navigateTo;
   chart.on("click", (params) => {
-    const node = visibleNodes[params.dataIndex];
-    if (node) {
+    const idx = params.dataIndex;
+    const entry = seriesEntries[idx];
+    if (entry && entry.type === "issue") {
+      const url = issueUrl(entry.issue.issue_ref);
+      if (url !== "#") window.open(url, "_blank", "noopener");
+      return;
+    }
+    if (entry && entry.type === "show-more") {
+      expandedShowAll = true;
+      renderChart();
+      return;
+    }
+    const node = entry?.type === "node" ? entry.node : void 0;
+    if (!node) return;
+    if (node.children.length === 0 && node.issues.length > 0) {
+      if (expandedNode === node.path) {
+        expandedNode = null;
+        expandedShowAll = false;
+      } else {
+        expandedNode = node.path;
+        expandedShowAll = false;
+      }
+      selectedNode = null;
+      closePanel();
+      renderChart();
+    } else {
       showPanel(node);
       renderChart();
     }
