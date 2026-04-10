@@ -54,8 +54,8 @@ pub enum MilestoneType {
 impl fmt::Display for MilestoneType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MilestoneType::Checkpoint => write!(f, "checkpoint"),
-            MilestoneType::Okr => write!(f, "okr"),
+            Self::Checkpoint => write!(f, "checkpoint"),
+            Self::Okr => write!(f, "okr"),
         }
     }
 }

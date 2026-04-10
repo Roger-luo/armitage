@@ -81,13 +81,15 @@ impl Org {
     ///
     /// Returns `D::Config::default()` when the section is absent.
     pub fn domain_config<D: Domain>(&self) -> Result<D::Config> {
-        match self.raw.get(D::CONFIG_KEY) {
-            Some(v) => v.clone().try_into().map_err(|source| Error::TomlParse {
-                path: self.root.join("armitage.toml"),
-                source,
-            }),
-            None => Ok(D::Config::default()),
-        }
+        self.raw.get(D::CONFIG_KEY).map_or_else(
+            || Ok(D::Config::default()),
+            |v| {
+                v.clone().try_into().map_err(|source| Error::TomlParse {
+                    path: self.root.join("armitage.toml"),
+                    source,
+                })
+            },
+        )
     }
 
     // ------------------------------------------------------------------

@@ -141,7 +141,6 @@ fn apply_field_to_node(node: &mut Node, field: &str, value: &str) {
         "status" => {
             use armitage_core::node::NodeStatus;
             node.status = match value {
-                "active" => NodeStatus::Active,
                 "completed" => NodeStatus::Completed,
                 "paused" => NodeStatus::Paused,
                 "cancelled" => NodeStatus::Cancelled,

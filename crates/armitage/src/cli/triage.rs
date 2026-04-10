@@ -315,10 +315,7 @@ fn run_llm_reconcile(
         // Step 1: for multi-label groups, select which labels to merge
         // For single-label (reformat), skip straight to pick
         let selected_labels: Vec<&String> = if is_reformat {
-            if auto_accept {
-                // Auto-accept: always reformat
-                group.labels.iter().collect()
-            } else {
+            if !auto_accept {
                 // Reformat: confirm or skip
                 let choice =
                     dialoguer::Select::with_theme(&dialoguer::theme::ColorfulTheme::default())
@@ -331,8 +328,8 @@ fn run_llm_reconcile(
                     println!("  Skipped.\n");
                     continue;
                 }
-                group.labels.iter().collect()
             }
+            group.labels.iter().collect()
         } else if auto_accept {
             // Auto-accept: select all labels
             group.labels.iter().collect()
@@ -460,25 +457,26 @@ fn pick_recommended(
         }
     }
     // Fallback: first suggestion, then first selected label
-    if let Some(s) = suggestions.first() {
-        LabelDef {
+    suggestions.first().map_or_else(
+        || {
+            let name = selected_labels[0];
+            let desc = find_label_description(name, local, session);
+            LabelDef {
+                name: (*name).clone(),
+                description: desc,
+                color: find_label_color(name, local),
+                repos: vec![],
+                pinned: false,
+            }
+        },
+        |s| LabelDef {
             name: s.name.clone(),
             description: s.description.clone(),
             color: None,
             repos: vec![],
             pinned: false,
-        }
-    } else {
-        let name = selected_labels[0];
-        let desc = find_label_description(name, local, session);
-        LabelDef {
-            name: (*name).clone(),
-            description: desc,
-            color: find_label_color(name, local),
-            repos: vec![],
-            pinned: false,
-        }
-    }
+        },
+    )
 }
 
 /// Interactive label selection with LLM refinement loop.
@@ -1374,9 +1372,8 @@ fn review_interactive(
                         i -= 1;
                         eprintln!();
                         break;
-                    } else {
-                        eprintln!("  Already at the first item.");
                     }
+                    eprintln!("  Already at the first item.");
                 }
                 'q' => {
                     return Ok(stats);
@@ -1515,11 +1512,15 @@ fn print_suggestion(
         suggestion.suggested_node.as_deref().unwrap_or("none")
     );
 
-    let existing: BTreeSet<&str> = issue.labels.iter().map(|s| s.as_str()).collect();
+    let existing: BTreeSet<&str> = issue
+        .labels
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     let new_labels: Vec<&str> = suggestion
         .suggested_labels
         .iter()
-        .map(|s| s.as_str())
+        .map(std::string::String::as_str)
         .filter(|s| !existing.contains(s))
         .collect();
     if new_labels.is_empty() {
@@ -1573,12 +1574,9 @@ fn linkify_markdown_links(input: &str) -> String {
                     continue;
                 }
             }
-            result.push('[');
-            rest = after_open;
-        } else {
-            result.push('[');
-            rest = after_open;
         }
+        result.push('[');
+        rest = after_open;
     }
     result.push_str(rest);
     linkify_bare_urls(&result)
@@ -1650,7 +1648,7 @@ fn generate_inquire_question(
         label_schema: &label_schema,
         curated_labels: &curated_labels,
     };
-    llm::generate_question(issue, node_entries, catalog, &config).map_err(|e| e.into())
+    llm::generate_question(issue, node_entries, catalog, &config).map_err(std::convert::Into::into)
 }
 
 fn prompt_question(generated: &str) -> Result<String> {
@@ -2030,7 +2028,7 @@ fn decide_one(
                     id: 0,
                     suggestion_id: suggestion.id,
                     decision: "approved".to_string(),
-                    final_node: suggestion.suggested_node.clone(),
+                    final_node: suggestion.suggested_node,
                     final_labels: merged,
                     decided_at: now,
                     applied_at: None,
@@ -2457,10 +2455,9 @@ pub fn run_examples_export(status: Option<String>, limit: Option<usize>) -> Resu
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let conn = db::open_db(&org_root)?;
 
-    let statuses: Vec<&str> = match status.as_deref() {
-        Some(s) => s.split(',').collect(),
-        None => vec!["rejected", "modified"],
-    };
+    let statuses: Vec<&str> = status
+        .as_deref()
+        .map_or_else(|| vec!["rejected", "modified"], |s| s.split(',').collect());
     let limit = limit.unwrap_or(50);
 
     let rows = db::get_decisions_with_original(&conn, &statuses, limit)?;
@@ -2616,7 +2613,12 @@ pub fn run_categories_list(min_votes: usize, format: String) -> Result<()> {
         }
         println!("Suggested categories:");
         for vote in &votes {
-            let refs: Vec<&str> = vote.issue_refs.iter().take(5).map(|s| s.as_str()).collect();
+            let refs: Vec<&str> = vote
+                .issue_refs
+                .iter()
+                .take(5)
+                .map(std::string::String::as_str)
+                .collect();
             println!(
                 "  {:<30} {} vote(s)  {}",
                 vote.category,
@@ -2804,18 +2806,47 @@ pub fn run_categories_refine(
                         return Ok(());
                     }
                 }
-            } else {
-                let path = group.proposed_path.as_deref().unwrap_or("???");
-                let name = group.proposed_name.as_deref().unwrap_or("???");
-                let desc = group.proposed_description.as_deref().unwrap_or("");
-                println!("  LLM says: Create new node");
-                println!("  Path:        {path}");
-                println!("  Name:        {name}");
-                println!("  Description: {desc}");
-                println!("  Reason:      {}", group.reason);
-                println!();
+            }
 
-                if auto_accept {
+            let path = group.proposed_path.as_deref().unwrap_or("???");
+            let name = group.proposed_name.as_deref().unwrap_or("???");
+            let desc = group.proposed_description.as_deref().unwrap_or("");
+            println!("  LLM says: Create new node");
+            println!("  Path:        {path}");
+            println!("  Name:        {name}");
+            println!("  Description: {desc}");
+            println!("  Reason:      {}", group.reason);
+            println!();
+
+            if auto_accept {
+                if let (Some(p), Some(n), Some(d)) = (
+                    &group.proposed_path,
+                    &group.proposed_name,
+                    &group.proposed_description,
+                ) {
+                    apply_refined_group(
+                        &org_root,
+                        &conn,
+                        p,
+                        n,
+                        d,
+                        &group.raw_suggestions,
+                        auto_accept,
+                    )?;
+                    applied += 1;
+                }
+                break;
+            }
+
+            let choice = dialoguer::Select::with_theme(&dialoguer::theme::ColorfulTheme::default())
+                .with_prompt("Action")
+                .items(["Apply", "Skip", "Refine", "Quit"])
+                .default(0)
+                .interact()
+                .map_err(|e| Error::Other(e.to_string()))?;
+
+            match choice {
+                0 => {
                     if let (Some(p), Some(n), Some(d)) = (
                         &group.proposed_path,
                         &group.proposed_name,
@@ -2834,65 +2865,32 @@ pub fn run_categories_refine(
                     }
                     break;
                 }
-
-                let choice =
-                    dialoguer::Select::with_theme(&dialoguer::theme::ColorfulTheme::default())
-                        .with_prompt("Action")
-                        .items(["Apply", "Skip", "Refine", "Quit"])
-                        .default(0)
-                        .interact()
-                        .map_err(|e| Error::Other(e.to_string()))?;
-
-                match choice {
-                    0 => {
-                        if let (Some(p), Some(n), Some(d)) = (
-                            &group.proposed_path,
-                            &group.proposed_name,
-                            &group.proposed_description,
-                        ) {
-                            apply_refined_group(
-                                &org_root,
-                                &conn,
-                                p,
-                                n,
-                                d,
-                                &group.raw_suggestions,
-                                auto_accept,
-                            )?;
-                            applied += 1;
+                1 => {
+                    skipped += 1;
+                    println!("  Skipped.\n");
+                    break;
+                }
+                2 => {
+                    let feedback: String =
+                        dialoguer::Input::with_theme(&dialoguer::theme::ColorfulTheme::default())
+                            .with_prompt("What should change?")
+                            .interact_text()
+                            .map_err(|e| Error::Other(e.to_string()))?;
+                    match llm::refine_category_group(&nodes, &group, &feedback, &config) {
+                        Ok(updated) => {
+                            group = updated;
+                            println!();
                         }
-                        break;
-                    }
-                    1 => {
-                        skipped += 1;
-                        println!("  Skipped.\n");
-                        break;
-                    }
-                    2 => {
-                        let feedback: String = dialoguer::Input::with_theme(
-                            &dialoguer::theme::ColorfulTheme::default(),
-                        )
-                        .with_prompt("What should change?")
-                        .interact_text()
-                        .map_err(|e| Error::Other(e.to_string()))?;
-                        match llm::refine_category_group(&nodes, &group, &feedback, &config) {
-                            Ok(updated) => {
-                                group = updated;
-                                println!();
-                                continue;
-                            }
-                            Err(e) => {
-                                eprintln!("  LLM refinement failed: {e}");
-                                continue;
-                            }
+                        Err(e) => {
+                            eprintln!("  LLM refinement failed: {e}");
                         }
                     }
-                    _ => {
-                        println!("  Quit.\n");
-                        print_refine_summary(applied, dismissed_count, skipped);
-                        cache::refresh_all(&conn, &org_root)?;
-                        return Ok(());
-                    }
+                }
+                _ => {
+                    println!("  Quit.\n");
+                    print_refine_summary(applied, dismissed_count, skipped);
+                    cache::refresh_all(&conn, &org_root)?;
+                    return Ok(());
                 }
             }
         }
@@ -3215,7 +3213,6 @@ fn read_line(editor: &mut DefaultEditor, prompt: &str) -> Result<String> {
 
 fn parse_yes_no(input: &str, default: bool) -> bool {
     match input.trim().to_ascii_lowercase().as_str() {
-        "" => default,
         "y" | "yes" => true,
         "n" | "no" => false,
         _ => default,

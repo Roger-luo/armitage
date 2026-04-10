@@ -13,18 +13,10 @@ pub fn run_set(key: String, value: String) -> Result<()> {
     let value = if value.is_empty() { None } else { Some(value) };
 
     match key.as_str() {
-        "org.default_repo" => {
-            info.default_repo = value.clone();
-        }
-        "triage.backend" => {
-            triage.backend = value.clone();
-        }
-        "triage.model" => {
-            triage.model = value.clone();
-        }
-        "triage.effort" => {
-            triage.effort = value.clone();
-        }
+        "org.default_repo" => info.default_repo.clone_from(&value),
+        "triage.backend" => triage.backend.clone_from(&value),
+        "triage.model" => triage.model.clone_from(&value),
+        "triage.effort" => triage.effort.clone_from(&value),
         other => {
             return Err(Error::Other(format!("unknown config key: '{other}'")));
         }

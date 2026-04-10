@@ -14,7 +14,7 @@ use armitage_core::org::Org;
 use armitage_core::tree::{find_org_root, walk_nodes};
 
 /// Script injected into the chart HTML for live reload in watch mode.
-const LIVE_RELOAD_SCRIPT: &str = r#"
+const LIVE_RELOAD_SCRIPT: &str = r"
 <script>
 (function() {
   let lastVersion = 0;
@@ -30,7 +30,7 @@ const LIVE_RELOAD_SCRIPT: &str = r#"
   }, 500);
 })();
 </script>
-"#;
+";
 
 pub fn run_chart(output: Option<String>, no_open: bool, offline: bool, watch: bool) -> Result<()> {
     let cwd = std::env::current_dir()?;
@@ -150,15 +150,16 @@ fn run_watch_server(org_root: &Path, offline: bool) -> Result<()> {
 
 fn inject_live_reload(html: &str) -> String {
     // Insert the live-reload script before </body>
-    if let Some(pos) = html.rfind("</body>") {
-        let mut out = String::with_capacity(html.len() + LIVE_RELOAD_SCRIPT.len());
-        out.push_str(&html[..pos]);
-        out.push_str(LIVE_RELOAD_SCRIPT);
-        out.push_str(&html[pos..]);
-        out
-    } else {
-        format!("{html}{LIVE_RELOAD_SCRIPT}")
-    }
+    html.rfind("</body>").map_or_else(
+        || format!("{html}{LIVE_RELOAD_SCRIPT}"),
+        |pos| {
+            let mut out = String::with_capacity(html.len() + LIVE_RELOAD_SCRIPT.len());
+            out.push_str(&html[..pos]);
+            out.push_str(LIVE_RELOAD_SCRIPT);
+            out.push_str(&html[pos..]);
+            out
+        },
+    )
 }
 
 fn serve_request(

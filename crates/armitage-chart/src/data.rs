@@ -26,7 +26,7 @@ pub struct ChartNode {
     pub has_timeline: bool,
     pub owners: Vec<String>,
     pub team: Option<String>,
-    pub children: Vec<ChartNode>,
+    pub children: Vec<Self>,
     pub milestones: Vec<ChartMilestone>,
     pub issues: Vec<ChartIssue>,
     pub overflow_start: Option<String>,

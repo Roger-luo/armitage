@@ -49,10 +49,10 @@ fn push_node(gh: &Gh, org_root: &Path, entry: &NodeEntry, dry_run: bool) -> Resu
     let current_hash = compute_node_hash(&entry.dir)?;
 
     // Check if local changed
-    let local_changed = match stored.as_ref().and_then(|s| s.local_hash.as_deref()) {
-        Some(stored_hash) => stored_hash != current_hash,
-        None => true, // No prior state — treat as changed
-    };
+    let local_changed = stored
+        .as_ref()
+        .and_then(|s| s.local_hash.as_deref())
+        .is_none_or(|stored_hash| stored_hash != current_hash);
 
     if !local_changed {
         return Ok(());
@@ -117,7 +117,6 @@ fn push_node(gh: &Gh, org_root: &Path, entry: &NodeEntry, dry_run: bool) -> Resu
             local_hash: Some(new_hash),
         };
         sync_state.nodes.insert(entry.path.clone(), new_entry);
-        write_sync_state(org_root, &sync_state)?;
     } else {
         // --- No github_issue: create new issue ---
         // We need a repo to create the issue in. Use the first repo in node.repos,
@@ -151,16 +150,16 @@ fn push_node(gh: &Gh, org_root: &Path, entry: &NodeEntry, dry_run: bool) -> Resu
         // Update sync state
         let new_hash = compute_node_hash(&entry.dir)?;
         let new_entry = NodeSyncEntry {
-            github_issue: issue_ref_str.clone(),
+            github_issue: issue_ref_str,
             last_pulled_at: None,
             last_pushed_at: Some(Utc::now()),
             remote_updated_at: None,
             local_hash: Some(new_hash),
         };
         sync_state.nodes.insert(entry.path.clone(), new_entry);
-        write_sync_state(org_root, &sync_state)?;
     }
 
+    write_sync_state(org_root, &sync_state)?;
     Ok(())
 }
 

@@ -92,11 +92,9 @@ pub fn list_children(org_root: &Path, parent_path: &str) -> Result<Vec<NodeEntry
                 !e.path.contains('/')
             } else {
                 // Direct child: path starts with "parent_path/" and has no further '/'
-                if let Some(rest) = e.path.strip_prefix(&format!("{parent_path}/")) {
-                    !rest.contains('/')
-                } else {
-                    false
-                }
+                e.path
+                    .strip_prefix(&format!("{parent_path}/"))
+                    .is_some_and(|rest| !rest.contains('/'))
             }
         })
         .collect();

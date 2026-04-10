@@ -276,12 +276,18 @@ pub fn compute_label_diff(
     desired_labels: &[String],
     ledger: &LabelRenameLedger,
 ) -> LabelDiff {
-    let current: BTreeSet<&str> = current_labels.iter().map(|s| s.as_str()).collect();
-    let desired: BTreeSet<&str> = desired_labels.iter().map(|s| s.as_str()).collect();
+    let current: BTreeSet<&str> = current_labels
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
+    let desired: BTreeSet<&str> = desired_labels
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
 
     let add: Vec<String> = desired
         .difference(&current)
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
 
     let mut remove: BTreeSet<&str> = current.difference(&desired).copied().collect();
@@ -298,7 +304,10 @@ pub fn compute_label_diff(
 
     LabelDiff {
         add,
-        remove: remove.into_iter().map(|s| s.to_string()).collect(),
+        remove: remove
+            .into_iter()
+            .map(std::string::ToString::to_string)
+            .collect(),
     }
 }
 
@@ -430,8 +439,16 @@ fn ensure_labels_exist(
         if decision.decision == DECISION_STALE || decision.decision == DECISION_INQUIRED {
             continue;
         }
-        let current: BTreeSet<&str> = issue.labels.iter().map(|s| s.as_str()).collect();
-        let desired: BTreeSet<&str> = decision.final_labels.iter().map(|s| s.as_str()).collect();
+        let current: BTreeSet<&str> = issue
+            .labels
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
+        let desired: BTreeSet<&str> = decision
+            .final_labels
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let to_add: Vec<&str> = desired.difference(&current).copied().collect();
         if !to_add.is_empty() {
             let entry = needed_per_repo.entry(issue.repo.as_str()).or_default();
@@ -489,7 +506,7 @@ mod tests {
     }
 
     fn s(v: &[&str]) -> Vec<String> {
-        v.iter().map(|s| s.to_string()).collect()
+        v.iter().map(std::string::ToString::to_string).collect()
     }
 
     #[test]

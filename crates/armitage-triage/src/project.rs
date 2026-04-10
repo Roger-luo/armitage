@@ -43,7 +43,7 @@ pub fn parse_project_url(url: &str) -> Result<(String, u32)> {
 // GraphQL query
 // ---------------------------------------------------------------------------
 
-const PROJECT_ITEMS_QUERY: &str = r#"
+const PROJECT_ITEMS_QUERY: &str = r"
 query($org: String!, $number: Int!, $cursor: String) {
   organization(login: $org) {
     projectV2(number: $number) {
@@ -96,7 +96,7 @@ query($org: String!, $number: Int!, $cursor: String) {
     }
   }
 }
-"#;
+";
 
 // ---------------------------------------------------------------------------
 // GraphQL response types

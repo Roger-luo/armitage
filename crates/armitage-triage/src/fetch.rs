@@ -48,9 +48,10 @@ pub fn fetch_repo_issues(
     since: Option<&str>,
 ) -> Result<usize> {
     // Build the API endpoint with query params
+    use std::fmt::Write as _;
     let mut endpoint = format!("repos/{repo}/issues?state=all&per_page=100");
     if let Some(since) = since {
-        endpoint.push_str(&format!("&since={since}"));
+        let _ = write!(endpoint, "&since={since}");
     }
 
     let json = gh

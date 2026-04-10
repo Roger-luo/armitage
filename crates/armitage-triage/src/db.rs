@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -537,7 +538,7 @@ pub fn get_pending_suggestions_filtered(
     }
     if max_confidence.is_some() {
         let param = if min_confidence.is_some() { "?2" } else { "?1" };
-        sql.push_str(&format!(" AND COALESCE(ts.confidence, 0.0) <= {param}"));
+        let _ = write!(sql, " AND COALESCE(ts.confidence, 0.0) <= {param}");
     }
     sql.push_str(" ORDER BY ts.confidence DESC, i.repo, i.number");
 
@@ -1112,25 +1113,26 @@ pub fn get_decisions_filtered(
         if status == "applied" {
             sql.push_str(" AND rd.applied_at IS NOT NULL");
         } else {
-            sql.push_str(&format!(" AND rd.decision = ?{param_idx}"));
+            let _ = write!(sql, " AND rd.decision = ?{param_idx}");
             params.push(Box::new(status.clone()));
             param_idx += 1;
         }
     }
 
     if let Some(ref prefix) = f.node_prefix {
-        sql.push_str(&format!(
-            " AND (rd.final_node = ?{p} OR rd.final_node LIKE ?{p2})",
-            p = param_idx,
-            p2 = param_idx + 1
-        ));
+        let p = param_idx;
+        let p2 = param_idx + 1;
+        let _ = write!(
+            sql,
+            " AND (rd.final_node = ?{p} OR rd.final_node LIKE ?{p2})"
+        );
         params.push(Box::new(prefix.clone()));
         params.push(Box::new(format!("{prefix}/%")));
         param_idx += 2;
     }
 
     if let Some(ref repo) = f.repo {
-        sql.push_str(&format!(" AND i.repo = ?{param_idx}"));
+        let _ = write!(sql, " AND i.repo = ?{param_idx}");
         params.push(Box::new(repo.clone()));
         param_idx += 1;
     }
@@ -1138,12 +1140,13 @@ pub fn get_decisions_filtered(
     sql.push_str(" ORDER BY rd.decided_at DESC");
 
     if f.limit > 0 {
-        sql.push_str(&format!(" LIMIT {}", f.limit));
+        let _ = write!(sql, " LIMIT {}", f.limit);
     }
 
     let _ = param_idx;
     let mut stmt = conn.prepare(&sql)?;
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params.iter().map(std::convert::AsRef::as_ref).collect();
 
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
         let issue = row_to_issue(row)?;
@@ -1189,7 +1192,7 @@ pub fn get_decisions_with_original(
     );
 
     if limit > 0 {
-        sql.push_str(&format!(" LIMIT {limit}"));
+        let _ = write!(sql, " LIMIT {limit}");
     }
 
     let params: Vec<&dyn rusqlite::types::ToSql> = statuses
@@ -1270,7 +1273,7 @@ pub fn get_suggestions_filtered(
             .enumerate()
             .map(|(i, _)| format!("?{}", param_idx + i))
             .collect();
-        sql.push_str(&format!(" AND i.number IN ({})", placeholders.join(",")));
+        let _ = write!(sql, " AND i.number IN ({})", placeholders.join(","));
         for n in &f.issue_numbers {
             params.push(Box::new(*n));
         }
@@ -1278,34 +1281,31 @@ pub fn get_suggestions_filtered(
     }
 
     if let Some(ref prefix) = f.node_prefix {
-        sql.push_str(&format!(
-            " AND (ts.suggested_node = ?{p} OR ts.suggested_node LIKE ?{p2})",
-            p = param_idx,
-            p2 = param_idx + 1
-        ));
+        let p = param_idx;
+        let p2 = param_idx + 1;
+        let _ = write!(
+            sql,
+            " AND (ts.suggested_node = ?{p} OR ts.suggested_node LIKE ?{p2})"
+        );
         params.push(Box::new(prefix.clone()));
         params.push(Box::new(format!("{prefix}/%")));
         param_idx += 2;
     }
 
     if let Some(ref repo) = f.repo {
-        sql.push_str(&format!(" AND i.repo = ?{param_idx}"));
+        let _ = write!(sql, " AND i.repo = ?{param_idx}");
         params.push(Box::new(repo.clone()));
         param_idx += 1;
     }
 
     if let Some(min) = f.min_confidence {
-        sql.push_str(&format!(
-            " AND COALESCE(ts.confidence, 0.0) >= ?{param_idx}"
-        ));
+        let _ = write!(sql, " AND COALESCE(ts.confidence, 0.0) >= ?{param_idx}");
         params.push(Box::new(min));
         param_idx += 1;
     }
 
     if let Some(max) = f.max_confidence {
-        sql.push_str(&format!(
-            " AND COALESCE(ts.confidence, 0.0) <= ?{param_idx}"
-        ));
+        let _ = write!(sql, " AND COALESCE(ts.confidence, 0.0) <= ?{param_idx}");
         params.push(Box::new(max));
         param_idx += 1;
     }
@@ -1335,15 +1335,16 @@ pub fn get_suggestions_filtered(
         SuggestionSort::Node => "ts.suggested_node, i.repo, i.number",
         SuggestionSort::Repo => "i.repo, i.number",
     };
-    sql.push_str(&format!(" ORDER BY {order}"));
+    let _ = write!(sql, " ORDER BY {order}");
 
     if f.limit > 0 {
-        sql.push_str(&format!(" LIMIT {}", f.limit));
+        let _ = write!(sql, " LIMIT {}", f.limit);
     }
 
     let _ = param_idx;
     let mut stmt = conn.prepare(&sql)?;
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params.iter().map(std::convert::AsRef::as_ref).collect();
 
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
         let issue = row_to_issue(row)?;
@@ -1409,7 +1410,7 @@ mod tests {
             is_stale: false,
             suggested_labels: vec![],
             confidence: Some(confidence),
-            reasoning: "".to_string(),
+            reasoning: String::new(),
             llm_backend: "claude".to_string(),
             created_at: "2026-04-01T00:00:00Z".to_string(),
             is_tracking_issue: false,
@@ -1587,7 +1588,7 @@ mod tests {
                 suggested_node: Some("a".to_string()),
                 suggested_labels: vec![],
                 confidence: Some(0.9),
-                reasoning: "".to_string(),
+                reasoning: String::new(),
                 llm_backend: "claude".to_string(),
                 created_at: "2026-04-01T00:00:00Z".to_string(),
                 is_tracking_issue: false,

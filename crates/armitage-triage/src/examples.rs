@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -129,30 +130,31 @@ pub fn build_examples_section(examples: &[TriageExample]) -> String {
     );
 
     for (i, ex) in examples.iter().enumerate() {
-        s.push_str(&format!("### Example {}\n", i + 1));
-        s.push_str(&format!("Issue: {} — {}\n", ex.issue_ref, ex.title));
+        let _ = writeln!(s, "### Example {}", i + 1);
+        let _ = writeln!(s, "Issue: {} — {}", ex.issue_ref, ex.title);
         if !ex.body_excerpt.is_empty() {
-            s.push_str(&format!("Body: {}\n", ex.body_excerpt));
+            let _ = writeln!(s, "Body: {}", ex.body_excerpt);
         }
         if let Some(orig) = &ex.original_node {
-            s.push_str(&format!("LLM originally suggested: {orig} (INCORRECT)\n"));
+            let _ = writeln!(s, "LLM originally suggested: {orig} (INCORRECT)");
         }
 
         // Show the correct classification as the expected JSON
-        let node_json = match &ex.node {
-            Some(n) => format!("\"{}\"", n),
-            None => "null".to_string(),
-        };
+        let node_json = ex
+            .node
+            .as_ref()
+            .map_or_else(|| "null".to_string(), |n| format!("\"{n}\""));
         let labels_json: Vec<String> = ex.labels.iter().map(|l| format!("\"{l}\"")).collect();
-        s.push_str(&format!(
+        let _ = writeln!(
+            s,
             "Correct: {{\"suggested_node\": {node_json}, \"suggested_labels\": [{}], \
-             \"is_tracking_issue\": {}, \"is_stale\": {}}}\n",
+             \"is_tracking_issue\": {}, \"is_stale\": {}}}",
             labels_json.join(", "),
             ex.is_tracking_issue,
             ex.is_stale,
-        ));
+        );
         if !ex.note.is_empty() {
-            s.push_str(&format!("Reason: {}\n", ex.note));
+            let _ = writeln!(s, "Reason: {}", ex.note);
         }
         s.push('\n');
     }

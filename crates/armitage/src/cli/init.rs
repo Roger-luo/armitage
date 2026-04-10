@@ -31,7 +31,7 @@ pub fn init_at(
     let org_info = OrgInfo {
         name: name.to_string(),
         github_orgs: github_orgs.to_vec(),
-        default_repo: default_repo.map(|s| s.to_string()),
+        default_repo: default_repo.map(std::string::ToString::to_string),
     };
     let label_schema = LabelSchema {
         prefixes: vec![],
