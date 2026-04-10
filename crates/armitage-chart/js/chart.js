@@ -441,18 +441,20 @@
         lineDash: hasTimeline || isSelected ? null : [4, 3]
       }
     });
-    // Build sub-bars: child nodes + issues with dates
+    // Build sub-bars: child nodes + all descendant issues with dates
     const subBars = [];
     for (const c of node.children) {
       if (c.eff_start && c.eff_end) {
         subBars.push({ type: "node", start: c.eff_start, end: c.eff_end, color: STATUS_COLORS[c.status] || STATUS_COLORS.active, overflowStart: c.overflow_start, overflowEnd: c.overflow_end, label: c.name });
       }
     }
-    for (const issue of node.issues) {
+    const nodeEnd = node.end || node.eff_end;
+    for (const issue of allIssues(node)) {
       if (issue.start_date || issue.target_date) {
         const iStart = issue.start_date || issue.target_date;
         const iEnd = issue.target_date || issue.start_date;
-        subBars.push({ type: "issue", start: iStart, end: iEnd, color: "#8b5cf6", label: issue.title || issue.issue_ref, issueRef: issue.issue_ref });
+        const overflows = nodeEnd && iEnd > nodeEnd;
+        subBars.push({ type: "issue", start: iStart, end: iEnd, overflows, label: issue.title || issue.issue_ref, issueRef: issue.issue_ref });
       }
     }
     if (subBars.length > 0) {
@@ -478,13 +480,14 @@
         const cy = barAreaTop + gap + i * (barH + gap);
         const opacity = 0.6 + 0.3 * (1 - i / maxBars);
         if (sub.type === "issue") {
-          // Issue bar: distinct style (purple, rounded, dotted border)
+          // Issue bar: green if on-track, purple if overflowing
+          const issueColor = sub.overflows ? "#8b5cf6" : "#22c55e";
           children.push({
             type: "rect",
             shape: { x: cx, y: cy, width: cw, height: barH, r: barH / 2 },
             style: {
-              fill: `${sub.color}44`,
-              stroke: `${sub.color}88`,
+              fill: `${issueColor}44`,
+              stroke: `${issueColor}88`,
               lineWidth: 1,
               lineDash: [2, 2],
               opacity
