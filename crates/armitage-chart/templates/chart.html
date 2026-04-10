@@ -37,16 +37,28 @@
     .crumb:hover { text-decoration: underline; }
     .crumb-sep { color: #484f58; margin: 0 2px; }
     .crumb-current { color: #e6edf3; }
-    #toggle-range {
-      background: #21262d;
-      color: #8b949e;
+    .range-toggle {
+      display: flex;
       border: 1px solid #30363d;
       border-radius: 6px;
-      padding: 4px 12px;
+      overflow: hidden;
       font-size: 12px;
+    }
+    .range-toggle button {
+      background: #21262d;
+      color: #8b949e;
+      border: none;
+      padding: 4px 12px;
       cursor: pointer;
     }
-    #toggle-range:hover { color: #e6edf3; border-color: #484f58; }
+    .range-toggle button:not(:last-child) {
+      border-right: 1px solid #30363d;
+    }
+    .range-toggle button:hover { color: #e6edf3; }
+    .range-toggle button.active {
+      background: #30363d;
+      color: #e6edf3;
+    }
     #main {
       display: flex;
       height: calc(100vh - 48px);
@@ -211,7 +223,10 @@
 <body>
   <div id="nav">
     <div id="breadcrumb"></div>
-    <button id="toggle-range">Show Global Range</button>
+    <div class="range-toggle">
+      <button id="btn-fitted" class="active" onclick="window.__setRange(false)">Fitted</button>
+      <button id="btn-global" onclick="window.__setRange(true)">Global</button>
+    </div>
   </div>
   <div id="main">
     <div id="chart"></div>
