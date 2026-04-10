@@ -250,8 +250,23 @@ armitage chart [--output PATH] [--no-open] [--offline] [--watch|-w]
   changes to node.toml, issues.toml, milestones.toml, armitage.toml, labels.toml, team.toml,
   and triage.db, and auto-rebuilds with browser refresh
 - `--offline`: embeds ECharts JS inline for offline/GitHub Pages deployment
-- The chart shows red overflow bars when issue target dates exceed node timelines, with the
-  overflow visible at every drill-down level
+- Light/dark/auto theme toggle in the nav bar (persisted in localStorage)
+- Fitted/global range toggle for the x-axis time range
+
+**Chart visualization:**
+- Nodes render as horizontal bars with nested sub-bars for children and issues
+- Child node sub-bars: solid colored by status (blue=active, gray=completed, amber=paused)
+- Issue sub-bars (from issues.toml + project board dates):
+  - **Green pills**: on-track (target date within node timeline)
+  - **Green→purple split pills**: overflowing (transitions at the violated deadline)
+  - **Gray dashed pills**: no project board dates assigned (spans full width)
+  - Closed issues are excluded
+- Red overflow on outer bars: only shown when overflow exceeds the node's own timeline.
+  If a child milestone overflows but the product line accommodates it, only the child
+  sub-bar shows red — the outer bar stays clean
+- Double-click a bar to drill in; click to show details in the side panel
+- The panel shows: description, timeline, people, milestones, children, and all descendant
+  issues with clickable GitHub links and target dates
 
 ### Configuration
 
