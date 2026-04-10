@@ -1,0 +1,188 @@
+{
+  "org_name": "TestOrg",
+  "global_start": "2026-01-01",
+  "global_end": "2026-12-31",
+  "nodes": [
+    {
+      "path": "infra",
+      "name": "Infrastructure",
+      "description": "Core infrastructure initiative spanning networking and storage systems.",
+      "status": "active",
+      "start": null,
+      "end": null,
+      "eff_start": "2026-01-01",
+      "eff_end": "2026-12-31",
+      "has_timeline": false,
+      "owners": [],
+      "team": null,
+      "overflow_start": null,
+      "overflow_end": null,
+      "issue_start": "2026-01-20",
+      "issue_end": "2026-11-15",
+      "milestones": [
+        {
+          "name": "MVP",
+          "date": "2026-06-30",
+          "description": "Minimum viable platform",
+          "milestone_type": "checkpoint"
+        }
+      ],
+      "issues": [],
+      "children": [
+        {
+          "path": "infra/networking",
+          "name": "Networking",
+          "description": "Network layer: protocols, service discovery, and connection management.",
+          "status": "active",
+          "start": "2026-01-01",
+          "end": "2026-06-30",
+          "eff_start": "2026-01-01",
+          "eff_end": "2026-06-30",
+          "has_timeline": true,
+          "owners": [],
+          "team": null,
+          "overflow_start": null,
+          "overflow_end": null,
+          "issue_start": "2026-01-20",
+          "issue_end": "2026-04-10",
+          "milestones": [],
+          "issues": [],
+          "children": [
+            {
+              "path": "infra/networking/protocols",
+              "name": "Protocols",
+              "description": "Network protocol definitions and handshake implementations.",
+              "status": "active",
+              "start": "2026-01-01",
+              "end": "2026-04-30",
+              "eff_start": "2026-01-01",
+              "eff_end": "2026-04-30",
+              "has_timeline": true,
+              "owners": [],
+              "team": null,
+              "overflow_start": null,
+              "overflow_end": null,
+              "issue_start": "2026-01-20",
+              "issue_end": "2026-04-10",
+              "milestones": [],
+              "issues": [
+                {
+                  "issue_ref": "#201",
+                  "title": "Define wire protocol v2",
+                  "start_date": "2026-01-20",
+                  "target_date": "2026-04-10",
+                  "state": "OPEN"
+                }
+              ],
+              "children": []
+            },
+            {
+              "path": "infra/networking/discovery",
+              "name": "Discovery",
+              "description": "Service discovery and peer registration mechanisms.",
+              "status": "active",
+              "start": "2026-03-01",
+              "end": "2026-06-30",
+              "eff_start": "2026-03-01",
+              "eff_end": "2026-06-30",
+              "has_timeline": true,
+              "owners": [],
+              "team": null,
+              "overflow_start": null,
+              "overflow_end": null,
+              "issue_start": null,
+              "issue_end": null,
+              "milestones": [],
+              "issues": [],
+              "children": []
+            }
+          ]
+        },
+        {
+          "path": "infra/storage",
+          "name": "Storage",
+          "description": "Persistent storage layer: data formats, indexing, and retrieval.",
+          "status": "active",
+          "start": "2026-04-01",
+          "end": "2026-12-31",
+          "eff_start": "2026-04-01",
+          "eff_end": "2026-12-31",
+          "has_timeline": true,
+          "owners": [],
+          "team": null,
+          "overflow_start": null,
+          "overflow_end": null,
+          "issue_start": "2026-04-15",
+          "issue_end": "2026-11-15",
+          "milestones": [],
+          "issues": [
+            {
+              "issue_ref": "#202",
+              "title": "Design on-disk storage format",
+              "start_date": "2026-04-15",
+              "target_date": "2026-07-31",
+              "state": "OPEN"
+            },
+            {
+              "issue_ref": "#203",
+              "title": "Implement compaction and GC",
+              "start_date": "2026-07-01",
+              "target_date": "2026-11-15",
+              "state": "OPEN"
+            }
+          ],
+          "children": []
+        }
+      ]
+    },
+    {
+      "path": "devtools",
+      "name": "Developer Tools",
+      "description": "Developer tooling initiative including CLI and IDE integrations.",
+      "status": "active",
+      "start": "2026-03-01",
+      "end": "2026-12-31",
+      "eff_start": "2026-03-01",
+      "eff_end": "2026-12-31",
+      "has_timeline": true,
+      "owners": [],
+      "team": null,
+      "overflow_start": null,
+      "overflow_end": null,
+      "issue_start": "2026-03-20",
+      "issue_end": "2026-08-31",
+      "milestones": [],
+      "issues": [],
+      "children": [
+        {
+          "path": "devtools/cli",
+          "name": "CLI",
+          "description": "Command-line interface for developer workflows.",
+          "status": "active",
+          "start": "2026-03-01",
+          "end": "2026-09-30",
+          "eff_start": "2026-03-01",
+          "eff_end": "2026-09-30",
+          "has_timeline": true,
+          "owners": [],
+          "team": null,
+          "overflow_start": null,
+          "overflow_end": null,
+          "issue_start": "2026-03-20",
+          "issue_end": "2026-08-31",
+          "milestones": [],
+          "issues": [
+            {
+              "issue_ref": "#301",
+              "title": "Add interactive shell mode",
+              "start_date": "2026-03-20",
+              "target_date": "2026-08-31",
+              "state": "OPEN"
+            }
+          ],
+          "children": []
+        }
+      ]
+    }
+  ]
+}
