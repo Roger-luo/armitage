@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // ts/chart.ts
+  // crates/armitage-chart/ts/chart.ts
   var data = window.__CHART_DATA__;
   var currentPath = "";
   var useGlobalRange = false;
@@ -112,6 +112,11 @@
     div.textContent = s;
     return div.innerHTML;
   }
+  function issueUrl(ref) {
+    const match = ref.match(/^(.+?)\/(.+?)#(\d+)$/);
+    if (!match) return "#";
+    return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
+  }
   function showPanel(node) {
     selectedNode = node;
     let html = "";
@@ -156,6 +161,17 @@
         html += `<li>&diams; ${escapeHtml(m.name)} <span class="ms-date">${m.date}</span>`;
         if (m.description) html += `<br/><span class="ms-date">${escapeHtml(m.description)}</span>`;
         html += `</li>`;
+      }
+      html += `</ul></div>`;
+    }
+    if (node.issues.length > 0) {
+      html += `<div class="panel-section">`;
+      html += `<h3>Issues (${node.issues.length})</h3>`;
+      html += `<ul class="panel-issues">`;
+      for (const issue of node.issues) {
+        const url = issueUrl(issue.issue_ref);
+        const label = issue.title ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>` : escapeHtml(issue.issue_ref);
+        html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
       }
       html += `</ul></div>`;
     }

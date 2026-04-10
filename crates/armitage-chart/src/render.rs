@@ -55,6 +55,7 @@ mod tests {
                 team: Some("core".to_string()),
                 children: vec![],
                 milestones: vec![],
+                issues: vec![],
             }],
             org_name: "TestOrg".to_string(),
             global_start: Some("2026-01-01".to_string()),
