@@ -588,7 +588,11 @@
         });
       }
     }
-    if (node.overflow_end && node.overflow_start) {
+    // Only show outer bar red zone when overflow exceeds the bar's own timeline.
+    // If the overflow is contained within the node's timeline (e.g. a child
+    // milestone overflows but the product line doesn't), sub-bars handle it.
+    const barEnd = node.end || node.eff_end;
+    if (node.overflow_end && node.overflow_start && barEnd && node.overflow_end > barEnd) {
       const overflowX = api.coord([parseDate(node.overflow_start), yIdx])[0];
       const overflowEnd = api.coord([parseDate(node.overflow_end), yIdx]);
       const overflowWidth = overflowEnd[0] - overflowX;
