@@ -117,6 +117,13 @@
     if (!match) return "#";
     return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
   }
+  function allIssues(node) {
+    const result = [...node.issues];
+    for (const c of node.children) {
+      result.push(...allIssues(c));
+    }
+    return result;
+  }
   function showPanel(node) {
     selectedNode = node;
     let html = "";
@@ -164,17 +171,6 @@
       }
       html += `</ul></div>`;
     }
-    if (node.issues.length > 0) {
-      html += `<div class="panel-section">`;
-      html += `<h3>Issues (${node.issues.length})</h3>`;
-      html += `<ul class="panel-issues">`;
-      for (const issue of node.issues) {
-        const url = issueUrl(issue.issue_ref);
-        const label = issue.title ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>` : escapeHtml(issue.issue_ref);
-        html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
-      }
-      html += `</ul></div>`;
-    }
     if (node.children.length > 0) {
       html += `<div class="panel-section">`;
       html += `<h3>Children (${node.children.length})</h3>`;
@@ -191,6 +187,18 @@
       html += `</ul>`;
       html += `<button class="btn-drill" onclick="window.__nav('${node.path}')">Drill into ${escapeHtml(node.name)} &rsaquo;</button>`;
       html += `</div>`;
+    }
+    const issues = allIssues(node);
+    if (issues.length > 0) {
+      html += `<div class="panel-section">`;
+      html += `<h3>Issues (${issues.length})</h3>`;
+      html += `<ul class="panel-issues">`;
+      for (const issue of issues) {
+        const url = issueUrl(issue.issue_ref);
+        const label = issue.title ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>` : escapeHtml(issue.issue_ref);
+        html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
+      }
+      html += `</ul></div>`;
     }
     panelContentEl.innerHTML = html;
     panelEl.classList.add("open");
