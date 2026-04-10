@@ -480,19 +480,35 @@
         const cy = barAreaTop + gap + i * (barH + gap);
         const opacity = 0.6 + 0.3 * (1 - i / maxBars);
         if (sub.type === "issue") {
-          // Issue bar: green if on-track, purple if overflowing
-          const issueColor = sub.overflows ? "#8b5cf6" : "#22c55e";
-          children.push({
-            type: "rect",
-            shape: { x: cx, y: cy, width: cw, height: barH, r: barH / 2 },
-            style: {
-              fill: `${issueColor}44`,
-              stroke: `${issueColor}88`,
-              lineWidth: 1,
-              lineDash: [2, 2],
-              opacity
+          if (sub.overflows && nodeEnd) {
+            // Split bar: green up to node end, purple in overflow
+            const splitDate = parseDate(nodeEnd);
+            const relSplit = Math.max(relStart, Math.min(relEnd, (splitDate - outerStart) / outerRange));
+            const splitX = x + relSplit * width;
+            const greenW = Math.max(splitX - cx, 0);
+            const purpleW = Math.max(cx + cw - splitX, 0);
+            if (greenW > 0) {
+              children.push({
+                type: "rect",
+                shape: { x: cx, y: cy, width: greenW, height: barH, r: [barH / 2, 0, 0, barH / 2] },
+                style: { fill: "#22c55e44", stroke: "#22c55e88", lineWidth: 1, lineDash: [2, 2], opacity }
+              });
             }
-          });
+            if (purpleW > 0) {
+              children.push({
+                type: "rect",
+                shape: { x: splitX, y: cy, width: purpleW, height: barH, r: [0, barH / 2, barH / 2, 0] },
+                style: { fill: "#8b5cf644", stroke: "#8b5cf688", lineWidth: 1, lineDash: [2, 2], opacity }
+              });
+            }
+          } else {
+            // Fully on-track: green
+            children.push({
+              type: "rect",
+              shape: { x: cx, y: cy, width: cw, height: barH, r: barH / 2 },
+              style: { fill: "#22c55e44", stroke: "#22c55e88", lineWidth: 1, lineDash: [2, 2], opacity }
+            });
+          }
         } else {
           // Child node bar
           children.push({
