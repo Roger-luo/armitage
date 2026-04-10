@@ -4,7 +4,7 @@ import { fixtureUrl } from "../helpers/generate-html";
 test.describe("navigation", () => {
   test("drill into node via __nav shows children", async ({ page }) => {
     await page.goto(fixtureUrl("deep-tree"));
-    await page.waitForSelector("#chart canvas", { timeout: 5000 });
+    await page.waitForSelector("#chart-svg", { timeout: 5000 });
     await page.waitForTimeout(500);
 
     await page.evaluate(() => (window as any).__nav("infra"));
@@ -19,7 +19,7 @@ test.describe("navigation", () => {
 
   test("drill two levels deep shows correct breadcrumb", async ({ page }) => {
     await page.goto(fixtureUrl("deep-tree"));
-    await page.waitForSelector("#chart canvas", { timeout: 5000 });
+    await page.waitForSelector("#chart-svg", { timeout: 5000 });
 
     await page.evaluate(() => (window as any).__nav("infra/networking"));
     await page.waitForTimeout(500);
@@ -32,7 +32,7 @@ test.describe("navigation", () => {
 
   test("navigate back to root via breadcrumb", async ({ page }) => {
     await page.goto(fixtureUrl("deep-tree"));
-    await page.waitForSelector("#chart canvas", { timeout: 5000 });
+    await page.waitForSelector("#chart-svg", { timeout: 5000 });
 
     await page.evaluate(() => (window as any).__nav("infra"));
     await page.waitForTimeout(300);

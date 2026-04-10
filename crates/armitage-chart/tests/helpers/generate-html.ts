@@ -35,7 +35,7 @@ export function generateHtml(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Test Chart</title>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
   <style>${css}</style>
 </head>
 <body>
@@ -51,8 +51,25 @@ export function generateHtml(
       <button onclick="window.__setTheme('auto')">Auto</button>
     </div>
   </div>
+  <div class="chart-tooltip" id="tooltip" style="display:none"></div>
   <div id="main">
-    <div id="chart"></div>
+    <div id="chart-scroll">
+      <div id="chart-labels"></div>
+      <div id="chart-timeline">
+        <svg id="chart-svg">
+          <defs>
+            <linearGradient id="heat-gradient" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="rgba(88,166,255,0.35)"/>
+              <stop offset="100%" stop-color="rgba(88,166,255,0.15)"/>
+            </linearGradient>
+          </defs>
+          <g id="axis-group"></g>
+          <g id="grid-group"></g>
+          <g id="bars-group"></g>
+          <g id="markers-group"></g>
+        </svg>
+      </div>
+    </div>
     <div id="panel">
       <button id="panel-close" onclick="window.__closePanel()">&times;</button>
       <div id="panel-content"></div>
@@ -72,6 +89,8 @@ export function generateHtml(
         html.setAttribute('data-theme', mode);
         btns[mode === 'light' ? 0 : 1].classList.add('active');
       }
+      localStorage.setItem('armitage-chart-theme', mode);
+      if (window.__onThemeChange) window.__onThemeChange();
     };
     window.__setTheme('dark');
   </script>
