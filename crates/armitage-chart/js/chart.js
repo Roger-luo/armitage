@@ -108,8 +108,7 @@
     }
   }
   function renderTodayLine(state, layout2, totalHeight) {
-    const existing = layout2.markersGroup.querySelector(".today-line");
-    if (existing) existing.remove();
+    layout2.markersGroup.querySelectorAll(".today-line").forEach((el) => el.remove());
     const today = /* @__PURE__ */ new Date();
     today.setHours(0, 0, 0, 0);
     const x = state.currentScale(today);

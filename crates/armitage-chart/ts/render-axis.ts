@@ -69,9 +69,8 @@ export function renderTodayLine(
   layout: LayoutElements,
   totalHeight: number,
 ): void {
-  // Remove previous today line
-  const existing = layout.markersGroup.querySelector(".today-line");
-  if (existing) existing.remove();
+  // Remove all previous today line elements
+  layout.markersGroup.querySelectorAll(".today-line").forEach((el) => el.remove());
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
