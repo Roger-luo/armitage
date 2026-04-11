@@ -8,6 +8,7 @@ export interface ChartIssue {
   description: string | null;
   labels: string[];
   author: string | null;
+  assignees: string[];
 }
 
 /** Mirrors the Rust ChartMilestone struct. */

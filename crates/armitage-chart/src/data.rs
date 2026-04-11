@@ -47,6 +47,7 @@ pub struct ChartIssue {
     pub description: Option<String>,
     pub labels: Vec<String>,
     pub author: Option<String>,
+    pub assignees: Vec<String>,
 }
 
 /// A milestone or OKR marker on the timeline.
@@ -76,6 +77,7 @@ pub struct IssueDates {
     pub description: Option<String>,
     pub labels: Vec<String>,
     pub author: Option<String>,
+    pub assignees: Vec<String>,
 }
 
 fn date_to_str(d: &NaiveDate) -> String {
@@ -104,6 +106,7 @@ fn read_issues(node_dir: &Path, dates_map: &HashMap<String, IssueDates>) -> Vec<
                 description: dates.and_then(|d| d.description.clone()),
                 labels: dates.map(|d| d.labels.clone()).unwrap_or_default(),
                 author: dates.and_then(|d| d.author.clone()),
+                assignees: dates.map(|d| d.assignees.clone()).unwrap_or_default(),
             })
         })
         .collect()

@@ -1,5 +1,5 @@
--- Schema matches armitage-triage db.rs SCHEMA_V7
-PRAGMA user_version = 7;
+-- Schema matches armitage-triage db.rs SCHEMA_V8
+PRAGMA user_version = 8;
 
 CREATE TABLE IF NOT EXISTS issues (
     id                INTEGER PRIMARY KEY,
@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS issues (
     fetched_at        TEXT NOT NULL,
     sub_issues_count  INTEGER NOT NULL DEFAULT 0,
     author            TEXT NOT NULL DEFAULT '',
+    assignees_json    TEXT NOT NULL DEFAULT '[]',
     UNIQUE(repo, number)
 );
 
@@ -55,46 +56,46 @@ CREATE TABLE IF NOT EXISTS issue_project_items (
 );
 
 -- Issues: aurora initiative
-INSERT INTO issues (id, repo, number, title, body, state, updated_at, fetched_at) VALUES
-(1,  'NexusLabs/photon-core', 101, 'Implement channel multiplexer', '', 'OPEN', '2026-03-01', '2026-03-15'),
-(2,  'NexusLabs/photon-core', 102, 'Add throughput monitoring dashboard', '', 'OPEN', '2026-03-01', '2026-03-15'),
-(3,  'NexusLabs/photon-core', 103, 'Constant folding optimization', '', 'OPEN', '2026-02-01', '2026-03-15'),
-(4,  'NexusLabs/photon-core', 104, 'Loop unrolling pass', '', 'OPEN', '2026-02-15', '2026-03-15'),
-(5,  'NexusLabs/photon-core', 105, 'Dead code elimination', '', 'CLOSED', '2026-03-01', '2026-03-15'),
-(6,  'NexusLabs/photon-core', 106, 'Vectorization pass for batch operations', '', 'OPEN', '2026-03-01', '2026-03-15'),
-(7,  'NexusLabs/photon-core', 107, 'Memory layout optimizer', '', 'OPEN', '2026-04-01', '2026-04-15'),
-(8,  'NexusLabs/photon-core', 108, 'Priority queue implementation', '', 'OPEN', '2026-04-01', '2026-04-15'),
-(9,  'NexusLabs/photon-core', 109, 'Deadline-aware preemption', '', 'OPEN', '2026-04-15', '2026-04-15'),
-(10, 'NexusLabs/photon-core', 110, 'Worker pool scaling', '', 'OPEN', '2026-05-01', '2026-05-15'),
-(11, 'NexusLabs/photon-core', 111, 'Format adapter for WAV files', '', 'OPEN', '2026-02-01', '2026-03-15'),
-(12, 'NexusLabs/photon-core', 112, 'MATLAB bridge integration', '', 'OPEN', '2026-02-15', '2026-03-15'),
-(13, 'NexusLabs/photon-core', 113, 'HDF5 reader implementation', '', 'OPEN', '2026-03-01', '2026-03-15'),
-(14, 'NexusLabs/photon-core', 114, 'CSV streaming parser', '', 'CLOSED', '2026-03-15', '2026-03-15'),
-(15, 'NexusLabs/photon-core', 115, 'Protocol buffer serialization', '', 'OPEN', '2026-04-01', '2026-04-15'),
-(16, 'NexusLabs/photon-core', 116, 'Apache Arrow interop', '', 'OPEN', '2026-04-15', '2026-04-15'),
-(17, 'NexusLabs/photon-core', 117, 'JSON schema validation', '', 'OPEN', '2026-05-01', '2026-05-15'),
-(18, 'NexusLabs/photon-core', 118, 'Binary format documentation', '', 'OPEN', '2026-05-15', '2026-05-15');
+INSERT INTO issues (id, repo, number, title, body, state, updated_at, fetched_at, assignees_json) VALUES
+(1,  'NexusLabs/photon-core', 101, 'Implement channel multiplexer', '', 'OPEN', '2026-03-01', '2026-03-15', '["agarcia"]'),
+(2,  'NexusLabs/photon-core', 102, 'Add throughput monitoring dashboard', '', 'OPEN', '2026-03-01', '2026-03-15', '["bkim","czhang"]'),
+(3,  'NexusLabs/photon-core', 103, 'Constant folding optimization', '', 'OPEN', '2026-02-01', '2026-03-15', '[]'),
+(4,  'NexusLabs/photon-core', 104, 'Loop unrolling pass', '', 'OPEN', '2026-02-15', '2026-03-15', '[]'),
+(5,  'NexusLabs/photon-core', 105, 'Dead code elimination', '', 'CLOSED', '2026-03-01', '2026-03-15', '[]'),
+(6,  'NexusLabs/photon-core', 106, 'Vectorization pass for batch operations', '', 'OPEN', '2026-03-01', '2026-03-15', '[]'),
+(7,  'NexusLabs/photon-core', 107, 'Memory layout optimizer', '', 'OPEN', '2026-04-01', '2026-04-15', '[]'),
+(8,  'NexusLabs/photon-core', 108, 'Priority queue implementation', '', 'OPEN', '2026-04-01', '2026-04-15', '[]'),
+(9,  'NexusLabs/photon-core', 109, 'Deadline-aware preemption', '', 'OPEN', '2026-04-15', '2026-04-15', '[]'),
+(10, 'NexusLabs/photon-core', 110, 'Worker pool scaling', '', 'OPEN', '2026-05-01', '2026-05-15', '[]'),
+(11, 'NexusLabs/photon-core', 111, 'Format adapter for WAV files', '', 'OPEN', '2026-02-01', '2026-03-15', '[]'),
+(12, 'NexusLabs/photon-core', 112, 'MATLAB bridge integration', '', 'OPEN', '2026-02-15', '2026-03-15', '[]'),
+(13, 'NexusLabs/photon-core', 113, 'HDF5 reader implementation', '', 'OPEN', '2026-03-01', '2026-03-15', '[]'),
+(14, 'NexusLabs/photon-core', 114, 'CSV streaming parser', '', 'CLOSED', '2026-03-15', '2026-03-15', '[]'),
+(15, 'NexusLabs/photon-core', 115, 'Protocol buffer serialization', '', 'OPEN', '2026-04-01', '2026-04-15', '[]'),
+(16, 'NexusLabs/photon-core', 116, 'Apache Arrow interop', '', 'OPEN', '2026-04-15', '2026-04-15', '[]'),
+(17, 'NexusLabs/photon-core', 117, 'JSON schema validation', '', 'OPEN', '2026-05-01', '2026-05-15', '[]'),
+(18, 'NexusLabs/photon-core', 118, 'Binary format documentation', '', 'OPEN', '2026-05-15', '2026-05-15', '[]');
 
 -- Issues: beacon initiative
-INSERT INTO issues (id, repo, number, title, body, state, updated_at, fetched_at) VALUES
-(19, 'NexusLabs/waveform-engine', 201, 'Ring buffer implementation', '', 'OPEN', '2026-01-15', '2026-02-01'),
-(20, 'NexusLabs/waveform-engine', 202, 'Sliding window aggregator', '', 'OPEN', '2026-02-01', '2026-02-15'),
-(21, 'NexusLabs/waveform-engine', 203, 'Sorted merge iterator', '', 'OPEN', '2026-02-15', '2026-03-01'),
-(22, 'NexusLabs/waveform-engine', 204, 'Concurrent hash map', '', 'CLOSED', '2026-03-01', '2026-03-15'),
-(23, 'NexusLabs/waveform-engine', 205, 'Future combinator library', '', 'OPEN', '2026-03-15', '2026-04-01'),
-(24, 'NexusLabs/waveform-engine', 206, 'Async channel implementation', '', 'OPEN', '2026-04-01', '2026-04-15'),
-(25, 'NexusLabs/waveform-engine', 207, 'Backpressure mechanism', '', 'OPEN', '2026-04-15', '2026-05-01');
+INSERT INTO issues (id, repo, number, title, body, state, updated_at, fetched_at, assignees_json) VALUES
+(19, 'NexusLabs/waveform-engine', 201, 'Ring buffer implementation', '', 'OPEN', '2026-01-15', '2026-02-01', '[]'),
+(20, 'NexusLabs/waveform-engine', 202, 'Sliding window aggregator', '', 'OPEN', '2026-02-01', '2026-02-15', '[]'),
+(21, 'NexusLabs/waveform-engine', 203, 'Sorted merge iterator', '', 'OPEN', '2026-02-15', '2026-03-01', '[]'),
+(22, 'NexusLabs/waveform-engine', 204, 'Concurrent hash map', '', 'CLOSED', '2026-03-01', '2026-03-15', '[]'),
+(23, 'NexusLabs/waveform-engine', 205, 'Future combinator library', '', 'OPEN', '2026-03-15', '2026-04-01', '[]'),
+(24, 'NexusLabs/waveform-engine', 206, 'Async channel implementation', '', 'OPEN', '2026-04-01', '2026-04-15', '[]'),
+(25, 'NexusLabs/waveform-engine', 207, 'Backpressure mechanism', '', 'OPEN', '2026-04-15', '2026-05-01', '[]');
 
 -- Issues: compass initiative
-INSERT INTO issues (id, repo, number, title, body, state, updated_at, fetched_at) VALUES
-(26, 'Nexus-QC/test-infra', 301, 'Multi-node test harness', '', 'OPEN', '2026-04-01', '2026-04-15'),
-(27, 'Nexus-QC/test-infra', 302, 'Network partition simulator', '', 'OPEN', '2026-04-15', '2026-05-01'),
-(28, 'Nexus-QC/test-infra', 303, 'Chaos testing framework', '', 'CLOSED', '2026-05-01', '2026-05-15');
+INSERT INTO issues (id, repo, number, title, body, state, updated_at, fetched_at, assignees_json) VALUES
+(26, 'Nexus-QC/test-infra', 301, 'Multi-node test harness', '', 'OPEN', '2026-04-01', '2026-04-15', '[]'),
+(27, 'Nexus-QC/test-infra', 302, 'Network partition simulator', '', 'OPEN', '2026-04-15', '2026-05-01', '[]'),
+(28, 'Nexus-QC/test-infra', 303, 'Chaos testing framework', '', 'CLOSED', '2026-05-01', '2026-05-15', '[]');
 
 -- Issues: echo initiative
-INSERT INTO issues (id, repo, number, title, body, state, updated_at, fetched_at) VALUES
-(29, 'NexusLabs/photon-core', 119, 'Anomaly detection algorithm', '', 'OPEN', '2026-06-01', '2026-06-15'),
-(30, 'NexusLabs/photon-core', 120, 'Metrics aggregation pipeline', '', 'OPEN', '2026-06-15', '2026-07-01');
+INSERT INTO issues (id, repo, number, title, body, state, updated_at, fetched_at, assignees_json) VALUES
+(29, 'NexusLabs/photon-core', 119, 'Anomaly detection algorithm', '', 'OPEN', '2026-06-01', '2026-06-15', '[]'),
+(30, 'NexusLabs/photon-core', 120, 'Metrics aggregation pipeline', '', 'OPEN', '2026-06-15', '2026-07-01', '[]');
 
 -- Project items: on-track issues (target_date within node timeline)
 INSERT INTO issue_project_items (issue_id, project_url, start_date, target_date, status, fetched_at) VALUES

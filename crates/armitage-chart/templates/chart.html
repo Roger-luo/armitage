@@ -202,12 +202,25 @@
       color: var(--text-secondary);
       border: 1px solid var(--border);
     }
-    #panel .panel-author-link {
+    .panel-participants { display: flex; flex-wrap: wrap; gap: 6px; }
+    .panel-participant {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background: var(--bg-elevated);
       color: var(--link);
       text-decoration: none;
-      font-size: 13px;
+      border: 1px solid var(--border);
     }
-    #panel .panel-author-link:hover { text-decoration: underline; }
+    .panel-participant:hover { background: var(--bg-active); }
+    .participant-role {
+      font-size: 10px;
+      color: var(--text-faint);
+      font-style: italic;
+    }
     #panel .panel-milestones .ms-date { color: var(--text-muted); font-size: 11px; }
     .btn-drill {
       display: inline-block;

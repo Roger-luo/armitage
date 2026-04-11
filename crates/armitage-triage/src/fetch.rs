@@ -35,6 +35,8 @@ struct ApiIssue {
     sub_issues_summary: Option<SubIssuesSummary>,
     #[serde(default)]
     user: Option<ApiUser>,
+    #[serde(default)]
+    assignees: Vec<ApiUser>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -90,6 +92,11 @@ pub fn fetch_repo_issues(
                 .as_ref()
                 .map(|u| u.login.clone())
                 .unwrap_or_default(),
+            assignees: api_issue
+                .assignees
+                .iter()
+                .map(|u| u.login.clone())
+                .collect(),
         };
         db::upsert_issue(conn, &stored)?;
         count += 1;
