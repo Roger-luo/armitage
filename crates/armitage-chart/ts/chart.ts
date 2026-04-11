@@ -257,13 +257,16 @@ function renderChart(): void {
   layout.barsGroup.innerHTML = "";
   renderedRows = [];
 
+  // Find parent node for timeline inheritance
+  const parentNode = currentPath ? findNode(data.nodes, currentPath) : null;
+
   // Render rows
   let yOffset = 0;
   for (const node of nodes) {
     const isDimmed = expandedNode !== null && expandedNode !== node.path;
     const isExpanded = expandedNode === node.path;
 
-    const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded });
+    const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded, parentNode });
     renderedRows.push(row);
     yOffset += row.height;
 
@@ -328,15 +331,16 @@ function handleRowClick(row: RenderedRow): void {
   if (row.type === "node" && row.node) {
     const node = row.node;
     if (node.children.length === 0 && node.issues.length > 0) {
-      // Leaf node: toggle expand
+      // Leaf node: toggle expand + show node panel
       if (expandedNode === node.path) {
         expandedNode = null;
         expandedShowAll = false;
+        closePanel();
       } else {
         expandedNode = node.path;
         expandedShowAll = false;
+        showNodePanel(node);
       }
-      closePanel();
       renderChart();
     } else {
       // Non-leaf: show panel

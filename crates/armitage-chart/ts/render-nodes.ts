@@ -62,7 +62,7 @@ export function renderNodeRow(
   state: ScaleState,
   layout: LayoutElements,
   yOffset: number,
-  options: { isDimmed: boolean; isExpanded: boolean },
+  options: { isDimmed: boolean; isExpanded: boolean; parentNode?: ChartNode | null },
 ): RenderedRow {
   const height = getRowHeight("node");
 
@@ -109,9 +109,18 @@ export function renderNodeRow(
   const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
   const barY = yOffset;
 
-  if (node.eff_start && node.eff_end) {
-    const x1 = dateToX(state, node.eff_start);
-    const x2 = dateToX(state, node.eff_end);
+  // Determine bar start/end — fall back to parent timeline if node has none
+  const barStart = node.eff_start
+    || options.parentNode?.eff_start
+    || options.parentNode?.start;
+  const barEnd = node.eff_end
+    || options.parentNode?.eff_end
+    || options.parentNode?.end;
+  const isInherited = !node.eff_start && !node.eff_end && !!barStart;
+
+  if (barStart && barEnd) {
+    const x1 = dateToX(state, barStart);
+    const x2 = dateToX(state, barEnd);
     const barW = Math.max(x2 - x1, 2);
     const barH = height - 8;
     const barTop = barY + 4;
@@ -123,12 +132,19 @@ export function renderNodeRow(
     rect.setAttribute("width", `${barW}`);
     rect.setAttribute("height", `${barH}`);
     rect.setAttribute("rx", "4");
-    rect.setAttribute("fill", node.has_timeline ? `${statusColor}22` : "rgba(107,114,128,0.15)");
-    rect.setAttribute("stroke", options.isExpanded ? "rgba(88,166,255,0.6)" : (node.has_timeline ? `${statusColor}55` : "rgba(107,114,128,0.4)"));
-    rect.setAttribute("stroke-width", options.isExpanded ? "2" : "1");
-    if (!node.has_timeline && !options.isExpanded) {
+    if (isInherited) {
+      // Inherited timeline: dashed, dimmed
+      rect.setAttribute("fill", "rgba(107,114,128,0.08)");
+      rect.setAttribute("stroke", "rgba(107,114,128,0.3)");
       rect.setAttribute("stroke-dasharray", "4,3");
+    } else {
+      rect.setAttribute("fill", node.has_timeline ? `${statusColor}22` : "rgba(107,114,128,0.15)");
+      rect.setAttribute("stroke", options.isExpanded ? "rgba(88,166,255,0.6)" : (node.has_timeline ? `${statusColor}55` : "rgba(107,114,128,0.4)"));
+      if (!node.has_timeline && !options.isExpanded) {
+        rect.setAttribute("stroke-dasharray", "4,3");
+      }
     }
+    rect.setAttribute("stroke-width", options.isExpanded ? "2" : "1");
     if (options.isDimmed) rect.setAttribute("opacity", "0.4");
     rect.dataset.path = node.path;
     rect.classList.add("node-bar");

@@ -222,9 +222,12 @@
     layout2.labelsEl.appendChild(row);
     const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
     const barY = yOffset;
-    if (node.eff_start && node.eff_end) {
-      const x1 = dateToX(state, node.eff_start);
-      const x2 = dateToX(state, node.eff_end);
+    const barStart = node.eff_start || options.parentNode?.eff_start || options.parentNode?.start;
+    const barEnd = node.eff_end || options.parentNode?.eff_end || options.parentNode?.end;
+    const isInherited = !node.eff_start && !node.eff_end && !!barStart;
+    if (barStart && barEnd) {
+      const x1 = dateToX(state, barStart);
+      const x2 = dateToX(state, barEnd);
       const barW = Math.max(x2 - x1, 2);
       const barH = height - 8;
       const barTop = barY + 4;
@@ -234,12 +237,18 @@
       rect.setAttribute("width", `${barW}`);
       rect.setAttribute("height", `${barH}`);
       rect.setAttribute("rx", "4");
-      rect.setAttribute("fill", node.has_timeline ? `${statusColor}22` : "rgba(107,114,128,0.15)");
-      rect.setAttribute("stroke", options.isExpanded ? "rgba(88,166,255,0.6)" : node.has_timeline ? `${statusColor}55` : "rgba(107,114,128,0.4)");
-      rect.setAttribute("stroke-width", options.isExpanded ? "2" : "1");
-      if (!node.has_timeline && !options.isExpanded) {
+      if (isInherited) {
+        rect.setAttribute("fill", "rgba(107,114,128,0.08)");
+        rect.setAttribute("stroke", "rgba(107,114,128,0.3)");
         rect.setAttribute("stroke-dasharray", "4,3");
+      } else {
+        rect.setAttribute("fill", node.has_timeline ? `${statusColor}22` : "rgba(107,114,128,0.15)");
+        rect.setAttribute("stroke", options.isExpanded ? "rgba(88,166,255,0.6)" : node.has_timeline ? `${statusColor}55` : "rgba(107,114,128,0.4)");
+        if (!node.has_timeline && !options.isExpanded) {
+          rect.setAttribute("stroke-dasharray", "4,3");
+        }
       }
+      rect.setAttribute("stroke-width", options.isExpanded ? "2" : "1");
       if (options.isDimmed) rect.setAttribute("opacity", "0.4");
       rect.dataset.path = node.path;
       rect.classList.add("node-bar");
@@ -651,11 +660,12 @@
     layout.labelsEl.innerHTML = "";
     layout.barsGroup.innerHTML = "";
     renderedRows = [];
+    const parentNode = currentPath ? findNode(data.nodes, currentPath) : null;
     let yOffset = 0;
     for (const node of nodes) {
       const isDimmed = expandedNode !== null && expandedNode !== node.path;
       const isExpanded = expandedNode === node.path;
-      const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded });
+      const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded, parentNode });
       renderedRows.push(row);
       yOffset += row.height;
       if (isExpanded && node.issues.length > 0) {
@@ -672,9 +682,9 @@
     const okrs = collectOkrs(data.nodes);
     renderMilestoneLines(scaleState, layout, totalHeight, okrs);
     if (currentPath !== "") {
-      const parentNode = findNode(data.nodes, currentPath);
-      if (parentNode) {
-        const checkpoints = allCheckpoints(parentNode);
+      const parentNode2 = findNode(data.nodes, currentPath);
+      if (parentNode2) {
+        const checkpoints = allCheckpoints(parentNode2);
         const filtered = checkpoints.filter((m) => !okrs.some((o) => o.name === m.name && o.date === m.date));
         renderMilestoneLines(scaleState, layout, totalHeight, filtered);
       }
@@ -701,11 +711,12 @@
         if (expandedNode === node.path) {
           expandedNode = null;
           expandedShowAll = false;
+          closePanel();
         } else {
           expandedNode = node.path;
           expandedShowAll = false;
+          showNodePanel(node);
         }
-        closePanel();
         renderChart();
       } else {
         showNodePanel(node);
