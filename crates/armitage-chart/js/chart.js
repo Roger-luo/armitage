@@ -242,6 +242,7 @@
       }
       if (options.isDimmed) rect.setAttribute("opacity", "0.4");
       rect.dataset.path = node.path;
+      rect.classList.add("node-bar");
       layout2.barsGroup.appendChild(rect);
       if (node.children.length > 0) {
         const childrenWithTimeline = node.children.filter((c) => c.eff_start && c.eff_end);
@@ -811,25 +812,26 @@
       const dates = n.has_timeline ? `${n.start} \u2192 ${n.end}` : n.eff_start ? `~${n.eff_start} \u2192 ~${n.eff_end}` : "No timeline";
       showTooltip(e, `<b>${escapeHtml(n.name)}</b><br/>${dates}<br/>Status: ${n.status}`);
     }
+    target.classList.add("highlighted");
+    const issueRef = target.dataset.issueRef;
+    const nodePath = target.dataset.path;
+    if (issueRef) {
+      layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(issueRef)}"]`).forEach((el) => el.classList.add("highlighted"));
+    } else if (nodePath) {
+      layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(nodePath)}"]`).forEach((el) => el.classList.add("highlighted"));
+    }
   });
   layout.labelsEl.addEventListener("mouseout", (e) => {
     const target = e.target.closest(".chart-row");
-    if (target) {
-      hideTooltip();
-      const ref = target.dataset.issueRef;
-      if (ref) {
-        target.classList.remove("highlighted");
-        layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(ref)}"]`).forEach((el) => el.classList.remove("highlighted"));
-      }
-    }
-  });
-  layout.labelsEl.addEventListener("mouseover", (e) => {
-    const target = e.target.closest(".chart-row.issue");
     if (!target) return;
-    const ref = target.dataset.issueRef;
-    if (ref) {
-      target.classList.add("highlighted");
-      layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(ref)}"]`).forEach((el) => el.classList.add("highlighted"));
+    hideTooltip();
+    target.classList.remove("highlighted");
+    const issueRef = target.dataset.issueRef;
+    const nodePath = target.dataset.path;
+    if (issueRef) {
+      layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(issueRef)}"]`).forEach((el) => el.classList.remove("highlighted"));
+    } else if (nodePath) {
+      layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(nodePath)}"]`).forEach((el) => el.classList.remove("highlighted"));
     }
   });
   window.addEventListener("resize", () => {

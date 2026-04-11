@@ -33,10 +33,12 @@
       --status-cancelled-bg: #3d1418;
       --overflow-bg: rgba(239, 68, 68, 0.08);
       --overflow-border: rgba(239, 68, 68, 0.3);
+      --row-hover: rgba(88, 166, 255, 0.08);
+      --row-highlight: rgba(88, 166, 255, 0.12);
     }
     [data-theme="light"] {
-      --bg: #ffffff;
-      --bg-surface: #f6f8fa;
+      --bg: #f6f8fa;
+      --bg-surface: #eef1f5;
       --bg-elevated: #e9ecef;
       --bg-active: #d0d7de;
       --border: #d0d7de;
@@ -56,6 +58,8 @@
       --status-cancelled-bg: #ffebe9;
       --overflow-bg: rgba(239, 68, 68, 0.06);
       --overflow-border: rgba(239, 68, 68, 0.25);
+      --row-hover: rgba(9, 105, 218, 0.1);
+      --row-highlight: rgba(9, 105, 218, 0.15);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -268,9 +272,10 @@
     /* Tooltip */
     .chart-tooltip { position: fixed; z-index: 100; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--text-secondary); pointer-events: none; max-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); line-height: 1.5; }
 
-    /* Issue row hover highlight */
-    .chart-row.issue:hover { background: rgba(88, 166, 255, 0.08); }
-    .chart-row.issue.highlighted { background: rgba(88, 166, 255, 0.12); }
+    /* Row hover highlight (both node and issue rows) */
+    .chart-row.node:hover, .chart-row.issue:hover { background: var(--row-hover); }
+    .chart-row.highlighted { background: var(--row-highlight); }
+    .node-bar.highlighted { filter: brightness(1.3); }
     .issue-bar.highlighted { opacity: 1 !important; filter: brightness(1.3); }
 
     /* SVG axis styling */

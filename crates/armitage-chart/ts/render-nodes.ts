@@ -131,6 +131,7 @@ export function renderNodeRow(
     }
     if (options.isDimmed) rect.setAttribute("opacity", "0.4");
     rect.dataset.path = node.path;
+    rect.classList.add("node-bar");
     layout.barsGroup.appendChild(rect);
 
     // Heat fill for non-leaf nodes

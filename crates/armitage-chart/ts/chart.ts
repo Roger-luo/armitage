@@ -450,7 +450,7 @@ layout.timelineSvg.addEventListener("dblclick", (e) => {
   }
 });
 
-// Wire tooltip on label rows via event delegation
+// Wire tooltip + hover highlight on label rows via event delegation
 layout.labelsEl.addEventListener("mouseover", (e) => {
   const target = (e.target as HTMLElement).closest(".chart-row") as HTMLElement | null;
   if (!target) return;
@@ -458,6 +458,7 @@ layout.labelsEl.addEventListener("mouseover", (e) => {
   const row = renderedRows[idx];
   if (!row) return;
 
+  // Tooltip
   if (row.type === "issue" && row.issue) {
     const parts = [`<b>${escapeHtml(row.issue.title || row.issue.issue_ref)}</b>`, row.issue.issue_ref];
     if (row.issue.start_date) parts.push(`Start: ${row.issue.start_date}`);
@@ -471,31 +472,35 @@ layout.labelsEl.addEventListener("mouseover", (e) => {
     const dates = n.has_timeline ? `${n.start} → ${n.end}` : n.eff_start ? `~${n.eff_start} → ~${n.eff_end}` : "No timeline";
     showTooltip(e, `<b>${escapeHtml(n.name)}</b><br/>${dates}<br/>Status: ${n.status}`);
   }
+
+  // Highlight corresponding SVG bar
+  target.classList.add("highlighted");
+  const issueRef = target.dataset.issueRef;
+  const nodePath = target.dataset.path;
+  if (issueRef) {
+    layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(issueRef)}"]`)
+      .forEach((el) => el.classList.add("highlighted"));
+  } else if (nodePath) {
+    layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(nodePath)}"]`)
+      .forEach((el) => el.classList.add("highlighted"));
+  }
 });
 
 layout.labelsEl.addEventListener("mouseout", (e) => {
   const target = (e.target as HTMLElement).closest(".chart-row") as HTMLElement | null;
-  if (target) {
-    hideTooltip();
-    // Remove issue bar highlight
-    const ref = target.dataset.issueRef;
-    if (ref) {
-      target.classList.remove("highlighted");
-      layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(ref)}"]`)
-        .forEach((el) => el.classList.remove("highlighted"));
-    }
-  }
-});
-
-// Highlight corresponding SVG bar when hovering issue label
-layout.labelsEl.addEventListener("mouseover", (e) => {
-  const target = (e.target as HTMLElement).closest(".chart-row.issue") as HTMLElement | null;
   if (!target) return;
-  const ref = target.dataset.issueRef;
-  if (ref) {
-    target.classList.add("highlighted");
-    layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(ref)}"]`)
-      .forEach((el) => el.classList.add("highlighted"));
+  hideTooltip();
+
+  // Remove all highlights
+  target.classList.remove("highlighted");
+  const issueRef = target.dataset.issueRef;
+  const nodePath = target.dataset.path;
+  if (issueRef) {
+    layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(issueRef)}"]`)
+      .forEach((el) => el.classList.remove("highlighted"));
+  } else if (nodePath) {
+    layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(nodePath)}"]`)
+      .forEach((el) => el.classList.remove("highlighted"));
   }
 });
 
