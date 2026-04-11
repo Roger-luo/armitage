@@ -190,6 +190,7 @@ export function renderNodeRow(
         fillRect.setAttribute("height", `${barH - 2}`);
         fillRect.setAttribute("rx", "3");
         fillRect.setAttribute("fill", "url(#heat-gradient)");
+        fillRect.dataset.path = node.path;
         if (options.isDimmed) fillRect.setAttribute("opacity", "0.4");
         layout.barsGroup.appendChild(fillRect);
       }
@@ -207,6 +208,7 @@ export function renderNodeRow(
         const tickColor = isOverdue ? "#f85149" : "#58a6ff";
 
         const tick = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        tick.dataset.path = node.path;
         tick.setAttribute("x", `${tickX - 1.5}`);
         tick.setAttribute("y", `${barTop + (barH - 14) / 2}`);
         tick.setAttribute("width", "3");

@@ -5,6 +5,7 @@ use crate::error::Result;
 
 const CHART_JS: &str = include_str!("../js/chart.js");
 const D3_JS: &str = include_str!("../js/d3.min.js");
+const MARKED_JS: &str = include_str!("../js/marked.min.js");
 
 #[derive(Template)]
 #[template(path = "chart.html")]
@@ -14,12 +15,13 @@ struct ChartTemplate {
     chart_js: &'static str,
     inline_js: bool,
     d3_js: String,
+    marked_js: String,
 }
 
 /// Render chart data into a standalone HTML string.
 ///
-/// When `offline` is true, D3 JS is embedded inline so the chart works
-/// without network access.
+/// When `offline` is true, D3 and marked JS are embedded inline so the chart
+/// works without network access.
 pub fn render_chart(data: &ChartData, offline: bool) -> Result<String> {
     let chart_data_json = serde_json::to_string(data)?;
 
@@ -30,6 +32,11 @@ pub fn render_chart(data: &ChartData, offline: bool) -> Result<String> {
         inline_js: offline,
         d3_js: if offline {
             D3_JS.to_string()
+        } else {
+            String::new()
+        },
+        marked_js: if offline {
+            MARKED_JS.to_string()
         } else {
             String::new()
         },

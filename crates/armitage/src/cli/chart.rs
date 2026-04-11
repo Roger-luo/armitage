@@ -33,13 +33,19 @@ const LIVE_RELOAD_SCRIPT: &str = r"
 </script>
 ";
 
-pub fn run_chart(output: Option<String>, no_open: bool, offline: bool, watch: bool) -> Result<()> {
+pub fn run_chart(
+    output: Option<String>,
+    no_open: bool,
+    offline: bool,
+    no_serve: bool,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
 
-    if watch {
-        run_watch_server(&org_root, offline)?;
-    } else {
+    // --output implies --no-serve (write to file)
+    let write_to_file = no_serve || output.is_some();
+
+    if write_to_file {
         let output_path = output.map_or_else(
             || org_root.join(".armitage").join("chart.html"),
             PathBuf::from,
@@ -52,6 +58,8 @@ pub fn run_chart(output: Option<String>, no_open: bool, offline: bool, watch: bo
         if !no_open {
             open_url(&format!("file://{}", output_path.display()));
         }
+    } else {
+        run_watch_server(&org_root, offline)?;
     }
 
     Ok(())
@@ -102,7 +110,8 @@ fn run_watch_server(org_root: &Path, offline: bool) -> Result<()> {
         }
     });
 
-    // File watcher on the main thread
+    // File watcher — only watch directories containing relevant files,
+    // not the entire org tree (which may include .claude/, .git/, etc.)
     let (tx, rx) = mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(event) = res {
@@ -111,10 +120,17 @@ fn run_watch_server(org_root: &Path, offline: bool) -> Result<()> {
     })
     .map_err(|e| crate::error::Error::Other(format!("watch error: {e}")))?;
 
+    // Watch org root (non-recursive) for armitage.toml, labels.toml, team.toml
     watcher
-        .watch(org_root, RecursiveMode::Recursive)
+        .watch(org_root, RecursiveMode::NonRecursive)
         .map_err(|e| crate::error::Error::Other(format!("watch error: {e}")))?;
 
+    // Watch each node directory (contains node.toml, milestones.toml, etc.)
+    for entry in walk_nodes(org_root)? {
+        let _ = watcher.watch(&entry.dir, RecursiveMode::NonRecursive);
+    }
+
+    // Watch triage DB directory
     let triage_dir = org_root.join(".armitage").join("triage");
     if triage_dir.exists() {
         let _ = watcher.watch(&triage_dir, RecursiveMode::NonRecursive);
