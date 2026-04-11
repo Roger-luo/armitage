@@ -169,6 +169,7 @@ mod tests {
             fetched_at: "2026-04-01T00:00:00Z".to_string(),
             sub_issues_count: 0,
             author: String::new(),
+            assignees: vec![],
         }
     }
 

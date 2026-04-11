@@ -20,7 +20,7 @@ fn build_issue_dates(db_path: &Path) -> HashMap<String, IssueDates> {
     let conn = Connection::open(db_path).expect("failed to open mock triage.db");
     let mut stmt = conn
         .prepare(
-            "SELECT i.repo, i.number, i.state, p.start_date, p.target_date, i.body, i.labels_json, i.author
+            "SELECT i.repo, i.number, i.state, p.start_date, p.target_date, i.body, i.labels_json, i.author, i.assignees_json
              FROM issues i
              LEFT JOIN issue_project_items p ON p.issue_id = i.id",
         )
@@ -35,6 +35,7 @@ fn build_issue_dates(db_path: &Path) -> HashMap<String, IssueDates> {
             let body: String = row.get(5)?;
             let labels_json: String = row.get(6)?;
             let author: String = row.get(7)?;
+            let assignees_json: String = row.get(8)?;
             Ok((
                 format!("{repo}#{number}"),
                 state,
@@ -43,11 +44,13 @@ fn build_issue_dates(db_path: &Path) -> HashMap<String, IssueDates> {
                 body,
                 labels_json,
                 author,
+                assignees_json,
             ))
         })
         .expect("failed to query issues");
     for row in rows.flatten() {
-        let (issue_ref, state, start_date, target_date, body, labels_json, author) = row;
+        let (issue_ref, state, start_date, target_date, body, labels_json, author, assignees_json) =
+            row;
         map.insert(
             issue_ref,
             IssueDates {
@@ -61,6 +64,7 @@ fn build_issue_dates(db_path: &Path) -> HashMap<String, IssueDates> {
                 } else {
                     Some(author)
                 },
+                assignees: serde_json::from_str(&assignees_json).unwrap_or_default(),
             },
         );
     }

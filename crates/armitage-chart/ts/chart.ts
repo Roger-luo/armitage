@@ -187,10 +187,23 @@ function showIssuePanel(issue: ChartIssue, parentNode: ChartNode): void {
   html += `<a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${escapeHtml(issue.issue_ref)} &rarr; Open on GitHub</a>`;
   html += `<span class="panel-status ${issue.state === "CLOSED" ? "completed" : "active"}">${(issue.state || "OPEN").toLowerCase()}</span>`;
 
-  if (issue.author) {
-    html += `<div class="panel-section"><h3>Author</h3>`;
-    html += `<div class="panel-meta"><a class="panel-author-link" href="https://github.com/${encodeURIComponent(issue.author)}" target="_blank" rel="noopener">@${escapeHtml(issue.author)}</a></div>`;
-    html += `</div>`;
+  // Participants: author + assignees, deduplicated
+  const participants = new Set<string>();
+  if (issue.author) participants.add(issue.author);
+  if (issue.assignees) {
+    for (const a of issue.assignees) participants.add(a);
+  }
+  if (participants.size > 0) {
+    html += `<div class="panel-section"><h3>Participants</h3>`;
+    html += `<div class="panel-participants">`;
+    for (const user of participants) {
+      const isAuthor = user === issue.author;
+      html += `<a class="panel-participant" href="https://github.com/${encodeURIComponent(user)}" target="_blank" rel="noopener">`;
+      html += `@${escapeHtml(user)}`;
+      if (isAuthor) html += ` <span class="participant-role">author</span>`;
+      html += `</a>`;
+    }
+    html += `</div></div>`;
   }
 
   if (issue.labels && issue.labels.length > 0) {
