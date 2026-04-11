@@ -17,6 +17,11 @@ struct SubIssuesSummary {
 }
 
 #[derive(Debug, serde::Deserialize)]
+struct ApiUser {
+    login: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
 struct ApiIssue {
     number: u64,
     title: String,
@@ -28,6 +33,8 @@ struct ApiIssue {
     updated_at: String,
     #[serde(default)]
     sub_issues_summary: Option<SubIssuesSummary>,
+    #[serde(default)]
+    user: Option<ApiUser>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -78,6 +85,11 @@ pub fn fetch_repo_issues(
             updated_at: api_issue.updated_at.clone(),
             fetched_at: now.clone(),
             sub_issues_count,
+            author: api_issue
+                .user
+                .as_ref()
+                .map(|u| u.login.clone())
+                .unwrap_or_default(),
         };
         db::upsert_issue(conn, &stored)?;
         count += 1;
