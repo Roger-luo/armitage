@@ -625,6 +625,19 @@
     html += `<h2>${escapeHtml(issue.title || issue.issue_ref)}</h2>`;
     html += `<a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${escapeHtml(issue.issue_ref)} &rarr; Open on GitHub</a>`;
     html += `<span class="panel-status ${issue.state === "CLOSED" ? "completed" : "active"}">${(issue.state || "OPEN").toLowerCase()}</span>`;
+    if (issue.author) {
+      html += `<div class="panel-section"><h3>Author</h3>`;
+      html += `<div class="panel-meta"><a class="panel-author-link" href="https://github.com/${encodeURIComponent(issue.author)}" target="_blank" rel="noopener">@${escapeHtml(issue.author)}</a></div>`;
+      html += `</div>`;
+    }
+    if (issue.labels && issue.labels.length > 0) {
+      html += `<div class="panel-section"><h3>Labels</h3>`;
+      html += `<div class="panel-labels">`;
+      for (const label of issue.labels) {
+        html += `<span class="panel-label">${escapeHtml(label)}</span>`;
+      }
+      html += `</div></div>`;
+    }
     html += `<div class="panel-section"><h3>Timeline</h3><div class="panel-meta">`;
     if (issue.start_date) html += `<span class="label">Start:</span> ${issue.start_date}<br/>`;
     if (issue.target_date) html += `<span class="label">Target:</span> ${issue.target_date}`;
@@ -634,6 +647,11 @@
     html += `</div></div>`;
     html += `<div class="panel-section"><h3>Parent</h3>`;
     html += `<div class="panel-meta"><span class="crumb" onclick="window.__nav('${parentNode.path}')">${escapeHtml(parentNode.name)}</span></div></div>`;
+    if (issue.description) {
+      html += `<div class="panel-section"><h3>Description</h3>`;
+      html += `<div class="panel-desc">${escapeHtml(issue.description)}</div>`;
+      html += `</div>`;
+    }
     panelContentEl.innerHTML = html;
     panelEl.classList.add("open");
   }

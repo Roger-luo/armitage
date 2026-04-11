@@ -192,6 +192,22 @@
     }
     #panel .panel-milestones { list-style: none; font-size: 13px; }
     #panel .panel-milestones li { padding: 3px 0; color: var(--text-secondary); }
+    #panel .panel-labels { display: flex; flex-wrap: wrap; gap: 6px; }
+    #panel .panel-label {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    #panel .panel-author-link {
+      color: var(--link);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    #panel .panel-author-link:hover { text-decoration: underline; }
     #panel .panel-milestones .ms-date { color: var(--text-muted); font-size: 11px; }
     .btn-drill {
       display: inline-block;
