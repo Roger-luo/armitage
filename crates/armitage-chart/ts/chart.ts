@@ -9,6 +9,8 @@ import { renderAxis, renderGridLines, renderTodayLine, renderMilestoneLines } fr
 import { renderNodeRow, sortIssues, formatOverdue, type RenderedRow } from "./render-nodes";
 import { renderIssueRows, issueUrl } from "./render-issues";
 
+declare const marked: { parse(src: string): string };
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -115,6 +117,53 @@ function escapeHtml(s: string): string {
   return div.innerHTML;
 }
 
+/**
+ * Render a markdown string to HTML using marked, falling back to escaped plain text.
+ * When repo is provided (e.g. "QuEra-QCS/GeminiSequences"), relative URLs and
+ * bare issue references (#123) are resolved against that GitHub repo.
+ */
+function renderMarkdown(s: string, repo?: string): string {
+  try {
+    let html = marked.parse(s);
+    if (repo) {
+      const base = `https://github.com/${repo}`;
+      // Rewrite relative href/src that start with ./ or don't start with http/# / mailto
+      html = html.replace(
+        /((?:href|src)=["'])(?!https?:\/\/|mailto:|#)(\.\/)?(.*?)(["'])/g,
+        (_, prefix, _dot, path, suffix) => `${prefix}${base}/blob/main/${path}${suffix}`,
+      );
+      // Link bare #123 issue references (not already inside an href)
+      html = html.replace(
+        /(?<!["\/\w])#(\d+)\b/g,
+        `<a href="${base}/issues/$1" target="_blank" rel="noopener">#$1</a>`,
+      );
+    }
+    return html;
+  } catch {
+    return `<p>${escapeHtml(s)}</p>`;
+  }
+}
+
+/**
+ * Post-process a panel description element: replace broken images with
+ * clickable "View image on GitHub" links, since GitHub user-attachment
+ * URLs require authentication and get blocked by ORB cross-origin.
+ */
+function fixBrokenImages(container: HTMLElement, issueUrl: string): void {
+  const imgs = container.querySelectorAll("img");
+  for (const img of imgs) {
+    img.addEventListener("error", () => {
+      const link = document.createElement("a");
+      link.href = issueUrl;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.className = "broken-img-link";
+      link.textContent = `🖼 ${img.alt || "View image on GitHub"}`;
+      img.replaceWith(link);
+    });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Side Panel
 // ---------------------------------------------------------------------------
@@ -129,7 +178,7 @@ function showNodePanel(node: ChartNode): void {
   html += `<span class="panel-status ${node.status}">${node.status}</span>`;
 
   if (node.description) {
-    html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${escapeHtml(node.description)}</div></div>`;
+    html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${renderMarkdown(node.description)}</div></div>`;
   }
 
   html += `<div class="panel-section"><h3>Timeline</h3><div class="panel-meta">`;
@@ -227,13 +276,16 @@ function showIssuePanel(issue: ChartIssue, parentNode: ChartNode): void {
   html += `<div class="panel-meta"><span class="crumb" onclick="window.__nav('${parentNode.path}')">${escapeHtml(parentNode.name)}</span></div></div>`;
 
   if (issue.description) {
+    const repoMatch = issue.issue_ref.match(/^(.+?\/.+?)#/);
+    const repo = repoMatch ? repoMatch[1] : undefined;
     html += `<div class="panel-section"><h3>Description</h3>`;
-    html += `<div class="panel-desc">${escapeHtml(issue.description)}</div>`;
+    html += `<div class="panel-desc">${renderMarkdown(issue.description, repo)}</div>`;
     html += `</div>`;
   }
 
   panelContentEl.innerHTML = html;
   panelEl.classList.add("open");
+  fixBrokenImages(panelContentEl, url);
 }
 
 function closePanel(): void {
@@ -479,23 +531,27 @@ layout.labelsEl.addEventListener("dblclick", (e) => {
   }
 });
 
-// Also handle clicks on SVG bars
-layout.timelineSvg.addEventListener("click", (e) => {
-  const target = e.target as SVGElement;
-  const path = target.dataset?.path;
-  if (path) {
-    const row = renderedRows.find((r) => r.type === "node" && r.node?.path === path);
-    if (row) handleRowClick(row);
+// Also handle clicks anywhere in the SVG timeline row region
+function findRowFromSvgY(e: MouseEvent): RenderedRow | undefined {
+  const svg = layout.timelineSvg;
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+  const svgY = pt.matrixTransform(svg.getScreenCTM()!.inverse()).y - getAxisHeight();
+  for (const row of renderedRows) {
+    if (svgY >= row.y && svgY < row.y + row.height) return row;
   }
+  return undefined;
+}
+
+layout.timelineSvg.addEventListener("click", (e) => {
+  const row = findRowFromSvgY(e as MouseEvent);
+  if (row) handleRowClick(row);
 });
 
 layout.timelineSvg.addEventListener("dblclick", (e) => {
-  const target = e.target as SVGElement;
-  const path = target.dataset?.path;
-  if (path) {
-    const row = renderedRows.find((r) => r.type === "node" && r.node?.path === path);
-    if (row) handleRowDblClick(row);
-  }
+  const row = findRowFromSvgY(e as MouseEvent);
+  if (row) handleRowDblClick(row);
 });
 
 // Wire tooltip + hover highlight on label rows via event delegation
@@ -550,6 +606,70 @@ layout.labelsEl.addEventListener("mouseout", (e) => {
     layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(nodePath)}"]`)
       .forEach((el) => el.classList.remove("highlighted"));
   }
+});
+
+// Wire hover highlight on SVG timeline → highlight corresponding label row + bar
+let hoveredSvgRow: RenderedRow | null = null;
+
+function highlightRow(row: RenderedRow): void {
+  // Highlight label row
+  const idx = renderedRows.indexOf(row);
+  if (idx >= 0) {
+    const labelRow = layout.labelsEl.children[idx] as HTMLElement | undefined;
+    if (labelRow) labelRow.classList.add("highlighted");
+  }
+  // Highlight SVG bars
+  if (row.type === "issue" && row.issue) {
+    layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(row.issue.issue_ref)}"]`)
+      .forEach((el) => el.classList.add("highlighted"));
+  } else if (row.type === "node" && row.node) {
+    layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(row.node.path)}"]`)
+      .forEach((el) => el.classList.add("highlighted"));
+  }
+}
+
+function unhighlightRow(row: RenderedRow): void {
+  const idx = renderedRows.indexOf(row);
+  if (idx >= 0) {
+    const labelRow = layout.labelsEl.children[idx] as HTMLElement | undefined;
+    if (labelRow) labelRow.classList.remove("highlighted");
+  }
+  if (row.type === "issue" && row.issue) {
+    layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(row.issue.issue_ref)}"]`)
+      .forEach((el) => el.classList.remove("highlighted"));
+  } else if (row.type === "node" && row.node) {
+    layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(row.node.path)}"]`)
+      .forEach((el) => el.classList.remove("highlighted"));
+  }
+}
+
+layout.timelineSvg.addEventListener("mousemove", (e) => {
+  const row = findRowFromSvgY(e as MouseEvent);
+  if (row === hoveredSvgRow) return;
+  if (hoveredSvgRow) { unhighlightRow(hoveredSvgRow); hideTooltip(); }
+  hoveredSvgRow = row || null;
+  if (!row) return;
+  highlightRow(row);
+
+  // Tooltip
+  if (row.type === "issue" && row.issue) {
+    const parts = [`<b>${escapeHtml(row.issue.title || row.issue.issue_ref)}</b>`, row.issue.issue_ref];
+    if (row.issue.start_date) parts.push(`Start: ${row.issue.start_date}`);
+    if (row.issue.target_date) parts.push(`Target: ${row.issue.target_date}`);
+    if (row.issue.target_date && row.parentNode?.end && row.issue.target_date > row.parentNode.end) {
+      parts.push(`<span style="color:#f85149">Overdue: ${formatOverdue(row.issue.target_date, row.parentNode.end)}</span>`);
+    }
+    showTooltip(e, parts.join("<br/>"));
+  } else if (row.type === "node" && row.node) {
+    const n = row.node;
+    const dates = n.has_timeline ? `${n.start} → ${n.end}` : n.eff_start ? `~${n.eff_start} → ~${n.eff_end}` : "No timeline";
+    showTooltip(e, `<b>${escapeHtml(n.name)}</b><br/>${dates}<br/>Status: ${n.status}`);
+  }
+});
+
+layout.timelineSvg.addEventListener("mouseleave", () => {
+  if (hoveredSvgRow) { unhighlightRow(hoveredSvgRow); hoveredSvgRow = null; }
+  hideTooltip();
 });
 
 // Resize handler

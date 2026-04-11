@@ -79,20 +79,20 @@ enum Commands {
         #[command(subcommand)]
         command: TriageCommands,
     },
-    /// Generate an interactive HTML roadmap chart
+    /// Generate an interactive HTML roadmap chart (serves on localhost by default)
     Chart {
-        /// Output file path (default: .armitage/chart.html)
+        /// Output file path (default: .armitage/chart.html). Implies --no-serve.
         #[arg(long, short)]
         output: Option<String>,
         /// Don't open the chart in the browser after generating
         #[arg(long)]
         no_open: bool,
-        /// Embed ECharts JS inline for offline viewing
+        /// Embed JS inline for offline viewing
         #[arg(long)]
         offline: bool,
-        /// Watch for changes and re-render automatically
-        #[arg(long, short)]
-        watch: bool,
+        /// Write to file instead of serving on localhost
+        #[arg(long)]
+        no_serve: bool,
     },
     /// Self-management commands
     #[command(name = "self")]
@@ -761,8 +761,8 @@ pub fn run() -> Result<()> {
             output,
             no_open,
             offline,
-            watch,
-        } => chart::run_chart(output, no_open, offline, watch)?,
+            no_serve,
+        } => chart::run_chart(output, no_open, offline, no_serve)?,
         Commands::Config { command } => match command {
             ConfigCommands::Set { key, value } => {
                 config::run_set(key, value)?;

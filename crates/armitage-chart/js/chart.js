@@ -279,6 +279,7 @@
           fillRect.setAttribute("height", `${barH - 2}`);
           fillRect.setAttribute("rx", "3");
           fillRect.setAttribute("fill", "url(#heat-gradient)");
+          fillRect.dataset.path = node.path;
           if (options.isDimmed) fillRect.setAttribute("opacity", "0.4");
           layout2.barsGroup.appendChild(fillRect);
         }
@@ -292,6 +293,7 @@
           const isOverdue = node.end && issue.target_date > node.end;
           const tickColor = isOverdue ? "#f85149" : "#58a6ff";
           const tick = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          tick.dataset.path = node.path;
           tick.setAttribute("x", `${tickX - 1.5}`);
           tick.setAttribute("y", `${barTop + (barH - 14) / 2}`);
           tick.setAttribute("width", "3");
@@ -569,6 +571,39 @@
     div.textContent = s;
     return div.innerHTML;
   }
+  function renderMarkdown(s, repo) {
+    try {
+      let html = marked.parse(s);
+      if (repo) {
+        const base = `https://github.com/${repo}`;
+        html = html.replace(
+          /((?:href|src)=["'])(?!https?:\/\/|mailto:|#)(\.\/)?(.*?)(["'])/g,
+          (_, prefix, _dot, path, suffix) => `${prefix}${base}/blob/main/${path}${suffix}`
+        );
+        html = html.replace(
+          /(?<!["\/\w])#(\d+)\b/g,
+          `<a href="${base}/issues/$1" target="_blank" rel="noopener">#$1</a>`
+        );
+      }
+      return html;
+    } catch {
+      return `<p>${escapeHtml(s)}</p>`;
+    }
+  }
+  function fixBrokenImages(container, issueUrl2) {
+    const imgs = container.querySelectorAll("img");
+    for (const img of imgs) {
+      img.addEventListener("error", () => {
+        const link = document.createElement("a");
+        link.href = issueUrl2;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.className = "broken-img-link";
+        link.textContent = `\u{1F5BC} ${img.alt || "View image on GitHub"}`;
+        img.replaceWith(link);
+      });
+    }
+  }
   var panelEl = document.getElementById("panel");
   var panelContentEl = document.getElementById("panel-content");
   function showNodePanel(node) {
@@ -577,7 +612,7 @@
     html += `<h2>${escapeHtml(node.name)}</h2>`;
     html += `<span class="panel-status ${node.status}">${node.status}</span>`;
     if (node.description) {
-      html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${escapeHtml(node.description)}</div></div>`;
+      html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${renderMarkdown(node.description)}</div></div>`;
     }
     html += `<div class="panel-section"><h3>Timeline</h3><div class="panel-meta">`;
     if (node.has_timeline) {
@@ -660,12 +695,15 @@
     html += `<div class="panel-section"><h3>Parent</h3>`;
     html += `<div class="panel-meta"><span class="crumb" onclick="window.__nav('${parentNode.path}')">${escapeHtml(parentNode.name)}</span></div></div>`;
     if (issue.description) {
+      const repoMatch = issue.issue_ref.match(/^(.+?\/.+?)#/);
+      const repo = repoMatch ? repoMatch[1] : void 0;
       html += `<div class="panel-section"><h3>Description</h3>`;
-      html += `<div class="panel-desc">${escapeHtml(issue.description)}</div>`;
+      html += `<div class="panel-desc">${renderMarkdown(issue.description, repo)}</div>`;
       html += `</div>`;
     }
     panelContentEl.innerHTML = html;
     panelEl.classList.add("open");
+    fixBrokenImages(panelContentEl, url);
   }
   function closePanel() {
     selectedNode = null;
@@ -840,21 +878,24 @@
       handleRowDblClick(renderedRows[idx]);
     }
   });
-  layout.timelineSvg.addEventListener("click", (e) => {
-    const target = e.target;
-    const path = target.dataset?.path;
-    if (path) {
-      const row = renderedRows.find((r) => r.type === "node" && r.node?.path === path);
-      if (row) handleRowClick(row);
+  function findRowFromSvgY(e) {
+    const svg = layout.timelineSvg;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgY = pt.matrixTransform(svg.getScreenCTM().inverse()).y - getAxisHeight();
+    for (const row of renderedRows) {
+      if (svgY >= row.y && svgY < row.y + row.height) return row;
     }
+    return void 0;
+  }
+  layout.timelineSvg.addEventListener("click", (e) => {
+    const row = findRowFromSvgY(e);
+    if (row) handleRowClick(row);
   });
   layout.timelineSvg.addEventListener("dblclick", (e) => {
-    const target = e.target;
-    const path = target.dataset?.path;
-    if (path) {
-      const row = renderedRows.find((r) => r.type === "node" && r.node?.path === path);
-      if (row) handleRowDblClick(row);
-    }
+    const row = findRowFromSvgY(e);
+    if (row) handleRowDblClick(row);
   });
   layout.labelsEl.addEventListener("mouseover", (e) => {
     const target = e.target.closest(".chart-row");
@@ -896,6 +937,62 @@
     } else if (nodePath) {
       layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(nodePath)}"]`).forEach((el) => el.classList.remove("highlighted"));
     }
+  });
+  var hoveredSvgRow = null;
+  function highlightRow(row) {
+    const idx = renderedRows.indexOf(row);
+    if (idx >= 0) {
+      const labelRow = layout.labelsEl.children[idx];
+      if (labelRow) labelRow.classList.add("highlighted");
+    }
+    if (row.type === "issue" && row.issue) {
+      layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(row.issue.issue_ref)}"]`).forEach((el) => el.classList.add("highlighted"));
+    } else if (row.type === "node" && row.node) {
+      layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(row.node.path)}"]`).forEach((el) => el.classList.add("highlighted"));
+    }
+  }
+  function unhighlightRow(row) {
+    const idx = renderedRows.indexOf(row);
+    if (idx >= 0) {
+      const labelRow = layout.labelsEl.children[idx];
+      if (labelRow) labelRow.classList.remove("highlighted");
+    }
+    if (row.type === "issue" && row.issue) {
+      layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(row.issue.issue_ref)}"]`).forEach((el) => el.classList.remove("highlighted"));
+    } else if (row.type === "node" && row.node) {
+      layout.barsGroup.querySelectorAll(`.node-bar[data-path="${CSS.escape(row.node.path)}"]`).forEach((el) => el.classList.remove("highlighted"));
+    }
+  }
+  layout.timelineSvg.addEventListener("mousemove", (e) => {
+    const row = findRowFromSvgY(e);
+    if (row === hoveredSvgRow) return;
+    if (hoveredSvgRow) {
+      unhighlightRow(hoveredSvgRow);
+      hideTooltip();
+    }
+    hoveredSvgRow = row || null;
+    if (!row) return;
+    highlightRow(row);
+    if (row.type === "issue" && row.issue) {
+      const parts = [`<b>${escapeHtml(row.issue.title || row.issue.issue_ref)}</b>`, row.issue.issue_ref];
+      if (row.issue.start_date) parts.push(`Start: ${row.issue.start_date}`);
+      if (row.issue.target_date) parts.push(`Target: ${row.issue.target_date}`);
+      if (row.issue.target_date && row.parentNode?.end && row.issue.target_date > row.parentNode.end) {
+        parts.push(`<span style="color:#f85149">Overdue: ${formatOverdue(row.issue.target_date, row.parentNode.end)}</span>`);
+      }
+      showTooltip(e, parts.join("<br/>"));
+    } else if (row.type === "node" && row.node) {
+      const n = row.node;
+      const dates = n.has_timeline ? `${n.start} \u2192 ${n.end}` : n.eff_start ? `~${n.eff_start} \u2192 ~${n.eff_end}` : "No timeline";
+      showTooltip(e, `<b>${escapeHtml(n.name)}</b><br/>${dates}<br/>Status: ${n.status}`);
+    }
+  });
+  layout.timelineSvg.addEventListener("mouseleave", () => {
+    if (hoveredSvgRow) {
+      unhighlightRow(hoveredSvgRow);
+      hoveredSvgRow = null;
+    }
+    hideTooltip();
   });
   window.addEventListener("resize", () => {
     updateScaleRange(scaleState, getTimelineWidth());
