@@ -299,49 +299,8 @@ function renderChart(): void {
 }
 
 function onZoom(): void {
-  // Only update SVG positions, not rebuild DOM
-  const totalHeight = renderedRows.reduce((sum, r) => sum + r.height, 0) + getAxisHeight();
-  renderAxis(scaleState, layout, totalHeight);
-  renderGridLines(scaleState, layout, totalHeight);
-  renderTodayLine(scaleState, layout, totalHeight);
-
-  // Update bar positions
-  layout.barsGroup.innerHTML = "";
-  let yOffset = 0;
-  const nodes = getVisibleNodes();
-  for (const node of nodes) {
-    const isDimmed = expandedNode !== null && expandedNode !== node.path;
-    const isExpanded = expandedNode === node.path;
-
-    // Re-render SVG bars only (labels stay)
-    renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded });
-    yOffset += getRowHeight("node");
-
-    if (isExpanded && node.issues.length > 0) {
-      renderIssueRows(node, scaleState, layout, yOffset, expandedShowAll);
-      const sorted = sortIssues(node.issues, node.end);
-      const all = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
-      const limit = expandedShowAll ? all.length : 7;
-      const visible = all.slice(0, limit);
-      // Account for rows
-      for (const issue of visible) {
-        yOffset += getRowHeight("issue");
-      }
-      if (sorted.overdue.length > 0 && (sorted.onTrack.length > 0 || sorted.noDates.length > 0)) {
-        yOffset += getRowHeight("separator");
-      }
-      if (!expandedShowAll && all.length > 7) {
-        yOffset += getRowHeight("issue");
-      }
-    }
-  }
-
-  // Re-render milestones
-  const okrs = collectOkrs(data.nodes);
-  const totalH = yOffset + getAxisHeight();
-  layout.markersGroup.innerHTML = "";
-  renderTodayLine(scaleState, layout, totalH);
-  renderMilestoneLines(scaleState, layout, totalH, okrs);
+  // Full re-render with the updated scale (renderChart clears both columns)
+  renderChart();
 }
 
 // ---------------------------------------------------------------------------
