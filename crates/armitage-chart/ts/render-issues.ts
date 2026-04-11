@@ -81,6 +81,7 @@ function renderSingleIssueRow(
   const row = document.createElement("div");
   row.className = `chart-row issue`;
   row.style.height = `${height}px`;
+  row.dataset.issueRef = issue.issue_ref;
 
   const label = document.createElement("span");
   label.className = `chart-label issue-title${isOverdue ? " overdue" : ""}`;
@@ -103,30 +104,61 @@ function renderSingleIssueRow(
   layout.labelsEl.appendChild(row);
 
   // --- SVG bar ---
-  if (issue.start_date && issue.target_date) {
-    const x1 = dateToX(state, issue.start_date);
-    const x2 = dateToX(state, issue.target_date);
-    const barW = Math.max(x2 - x1, 2);
+  // Determine bar start and end, falling back to parent timeline
+  const hasStart = !!issue.start_date;
+  const hasTarget = !!issue.target_date;
+  const barStart = issue.start_date || parentNode.start || parentNode.eff_start;
+  const barEnd = issue.target_date || parentNode.end || parentNode.eff_end;
+  const isAssumed = !hasStart && !hasTarget; // fully inherited from parent
+  const isOpenEnded = hasStart && !hasTarget; // has start but no end
+
+  if (barStart && barEnd) {
+    const x1 = dateToX(state, barStart);
     const barY = yOffset + (height - 6) / 2;
 
-    // Blue bar (start → target)
+    let x2: number;
+    if (isOpenEnded) {
+      // Open-ended: extend to the right edge of the visible timeline
+      const range = state.currentScale.range();
+      x2 = range[1];
+    } else {
+      x2 = dateToX(state, barEnd);
+    }
+
+    const barW = Math.max(x2 - x1, 2);
+
+    // Main bar
     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.dataset.issueRef = issue.issue_ref;
+    rect.classList.add("issue-bar");
     rect.setAttribute("x", `${x1}`);
     rect.setAttribute("y", `${barY}`);
     rect.setAttribute("width", `${barW}`);
     rect.setAttribute("height", "6");
     rect.setAttribute("rx", "2");
     rect.setAttribute("fill", "#58a6ff");
-    rect.setAttribute("opacity", "0.6");
+    if (isAssumed) {
+      // Dimmed dashed style for assumed-from-parent timeline
+      rect.setAttribute("opacity", "0.3");
+      rect.setAttribute("stroke", "#58a6ff");
+      rect.setAttribute("stroke-width", "1");
+      rect.setAttribute("stroke-dasharray", "4,3");
+      rect.setAttribute("fill", "none");
+    } else if (isOpenEnded) {
+      // Faded right edge for open-ended issues
+      rect.setAttribute("opacity", "0.35");
+    } else {
+      rect.setAttribute("opacity", "0.6");
+    }
     layout.barsGroup.appendChild(rect);
 
     // Red overdue extension (target → today)
-    if (isOverdue) {
+    if (isOverdue && hasTarget) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const targetMs = parseDate(issue.target_date).getTime();
+      const targetMs = parseDate(issue.target_date!).getTime();
       if (today.getTime() > targetMs) {
-        const overdueX = x2;
+        const overdueX = dateToX(state, issue.target_date!);
         const todayX = state.currentScale(today);
         const overdueW = Math.max(todayX - overdueX, 2);
 

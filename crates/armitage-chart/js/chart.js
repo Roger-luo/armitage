@@ -339,6 +339,7 @@
     const row = document.createElement("div");
     row.className = `chart-row issue`;
     row.style.height = `${height}px`;
+    row.dataset.issueRef = issue.issue_ref;
     const label = document.createElement("span");
     label.className = `chart-label issue-title${isOverdue ? " overdue" : ""}`;
     label.textContent = issue.title || issue.issue_ref;
@@ -355,26 +356,50 @@
     }
     row.appendChild(meta);
     layout2.labelsEl.appendChild(row);
-    if (issue.start_date && issue.target_date) {
-      const x1 = dateToX(state, issue.start_date);
-      const x2 = dateToX(state, issue.target_date);
-      const barW = Math.max(x2 - x1, 2);
+    const hasStart = !!issue.start_date;
+    const hasTarget = !!issue.target_date;
+    const barStart = issue.start_date || parentNode.start || parentNode.eff_start;
+    const barEnd = issue.target_date || parentNode.end || parentNode.eff_end;
+    const isAssumed = !hasStart && !hasTarget;
+    const isOpenEnded = hasStart && !hasTarget;
+    if (barStart && barEnd) {
+      const x1 = dateToX(state, barStart);
       const barY = yOffset + (height - 6) / 2;
+      let x2;
+      if (isOpenEnded) {
+        const range = state.currentScale.range();
+        x2 = range[1];
+      } else {
+        x2 = dateToX(state, barEnd);
+      }
+      const barW = Math.max(x2 - x1, 2);
       const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.dataset.issueRef = issue.issue_ref;
+      rect.classList.add("issue-bar");
       rect.setAttribute("x", `${x1}`);
       rect.setAttribute("y", `${barY}`);
       rect.setAttribute("width", `${barW}`);
       rect.setAttribute("height", "6");
       rect.setAttribute("rx", "2");
       rect.setAttribute("fill", "#58a6ff");
-      rect.setAttribute("opacity", "0.6");
+      if (isAssumed) {
+        rect.setAttribute("opacity", "0.3");
+        rect.setAttribute("stroke", "#58a6ff");
+        rect.setAttribute("stroke-width", "1");
+        rect.setAttribute("stroke-dasharray", "4,3");
+        rect.setAttribute("fill", "none");
+      } else if (isOpenEnded) {
+        rect.setAttribute("opacity", "0.35");
+      } else {
+        rect.setAttribute("opacity", "0.6");
+      }
       layout2.barsGroup.appendChild(rect);
-      if (isOverdue) {
+      if (isOverdue && hasTarget) {
         const today = /* @__PURE__ */ new Date();
         today.setHours(0, 0, 0, 0);
         const targetMs = parseDate(issue.target_date).getTime();
         if (today.getTime() > targetMs) {
-          const overdueX = x2;
+          const overdueX = dateToX(state, issue.target_date);
           const todayX = state.currentScale(today);
           const overdueW = Math.max(todayX - overdueX, 2);
           const overdueRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -789,7 +814,23 @@
   });
   layout.labelsEl.addEventListener("mouseout", (e) => {
     const target = e.target.closest(".chart-row");
-    if (target) hideTooltip();
+    if (target) {
+      hideTooltip();
+      const ref = target.dataset.issueRef;
+      if (ref) {
+        target.classList.remove("highlighted");
+        layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(ref)}"]`).forEach((el) => el.classList.remove("highlighted"));
+      }
+    }
+  });
+  layout.labelsEl.addEventListener("mouseover", (e) => {
+    const target = e.target.closest(".chart-row.issue");
+    if (!target) return;
+    const ref = target.dataset.issueRef;
+    if (ref) {
+      target.classList.add("highlighted");
+      layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(ref)}"]`).forEach((el) => el.classList.add("highlighted"));
+    }
   });
   window.addEventListener("resize", () => {
     updateScaleRange(scaleState, getTimelineWidth());

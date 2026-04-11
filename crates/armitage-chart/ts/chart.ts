@@ -474,8 +474,29 @@ layout.labelsEl.addEventListener("mouseover", (e) => {
 });
 
 layout.labelsEl.addEventListener("mouseout", (e) => {
-  const target = (e.target as HTMLElement).closest(".chart-row");
-  if (target) hideTooltip();
+  const target = (e.target as HTMLElement).closest(".chart-row") as HTMLElement | null;
+  if (target) {
+    hideTooltip();
+    // Remove issue bar highlight
+    const ref = target.dataset.issueRef;
+    if (ref) {
+      target.classList.remove("highlighted");
+      layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(ref)}"]`)
+        .forEach((el) => el.classList.remove("highlighted"));
+    }
+  }
+});
+
+// Highlight corresponding SVG bar when hovering issue label
+layout.labelsEl.addEventListener("mouseover", (e) => {
+  const target = (e.target as HTMLElement).closest(".chart-row.issue") as HTMLElement | null;
+  if (!target) return;
+  const ref = target.dataset.issueRef;
+  if (ref) {
+    target.classList.add("highlighted");
+    layout.barsGroup.querySelectorAll(`.issue-bar[data-issue-ref="${CSS.escape(ref)}"]`)
+      .forEach((el) => el.classList.add("highlighted"));
+  }
 });
 
 // Resize handler
