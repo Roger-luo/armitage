@@ -44,6 +44,9 @@ pub struct ChartIssue {
     pub target_date: Option<String>,
     /// "OPEN" or "CLOSED"
     pub state: Option<String>,
+    pub description: Option<String>,
+    pub labels: Vec<String>,
+    pub author: Option<String>,
 }
 
 /// A milestone or OKR marker on the timeline.
@@ -70,6 +73,9 @@ pub struct IssueDates {
     pub start_date: Option<String>,
     pub target_date: Option<String>,
     pub state: Option<String>,
+    pub description: Option<String>,
+    pub labels: Vec<String>,
+    pub author: Option<String>,
 }
 
 fn date_to_str(d: &NaiveDate) -> String {
@@ -95,6 +101,9 @@ fn read_issues(node_dir: &Path, dates_map: &HashMap<String, IssueDates>) -> Vec<
                 start_date: dates.and_then(|d| d.start_date.clone()),
                 target_date: dates.and_then(|d| d.target_date.clone()),
                 state,
+                description: dates.and_then(|d| d.description.clone()),
+                labels: dates.map(|d| d.labels.clone()).unwrap_or_default(),
+                author: dates.and_then(|d| d.author.clone()),
             })
         })
         .collect()

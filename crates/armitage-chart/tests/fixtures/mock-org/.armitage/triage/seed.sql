@@ -1,5 +1,5 @@
--- Schema matches armitage-triage db.rs SCHEMA_V6
-PRAGMA user_version = 6;
+-- Schema matches armitage-triage db.rs SCHEMA_V7
+PRAGMA user_version = 7;
 
 CREATE TABLE IF NOT EXISTS issues (
     id                INTEGER PRIMARY KEY,
@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS issues (
     updated_at        TEXT NOT NULL,
     fetched_at        TEXT NOT NULL,
     sub_issues_count  INTEGER NOT NULL DEFAULT 0,
+    author            TEXT NOT NULL DEFAULT '',
     UNIQUE(repo, number)
 );
 

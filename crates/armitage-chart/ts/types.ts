@@ -5,6 +5,9 @@ export interface ChartIssue {
   start_date: string | null;
   target_date: string | null;
   state: string | null;
+  description: string | null;
+  labels: string[];
+  author: string | null;
 }
 
 /** Mirrors the Rust ChartMilestone struct. */

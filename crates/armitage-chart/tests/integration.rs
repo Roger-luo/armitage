@@ -11,6 +11,7 @@ use armitage_chart::data::{IssueDates, build_chart_data};
 use armitage_chart::render_chart;
 use armitage_core::tree::walk_nodes;
 use rusqlite::Connection;
+use serde_json;
 
 /// Build an IssueDates map from the mock org's SQLite database,
 /// replicating the query from armitage/src/cli/chart.rs.
@@ -19,7 +20,7 @@ fn build_issue_dates(db_path: &Path) -> HashMap<String, IssueDates> {
     let conn = Connection::open(db_path).expect("failed to open mock triage.db");
     let mut stmt = conn
         .prepare(
-            "SELECT i.repo, i.number, i.state, p.start_date, p.target_date
+            "SELECT i.repo, i.number, i.state, p.start_date, p.target_date, i.body, i.labels_json, i.author
              FROM issues i
              LEFT JOIN issue_project_items p ON p.issue_id = i.id",
         )
@@ -31,17 +32,35 @@ fn build_issue_dates(db_path: &Path) -> HashMap<String, IssueDates> {
             let state: String = row.get(2)?;
             let start_date: Option<String> = row.get(3)?;
             let target_date: Option<String> = row.get(4)?;
-            Ok((format!("{repo}#{number}"), state, start_date, target_date))
+            let body: String = row.get(5)?;
+            let labels_json: String = row.get(6)?;
+            let author: String = row.get(7)?;
+            Ok((
+                format!("{repo}#{number}"),
+                state,
+                start_date,
+                target_date,
+                body,
+                labels_json,
+                author,
+            ))
         })
         .expect("failed to query issues");
     for row in rows.flatten() {
-        let (issue_ref, state, start_date, target_date) = row;
+        let (issue_ref, state, start_date, target_date, body, labels_json, author) = row;
         map.insert(
             issue_ref,
             IssueDates {
                 start_date,
                 target_date,
                 state: Some(state),
+                description: if body.is_empty() { None } else { Some(body) },
+                labels: serde_json::from_str(&labels_json).unwrap_or_default(),
+                author: if author.is_empty() {
+                    None
+                } else {
+                    Some(author)
+                },
             },
         );
     }
