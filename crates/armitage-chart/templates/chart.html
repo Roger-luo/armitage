@@ -227,9 +227,9 @@
     .panel-overflow h3 { color: #ef4444 !important; }
 
     /* Split-panel layout */
-    #chart-scroll { display: flex; flex: 1; overflow-y: auto; min-height: 0; }
-    #chart-labels { width: 200px; flex-shrink: 0; overflow: hidden; border-right: 1px solid var(--border); }
-    #chart-timeline { flex: 1; min-width: 0; overflow: hidden; position: relative; }
+    #chart-scroll { display: flex; flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; align-items: flex-start; }
+    #chart-labels { width: 200px; flex-shrink: 0; border-right: 1px solid var(--border); }
+    #chart-timeline { flex: 1; min-width: 0; position: relative; overflow-x: hidden; }
     #chart-svg { width: 100%; display: block; }
 
     /* Chart rows */
