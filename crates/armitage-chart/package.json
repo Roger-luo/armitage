@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.45",
+    "typescript": "^5.5"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:update": "playwright test --update-snapshots"
+  }
+}

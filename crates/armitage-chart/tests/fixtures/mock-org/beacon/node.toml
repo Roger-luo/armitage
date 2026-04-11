@@ -1,0 +1,8 @@
+name = "Beacon"
+description = "Standard library of reusable components for building signal pipelines."
+status = "active"
+team = "core"
+
+[timeline]
+start = "2026-01-01"
+end = "2026-12-31"

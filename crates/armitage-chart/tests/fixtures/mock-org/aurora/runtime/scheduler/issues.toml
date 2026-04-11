@@ -1,0 +1,11 @@
+[[issues]]
+ref = "NexusLabs/photon-core#108"
+title = "Priority queue implementation"
+
+[[issues]]
+ref = "NexusLabs/photon-core#109"
+title = "Deadline-aware preemption"
+
+[[issues]]
+ref = "NexusLabs/photon-core#110"
+title = "Worker pool scaling"

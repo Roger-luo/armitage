@@ -1,0 +1,144 @@
+{
+  "org_name": "TestOrg",
+  "global_start": "2026-01-01",
+  "global_end": "2026-12-31",
+  "nodes": [
+    {
+      "path": "no-timeline",
+      "name": "No Timeline",
+      "description": "A node with no timeline set and no children, used to test null timeline rendering.",
+      "status": "active",
+      "start": null,
+      "end": null,
+      "eff_start": null,
+      "eff_end": null,
+      "has_timeline": false,
+      "owners": [],
+      "team": null,
+      "overflow_start": null,
+      "overflow_end": null,
+      "issue_start": null,
+      "issue_end": null,
+      "milestones": [],
+      "issues": [],
+      "children": []
+    },
+    {
+      "path": "empty-leaf",
+      "name": "Empty Leaf",
+      "description": "A node with a timeline but no children and no issues.",
+      "status": "active",
+      "start": "2026-03-01",
+      "end": "2026-09-30",
+      "eff_start": "2026-03-01",
+      "eff_end": "2026-09-30",
+      "has_timeline": true,
+      "owners": [],
+      "team": null,
+      "overflow_start": null,
+      "overflow_end": null,
+      "issue_start": null,
+      "issue_end": null,
+      "milestones": [],
+      "issues": [],
+      "children": []
+    },
+    {
+      "path": "single-issue",
+      "name": "Single Issue",
+      "description": "A node with exactly one on-track issue, testing the minimal issue rendering path.",
+      "status": "active",
+      "start": "2026-01-01",
+      "end": "2026-06-30",
+      "eff_start": "2026-01-01",
+      "eff_end": "2026-06-30",
+      "has_timeline": true,
+      "owners": [],
+      "team": null,
+      "overflow_start": null,
+      "overflow_end": null,
+      "issue_start": "2026-02-01",
+      "issue_end": "2026-05-31",
+      "milestones": [],
+      "issues": [
+        {
+          "issue_ref": "#401",
+          "title": "Implement core feature",
+          "start_date": "2026-02-01",
+          "target_date": "2026-05-31",
+          "state": "OPEN"
+        }
+      ],
+      "children": []
+    },
+    {
+      "path": "all-overdue",
+      "name": "All Overdue",
+      "description": "A node where every issue's target date exceeds the node end date, testing overflow rendering.",
+      "status": "active",
+      "start": "2026-01-01",
+      "end": "2026-03-31",
+      "eff_start": "2026-01-01",
+      "eff_end": "2026-03-31",
+      "has_timeline": true,
+      "owners": [],
+      "team": null,
+      "overflow_start": "2026-03-31",
+      "overflow_end": "2026-05-26",
+      "issue_start": "2026-01-05",
+      "issue_end": "2026-05-26",
+      "milestones": [],
+      "issues": [
+        {
+          "issue_ref": "#411",
+          "title": "Fix integration test failures",
+          "start_date": "2026-01-05",
+          "target_date": "2026-04-03",
+          "state": "OPEN"
+        },
+        {
+          "issue_ref": "#412",
+          "title": "Resolve memory leak in event loop",
+          "start_date": "2026-01-15",
+          "target_date": "2026-04-10",
+          "state": "OPEN"
+        },
+        {
+          "issue_ref": "#413",
+          "title": "Update deprecated API usage",
+          "start_date": "2026-02-01",
+          "target_date": "2026-04-21",
+          "state": "OPEN"
+        },
+        {
+          "issue_ref": "#414",
+          "title": "Migrate configuration format",
+          "start_date": "2026-02-15",
+          "target_date": "2026-05-26",
+          "state": "OPEN"
+        }
+      ],
+      "children": []
+    },
+    {
+      "path": "cancelled",
+      "name": "Cancelled Project",
+      "description": "A cancelled project node, testing rendering of non-active status.",
+      "status": "cancelled",
+      "start": "2026-01-01",
+      "end": "2026-06-30",
+      "eff_start": "2026-01-01",
+      "eff_end": "2026-06-30",
+      "has_timeline": true,
+      "owners": [],
+      "team": null,
+      "overflow_start": null,
+      "overflow_end": null,
+      "issue_start": null,
+      "issue_end": null,
+      "milestones": [],
+      "issues": [],
+      "children": []
+    }
+  ]
+}

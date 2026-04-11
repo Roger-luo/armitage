@@ -1,0 +1,9 @@
+name = "Compiler"
+description = "Expression compiler for signal pipeline definitions and optimization passes."
+status = "active"
+owners = ["agarcia"]
+team = "core"
+
+[timeline]
+start = "2026-01-01"
+end = "2026-06-30"

@@ -1,0 +1,11 @@
+[[issues]]
+ref = "NexusLabs/photon-core#103"
+title = "Constant folding optimization"
+
+[[issues]]
+ref = "NexusLabs/photon-core#104"
+title = "Loop unrolling pass"
+
+[[issues]]
+ref = "NexusLabs/photon-core#105"
+title = "Dead code elimination"

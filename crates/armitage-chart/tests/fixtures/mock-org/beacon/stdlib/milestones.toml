@@ -1,0 +1,5 @@
+[[milestone]]
+name = "Stdlib Beta"
+date = "2026-06-30"
+description = "Feature-complete standard library"
+type = "checkpoint"

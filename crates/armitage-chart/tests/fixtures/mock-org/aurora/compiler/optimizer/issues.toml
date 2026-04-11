@@ -1,0 +1,7 @@
+[[issues]]
+ref = "NexusLabs/photon-core#106"
+title = "Vectorization pass for batch operations"
+
+[[issues]]
+ref = "NexusLabs/photon-core#107"
+title = "Memory layout optimizer"

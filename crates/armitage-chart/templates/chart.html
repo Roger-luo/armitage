@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }} — Roadmap</title>
   {% if inline_js %}
-  <script>{{ echart_js|safe }}</script>
+  <script>{{ d3_js|safe }}</script>
   {% else %}
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
   {% endif %}
   <style>
     :root {
@@ -33,10 +33,12 @@
       --status-cancelled-bg: #3d1418;
       --overflow-bg: rgba(239, 68, 68, 0.08);
       --overflow-border: rgba(239, 68, 68, 0.3);
+      --row-hover: rgba(88, 166, 255, 0.08);
+      --row-highlight: rgba(88, 166, 255, 0.12);
     }
     [data-theme="light"] {
-      --bg: #ffffff;
-      --bg-surface: #f6f8fa;
+      --bg: #f6f8fa;
+      --bg-surface: #eef1f5;
       --bg-elevated: #e9ecef;
       --bg-active: #d0d7de;
       --border: #d0d7de;
@@ -56,6 +58,8 @@
       --status-cancelled-bg: #ffebe9;
       --overflow-bg: rgba(239, 68, 68, 0.06);
       --overflow-border: rgba(239, 68, 68, 0.25);
+      --row-hover: rgba(9, 105, 218, 0.1);
+      --row-highlight: rgba(9, 105, 218, 0.15);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -106,10 +110,6 @@
     #main {
       display: flex;
       height: calc(100vh - 48px);
-    }
-    #chart {
-      flex: 1;
-      min-width: 0;
     }
     #panel {
       width: 340px;
@@ -229,6 +229,77 @@
       margin-top: 12px !important;
     }
     .panel-overflow h3 { color: #ef4444 !important; }
+
+    /* Split-panel layout */
+    #chart-area { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+    #chart-scroll { display: flex; flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; align-items: flex-start; }
+    #chart-labels { width: 200px; flex-shrink: 0; border-right: 1px solid var(--border); padding-top: 40px; }
+    #chart-timeline { flex: 1; min-width: 0; position: relative; overflow-x: hidden; }
+    #chart-svg { width: 100%; display: block; }
+
+    /* Chart rows */
+    .chart-row { display: flex; align-items: center; padding: 0 12px; cursor: pointer; border-bottom: 1px solid var(--bg-elevated); transition: background 0.15s; }
+    .chart-row:hover { background: var(--bg-surface); }
+    .chart-row.node { height: 48px; }
+    .chart-row.issue { height: 28px; }
+    .chart-row.separator { height: 12px; cursor: default; border-bottom: none; }
+    .chart-row.dimmed { opacity: 0.4; }
+    .chart-row.expanded { background: var(--bg-surface); }
+
+    /* Labels */
+    .chart-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chart-label.node-name { font-weight: bold; font-size: 13px; color: var(--text); }
+    .chart-label.issue-title { font-size: 11px; color: var(--text-muted); }
+    .chart-label.issue-title.overdue { color: #f85149; }
+    .chart-label.issue-title.overdue::before { content: "⚠ "; }
+
+    /* Badges */
+    .chart-badge { flex-shrink: 0; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 3px; margin-left: 8px; background: var(--bg-elevated); }
+    .chart-badge.children { color: var(--link); }
+    .chart-badge.issues { color: var(--text-muted); }
+    .chart-badge .overdue-count { color: #f85149; }
+
+    /* Drill arrow */
+    .chart-drill { flex-shrink: 0; color: var(--text-faint); font-size: 12px; margin-left: 4px; }
+
+    /* Show more link */
+    .show-more-link { font-size: 11px; color: var(--text-faint); cursor: pointer; padding: 4px 12px; }
+    .show-more-link:hover { color: var(--link); }
+
+    /* Separator line */
+    .chart-row.separator { position: relative; }
+    .chart-row.separator::after { content: ""; position: absolute; left: 12px; right: 12px; top: 50%; border-top: 1px dashed var(--bg-active); }
+
+    /* Tooltip */
+    .chart-tooltip { position: fixed; z-index: 100; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--text-secondary); pointer-events: none; max-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); line-height: 1.5; }
+
+    /* Row hover highlight (both node and issue rows) */
+    .chart-row.node:hover, .chart-row.issue:hover { background: var(--row-hover); }
+    .chart-row.highlighted { background: var(--row-highlight); }
+    .node-bar.highlighted { filter: brightness(1.3); }
+    .issue-bar.highlighted { opacity: 1 !important; filter: brightness(1.3); }
+
+    /* Legend */
+    #legend {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 6px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-surface);
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .legend-swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+    .legend-swatch.tick { width: 3px; height: 12px; border-radius: 1px; }
+    .legend-swatch.line { width: 16px; height: 0; border-top: 2px solid; }
+    .legend-swatch.dashed { border-top-style: dashed; }
+
+    /* SVG axis styling */
+    #axis-group text { fill: var(--chart-axis); font-size: 11px; }
+    #axis-group line, #axis-group .domain { stroke: var(--chart-axis-line); }
   </style>
 </head>
 <body>
@@ -244,8 +315,36 @@
       <button onclick="window.__setTheme('auto')">Auto</button>
     </div>
   </div>
+  <div class="chart-tooltip" id="tooltip" style="display:none"></div>
   <div id="main">
-    <div id="chart"></div>
+    <div id="chart-area">
+      <div id="chart-scroll">
+        <div id="chart-labels"></div>
+        <div id="chart-timeline">
+          <svg id="chart-svg">
+            <defs>
+              <linearGradient id="heat-gradient" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="rgba(88,166,255,0.35)"/>
+                <stop offset="100%" stop-color="rgba(88,166,255,0.15)"/>
+              </linearGradient>
+            </defs>
+            <g id="axis-group"></g>
+            <g id="grid-group"></g>
+            <g id="bars-group"></g>
+            <g id="markers-group"></g>
+          </svg>
+        </div>
+      </div>
+      <div id="legend">
+        <div class="legend-item"><div class="legend-swatch" style="background:rgba(59,130,246,0.13); border:1px solid rgba(59,130,246,0.33);"></div> Project timeline</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:url(#heat-gradient); background:linear-gradient(90deg,rgba(88,166,255,0.35),rgba(88,166,255,0.15));"></div> Children span</div>
+        <div class="legend-item"><div class="legend-swatch tick" style="background:#58a6ff;"></div> Issue on track</div>
+        <div class="legend-item"><div class="legend-swatch tick" style="background:#f85149;"></div> Issue overdue</div>
+        <div class="legend-item"><div class="legend-swatch line" style="border-color:rgba(239,68,68,0.7);"></div> Today</div>
+        <div class="legend-item"><div class="legend-swatch line dashed" style="border-color:rgba(245,158,11,0.5);"></div> Milestone</div>
+        <div class="legend-item"><div class="legend-swatch" style="background:none; border:1px dashed rgba(107,114,128,0.4);"></div> Inherited timeline</div>
+      </div>
+    </div>
     <div id="panel">
       <button id="panel-close" onclick="window.__closePanel()">&times;</button>
       <div id="panel-content"></div>

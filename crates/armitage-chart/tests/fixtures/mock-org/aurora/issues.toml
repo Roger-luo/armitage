@@ -1,0 +1,7 @@
+[[issues]]
+ref = "NexusLabs/photon-core#101"
+title = "Implement channel multiplexer"
+
+[[issues]]
+ref = "NexusLabs/photon-core#102"
+title = "Add throughput monitoring dashboard"

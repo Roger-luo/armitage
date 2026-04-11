@@ -1,0 +1,9 @@
+name = "Aurora"
+description = "Core signal processing framework providing real-time data analysis capabilities across multiple input channels."
+status = "active"
+owners = ["czhang"]
+team = "core"
+
+[timeline]
+start = "2026-01-01"
+end = "2026-12-31"

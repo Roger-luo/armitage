@@ -1,0 +1,8 @@
+name = "Optimizer"
+description = "Advanced optimization passes including vectorization and memory layout analysis."
+status = "active"
+team = "core"
+
+[timeline]
+start = "2026-03-01"
+end = "2026-06-30"

@@ -1,0 +1,7 @@
+[org]
+name = "nexus"
+github_orgs = ["NexusLabs", "Nexus-QC"]
+default_repo = "NexusLabs/photon-core"
+
+[sync]
+conflict_strategy = "detect"

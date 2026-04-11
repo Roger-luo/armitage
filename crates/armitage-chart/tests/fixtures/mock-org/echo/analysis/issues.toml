@@ -1,0 +1,7 @@
+[[issues]]
+ref = "NexusLabs/photon-core#119"
+title = "Anomaly detection algorithm"
+
+[[issues]]
+ref = "NexusLabs/photon-core#120"
+title = "Metrics aggregation pipeline"

@@ -1,0 +1,8 @@
+name = "Standard Library"
+description = "Core data structures and algorithms for signal processing pipelines."
+status = "active"
+owners = ["agarcia"]
+
+[timeline]
+start = "2026-01-01"
+end = "2026-09-30"

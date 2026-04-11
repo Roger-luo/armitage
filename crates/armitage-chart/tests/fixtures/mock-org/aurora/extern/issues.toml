@@ -1,0 +1,31 @@
+[[issues]]
+ref = "NexusLabs/photon-core#111"
+title = "Format adapter for WAV files"
+
+[[issues]]
+ref = "NexusLabs/photon-core#112"
+title = "MATLAB bridge integration"
+
+[[issues]]
+ref = "NexusLabs/photon-core#113"
+title = "HDF5 reader implementation"
+
+[[issues]]
+ref = "NexusLabs/photon-core#114"
+title = "CSV streaming parser"
+
+[[issues]]
+ref = "NexusLabs/photon-core#115"
+title = "Protocol buffer serialization"
+
+[[issues]]
+ref = "NexusLabs/photon-core#116"
+title = "Apache Arrow interop"
+
+[[issues]]
+ref = "NexusLabs/photon-core#117"
+title = "JSON schema validation"
+
+[[issues]]
+ref = "NexusLabs/photon-core#118"
+title = "Binary format documentation"
