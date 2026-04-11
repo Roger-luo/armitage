@@ -1886,6 +1886,7 @@ mod tests {
             updated_at: "2026-04-03T12:00:00Z".to_string(),
             fetched_at: "2026-04-03T12:00:00Z".to_string(),
             sub_issues_count: 0,
+            author: String::new(),
         };
         let nodes = vec![NodeEntry {
             path: "infra".to_string(),

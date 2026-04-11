@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 // ---------------------------------------------------------------------------
 
 /// Current schema version. Bump this when adding migrations.
-const SCHEMA_VERSION: u32 = 6;
+const SCHEMA_VERSION: u32 = 7;
 
 /// Full schema for a fresh database (always represents the latest version).
 const SCHEMA_V6: &str = "
@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS issues (
     updated_at        TEXT NOT NULL,
     fetched_at        TEXT NOT NULL,
     sub_issues_count  INTEGER NOT NULL DEFAULT 0,
+    author            TEXT NOT NULL DEFAULT '',
     UNIQUE(repo, number)
 );
 
@@ -109,6 +110,8 @@ const MIGRATIONS: &[Option<&str>] = &[
         );
         CREATE INDEX IF NOT EXISTS idx_project_items_issue ON issue_project_items(issue_id);",
     ),
+    // v6 → v7: add author column to issues
+    Some("ALTER TABLE issues ADD COLUMN author TEXT NOT NULL DEFAULT '';"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -127,6 +130,7 @@ pub struct StoredIssue {
     pub updated_at: String,
     pub fetched_at: String,
     pub sub_issues_count: u64,
+    pub author: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -328,8 +332,8 @@ fn run_migrations(conn: &Connection, from_version: u32) -> Result<()> {
 pub fn upsert_issue(conn: &Connection, issue: &StoredIssue) -> Result<i64> {
     let labels_json = serde_json::to_string(&issue.labels).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
-        "INSERT INTO issues (repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO issues (repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count, author)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(repo, number) DO UPDATE SET
             title = excluded.title,
             body = excluded.body,
@@ -337,7 +341,8 @@ pub fn upsert_issue(conn: &Connection, issue: &StoredIssue) -> Result<i64> {
             labels_json = excluded.labels_json,
             updated_at = excluded.updated_at,
             fetched_at = excluded.fetched_at,
-            sub_issues_count = excluded.sub_issues_count",
+            sub_issues_count = excluded.sub_issues_count,
+            author = excluded.author",
         params![
             issue.repo,
             issue.number as i64,
@@ -348,6 +353,7 @@ pub fn upsert_issue(conn: &Connection, issue: &StoredIssue) -> Result<i64> {
             issue.updated_at,
             issue.fetched_at,
             issue.sub_issues_count as i64,
+            issue.author,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -355,7 +361,7 @@ pub fn upsert_issue(conn: &Connection, issue: &StoredIssue) -> Result<i64> {
 
 pub fn get_untriaged_issues(conn: &Connection) -> Result<Vec<StoredIssue>> {
     let mut stmt = conn.prepare(
-        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author
          FROM issues i
          LEFT JOIN triage_suggestions ts ON ts.issue_id = i.id
          WHERE ts.id IS NULL AND LOWER(i.state) = 'open'
@@ -368,7 +374,7 @@ pub fn get_untriaged_issues(conn: &Connection) -> Result<Vec<StoredIssue>> {
 
 pub fn get_untriaged_issues_by_repo(conn: &Connection, repo: &str) -> Result<Vec<StoredIssue>> {
     let mut stmt = conn.prepare(
-        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author
          FROM issues i
          LEFT JOIN triage_suggestions ts ON ts.issue_id = i.id
          WHERE ts.id IS NULL AND LOWER(i.state) = 'open' AND i.repo = ?1
@@ -381,7 +387,7 @@ pub fn get_untriaged_issues_by_repo(conn: &Connection, repo: &str) -> Result<Vec
 
 pub fn get_issues_by_repo(conn: &Connection, repo: &str) -> Result<Vec<StoredIssue>> {
     let mut stmt = conn.prepare(
-        "SELECT id, repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count
+        "SELECT id, repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count, author
          FROM issues WHERE repo = ?1 ORDER BY number",
     )?;
     let rows = stmt.query_map(params![repo], row_to_issue)?;
@@ -409,6 +415,7 @@ fn row_to_issue(row: &rusqlite::Row) -> rusqlite::Result<StoredIssue> {
         updated_at: row.get(7)?,
         fetched_at: row.get(8)?,
         sub_issues_count: row.get::<_, i64>(9)? as u64,
+        author: row.get(10)?,
     })
 }
 
@@ -525,7 +532,7 @@ pub fn get_pending_suggestions_filtered(
     max_confidence: Option<f64>,
 ) -> Result<Vec<(StoredIssue, TriageSuggestion)>> {
     let mut sql = String::from(
-        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count,
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author,
                 ts.id, ts.issue_id, ts.suggested_node, ts.suggested_labels, ts.confidence, ts.reasoning, ts.llm_backend, ts.created_at, ts.is_tracking_issue, ts.suggested_new_categories, ts.is_stale
          FROM triage_suggestions ts
          JOIN issues i ON i.id = ts.issue_id
@@ -545,23 +552,23 @@ pub fn get_pending_suggestions_filtered(
 
     let row_mapper = |row: &rusqlite::Row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(13)?;
+        let labels_json: String = row.get(14)?;
         let suggested_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let suggestion = TriageSuggestion {
-            id: row.get(10)?,
-            issue_id: row.get(11)?,
-            suggested_node: row.get(12)?,
+            id: row.get(11)?,
+            issue_id: row.get(12)?,
+            suggested_node: row.get(13)?,
             suggested_labels,
-            confidence: row.get(14)?,
-            reasoning: row.get(15)?,
-            llm_backend: row.get(16)?,
-            created_at: row.get(17)?,
-            is_tracking_issue: row.get::<_, i64>(18)? != 0,
+            confidence: row.get(15)?,
+            reasoning: row.get(16)?,
+            llm_backend: row.get(17)?,
+            created_at: row.get(18)?,
+            is_tracking_issue: row.get::<_, i64>(19)? != 0,
             suggested_new_categories: {
-                let json: String = row.get(19)?;
+                let json: String = row.get(20)?;
                 serde_json::from_str(&json).unwrap_or_default()
             },
-            is_stale: row.get::<_, i64>(20)? != 0,
+            is_stale: row.get::<_, i64>(21)? != 0,
         };
         Ok((issue, suggestion))
     };
@@ -753,7 +760,7 @@ pub fn get_suggestion_by_issue(
     let number = number as i64;
     let mut stmt = conn.prepare(
         "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json,
-                i.updated_at, i.fetched_at, i.sub_issues_count,
+                i.updated_at, i.fetched_at, i.sub_issues_count, i.author,
                 ts.id, ts.issue_id, ts.suggested_node, ts.suggested_labels,
                 ts.confidence, ts.reasoning, ts.llm_backend, ts.created_at,
                 ts.is_tracking_issue, ts.suggested_new_categories, ts.is_stale,
@@ -767,36 +774,36 @@ pub fn get_suggestion_by_issue(
 
     let mut rows = stmt.query_map(params![repo, number], |row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(13)?;
+        let labels_json: String = row.get(14)?;
         let suggested_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let suggestion = TriageSuggestion {
-            id: row.get(10)?,
-            issue_id: row.get(11)?,
-            suggested_node: row.get(12)?,
+            id: row.get(11)?,
+            issue_id: row.get(12)?,
+            suggested_node: row.get(13)?,
             suggested_labels,
-            confidence: row.get(14)?,
-            reasoning: row.get(15)?,
-            llm_backend: row.get(16)?,
-            created_at: row.get(17)?,
-            is_tracking_issue: row.get::<_, i64>(18)? != 0,
+            confidence: row.get(15)?,
+            reasoning: row.get(16)?,
+            llm_backend: row.get(17)?,
+            created_at: row.get(18)?,
+            is_tracking_issue: row.get::<_, i64>(19)? != 0,
             suggested_new_categories: {
-                let json: String = row.get(19)?;
+                let json: String = row.get(20)?;
                 serde_json::from_str(&json).unwrap_or_default()
             },
-            is_stale: row.get::<_, i64>(20)? != 0,
+            is_stale: row.get::<_, i64>(21)? != 0,
         };
 
-        let decision = if row.get::<_, Option<i64>>(21)?.is_some() {
-            let final_labels_json: String = row.get(25)?;
+        let decision = if row.get::<_, Option<i64>>(22)?.is_some() {
+            let final_labels_json: String = row.get(26)?;
             Some(ReviewDecision {
-                id: row.get(21)?,
-                suggestion_id: row.get(22)?,
-                decision: row.get(23)?,
-                final_node: row.get(24)?,
+                id: row.get(22)?,
+                suggestion_id: row.get(23)?,
+                decision: row.get(24)?,
+                final_node: row.get(25)?,
                 final_labels: serde_json::from_str(&final_labels_json).unwrap_or_default(),
-                decided_at: row.get(26)?,
-                applied_at: row.get(27)?,
-                question: row.get(28)?,
+                decided_at: row.get(27)?,
+                applied_at: row.get(28)?,
+                question: row.get(29)?,
             })
         } else {
             None
@@ -814,7 +821,7 @@ pub fn get_suggestion_by_issue(
 
 pub fn get_unapplied_decisions(conn: &Connection) -> Result<Vec<(StoredIssue, ReviewDecision)>> {
     let mut stmt = conn.prepare(
-        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count,
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author,
                 rd.id, rd.suggestion_id, rd.decision, rd.final_node, rd.final_labels, rd.decided_at, rd.applied_at, rd.question
          FROM review_decisions rd
          JOIN triage_suggestions ts ON ts.id = rd.suggestion_id
@@ -824,17 +831,17 @@ pub fn get_unapplied_decisions(conn: &Connection) -> Result<Vec<(StoredIssue, Re
     )?;
     let rows = stmt.query_map([], |row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(14)?;
+        let labels_json: String = row.get(15)?;
         let final_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let decision = ReviewDecision {
-            id: row.get(10)?,
-            suggestion_id: row.get(11)?,
-            decision: row.get(12)?,
-            final_node: row.get(13)?,
+            id: row.get(11)?,
+            suggestion_id: row.get(12)?,
+            decision: row.get(13)?,
+            final_node: row.get(14)?,
             final_labels,
-            decided_at: row.get(15)?,
-            applied_at: row.get(16)?,
-            question: row.get(17)?,
+            decided_at: row.get(16)?,
+            applied_at: row.get(17)?,
+            question: row.get(18)?,
         };
         Ok((issue, decision))
     })?;
@@ -1094,7 +1101,7 @@ pub fn get_decisions_filtered(
 ) -> Result<Vec<(StoredIssue, ReviewDecision)>> {
     let mut sql = String::from(
         "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json,
-                i.updated_at, i.fetched_at, i.sub_issues_count,
+                i.updated_at, i.fetched_at, i.sub_issues_count, i.author,
                 rd.id, rd.suggestion_id, rd.decision, rd.final_node, rd.final_labels,
                 rd.decided_at, rd.applied_at, rd.question
          FROM review_decisions rd
@@ -1149,17 +1156,17 @@ pub fn get_decisions_filtered(
 
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(14)?;
+        let labels_json: String = row.get(15)?;
         let final_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let decision = ReviewDecision {
-            id: row.get(10)?,
-            suggestion_id: row.get(11)?,
-            decision: row.get(12)?,
-            final_node: row.get(13)?,
+            id: row.get(11)?,
+            suggestion_id: row.get(12)?,
+            decision: row.get(13)?,
+            final_node: row.get(14)?,
             final_labels,
-            decided_at: row.get(15)?,
-            applied_at: row.get(16)?,
-            question: row.get(17)?,
+            decided_at: row.get(16)?,
+            applied_at: row.get(17)?,
+            question: row.get(18)?,
         };
         Ok((issue, decision))
     })?;
@@ -1176,7 +1183,7 @@ pub fn get_decisions_with_original(
     let placeholders: Vec<String> = (1..=statuses.len()).map(|i| format!("?{i}")).collect();
     let mut sql = format!(
         "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json,
-                i.updated_at, i.fetched_at, i.sub_issues_count,
+                i.updated_at, i.fetched_at, i.sub_issues_count, i.author,
                 ts.id, ts.issue_id, ts.suggested_node, ts.suggested_labels,
                 ts.confidence, ts.reasoning, ts.llm_backend, ts.created_at,
                 ts.is_tracking_issue, ts.suggested_new_categories, ts.is_stale,
@@ -1203,35 +1210,35 @@ pub fn get_decisions_with_original(
     let rows = stmt.query_map(params.as_slice(), |row| {
         let issue = row_to_issue(row)?;
 
-        let sug_labels_json: String = row.get(13)?;
+        let sug_labels_json: String = row.get(14)?;
         let sug_labels: Vec<String> = serde_json::from_str(&sug_labels_json).unwrap_or_default();
-        let sug_cats_json: String = row.get(19)?;
+        let sug_cats_json: String = row.get(20)?;
         let sug_cats: Vec<String> = serde_json::from_str(&sug_cats_json).unwrap_or_default();
         let suggestion = TriageSuggestion {
-            id: row.get(10)?,
-            issue_id: row.get(11)?,
-            suggested_node: row.get(12)?,
+            id: row.get(11)?,
+            issue_id: row.get(12)?,
+            suggested_node: row.get(13)?,
             suggested_labels: sug_labels,
-            confidence: row.get(14)?,
-            reasoning: row.get(15)?,
-            llm_backend: row.get(16)?,
-            created_at: row.get(17)?,
-            is_tracking_issue: row.get::<_, i32>(18)? != 0,
+            confidence: row.get(15)?,
+            reasoning: row.get(16)?,
+            llm_backend: row.get(17)?,
+            created_at: row.get(18)?,
+            is_tracking_issue: row.get::<_, i32>(19)? != 0,
             suggested_new_categories: sug_cats,
-            is_stale: row.get::<_, i32>(20)? != 0,
+            is_stale: row.get::<_, i32>(21)? != 0,
         };
 
-        let dec_labels_json: String = row.get(25)?;
+        let dec_labels_json: String = row.get(26)?;
         let dec_labels: Vec<String> = serde_json::from_str(&dec_labels_json).unwrap_or_default();
         let decision = ReviewDecision {
-            id: row.get(21)?,
-            suggestion_id: row.get(22)?,
-            decision: row.get(23)?,
-            final_node: row.get(24)?,
+            id: row.get(22)?,
+            suggestion_id: row.get(23)?,
+            decision: row.get(24)?,
+            final_node: row.get(25)?,
             final_labels: dec_labels,
-            decided_at: row.get(26)?,
-            applied_at: row.get(27)?,
-            question: row.get(28)?,
+            decided_at: row.get(27)?,
+            applied_at: row.get(28)?,
+            question: row.get(29)?,
         };
 
         Ok((issue, suggestion, decision))
@@ -1251,7 +1258,7 @@ pub fn get_suggestions_filtered(
 ) -> Result<Vec<(StoredIssue, TriageSuggestion)>> {
     let mut sql = String::from(
         "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json,
-                i.updated_at, i.fetched_at, i.sub_issues_count,
+                i.updated_at, i.fetched_at, i.sub_issues_count, i.author,
                 ts.id, ts.issue_id, ts.suggested_node, ts.suggested_labels,
                 ts.confidence, ts.reasoning, ts.llm_backend, ts.created_at,
                 ts.is_tracking_issue, ts.suggested_new_categories, ts.is_stale,
@@ -1347,23 +1354,23 @@ pub fn get_suggestions_filtered(
 
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(13)?;
+        let labels_json: String = row.get(14)?;
         let suggested_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let suggestion = TriageSuggestion {
-            id: row.get(10)?,
-            issue_id: row.get(11)?,
-            suggested_node: row.get(12)?,
+            id: row.get(11)?,
+            issue_id: row.get(12)?,
+            suggested_node: row.get(13)?,
             suggested_labels,
-            confidence: row.get(14)?,
-            reasoning: row.get(15)?,
-            llm_backend: row.get(16)?,
-            created_at: row.get(17)?,
-            is_tracking_issue: row.get::<_, i64>(18)? != 0,
+            confidence: row.get(15)?,
+            reasoning: row.get(16)?,
+            llm_backend: row.get(17)?,
+            created_at: row.get(18)?,
+            is_tracking_issue: row.get::<_, i64>(19)? != 0,
             suggested_new_categories: {
-                let json: String = row.get(19)?;
+                let json: String = row.get(20)?;
                 serde_json::from_str(&json).unwrap_or_default()
             },
-            is_stale: row.get::<_, i64>(20)? != 0,
+            is_stale: row.get::<_, i64>(21)? != 0,
         };
         Ok((issue, suggestion))
     })?;
@@ -1398,6 +1405,7 @@ mod tests {
             updated_at: "2026-01-15T10:00:00Z".to_string(),
             fetched_at: "2026-04-01T00:00:00Z".to_string(),
             sub_issues_count: 0,
+            author: String::new(),
         }
     }
 
