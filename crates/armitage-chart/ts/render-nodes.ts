@@ -8,6 +8,31 @@ import type { LayoutElements } from "./layout";
 import { getRowHeight, getAxisHeight } from "./layout";
 import { parseDate, dateToX } from "./scale";
 
+/** Inherited timeline: the start/end dates a node or issue should use as fallback. */
+export interface InheritedTimeline {
+  start: string;
+  end: string;
+}
+
+/**
+ * Walk up the node tree to find a timeline. Checks the node itself first,
+ * then each ancestor. Returns null only if nothing in the chain has dates.
+ */
+export function resolveTimeline(
+  node: ChartNode,
+  ancestors: ChartNode[],
+): InheritedTimeline | null {
+  // Check the node itself
+  if (node.start && node.end) return { start: node.start, end: node.end };
+  if (node.eff_start && node.eff_end) return { start: node.eff_start, end: node.eff_end };
+  // Walk ancestors (immediate parent first)
+  for (const ancestor of ancestors) {
+    if (ancestor.start && ancestor.end) return { start: ancestor.start, end: ancestor.end };
+    if (ancestor.eff_start && ancestor.eff_end) return { start: ancestor.eff_start, end: ancestor.eff_end };
+  }
+  return null;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   active: "#3b82f6",
   completed: "#6b7280",
@@ -109,13 +134,11 @@ export function renderNodeRow(
   const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
   const barY = yOffset;
 
-  // Determine bar start/end — fall back to parent timeline if node has none
-  const barStart = node.eff_start
-    || options.parentNode?.eff_start
-    || options.parentNode?.start;
-  const barEnd = node.eff_end
-    || options.parentNode?.eff_end
-    || options.parentNode?.end;
+  // Determine bar start/end — walk up ancestors if node has none
+  const ancestors = options.parentNode ? [options.parentNode] : [];
+  const timeline = resolveTimeline(node, ancestors);
+  const barStart = timeline?.start;
+  const barEnd = timeline?.end;
   const isInherited = !node.eff_start && !node.eff_end && !!barStart;
 
   if (barStart && barEnd) {

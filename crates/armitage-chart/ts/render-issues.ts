@@ -7,7 +7,7 @@ import type { ScaleState } from "./scale";
 import type { LayoutElements } from "./layout";
 import { getRowHeight, getAxisHeight } from "./layout";
 import { dateToX, parseDate } from "./scale";
-import { sortIssues, formatOverdue, type RenderedRow } from "./render-nodes";
+import { sortIssues, formatOverdue, resolveTimeline, type RenderedRow } from "./render-nodes";
 
 const INITIAL_ISSUE_LIMIT = 7;
 
@@ -27,6 +27,7 @@ export function renderIssueRows(
   layout: LayoutElements,
   yOffset: number,
   showAll: boolean,
+  ancestors: ChartNode[] = [],
 ): RenderedRow[] {
   const rows: RenderedRow[] = [];
   const sorted = sortIssues(node.issues, node.end);
@@ -51,7 +52,7 @@ export function renderIssueRows(
     }
     if (isOverdue) insertedOverdue = true;
 
-    const issueRow = renderSingleIssueRow(issue, node, state, layout, y, isOverdue);
+    const issueRow = renderSingleIssueRow(issue, node, state, layout, y, isOverdue, ancestors);
     rows.push(issueRow);
     y += issueRow.height;
   }
@@ -74,6 +75,7 @@ function renderSingleIssueRow(
   layout: LayoutElements,
   yOffset: number,
   isOverdue: boolean,
+  ancestors: ChartNode[] = [],
 ): RenderedRow {
   const height = getRowHeight("issue");
 
@@ -104,12 +106,13 @@ function renderSingleIssueRow(
   layout.labelsEl.appendChild(row);
 
   // --- SVG bar ---
-  // Determine bar start and end, falling back to parent timeline
+  // Determine bar start and end, walking up the ancestor chain if needed
   const hasStart = !!issue.start_date;
   const hasTarget = !!issue.target_date;
-  const barStart = issue.start_date || parentNode.start || parentNode.eff_start;
-  const barEnd = issue.target_date || parentNode.end || parentNode.eff_end;
-  const isAssumed = !hasStart && !hasTarget; // fully inherited from parent
+  const inherited = resolveTimeline(parentNode, ancestors);
+  const barStart = issue.start_date || inherited?.start;
+  const barEnd = issue.target_date || inherited?.end;
+  const isAssumed = !hasStart && !hasTarget; // fully inherited
   const isOpenEnded = hasStart && !hasTarget; // has start but no end
 
   if (barStart && barEnd) {

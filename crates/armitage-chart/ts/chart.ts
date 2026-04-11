@@ -257,8 +257,18 @@ function renderChart(): void {
   layout.barsGroup.innerHTML = "";
   renderedRows = [];
 
-  // Find parent node for timeline inheritance
-  const parentNode = currentPath ? findNode(data.nodes, currentPath) : null;
+  // Build ancestor chain for timeline inheritance (walk up from current path)
+  const ancestors: ChartNode[] = [];
+  if (currentPath) {
+    const segments = currentPath.split("/");
+    let accumulated = "";
+    for (const seg of segments) {
+      accumulated = accumulated ? `${accumulated}/${seg}` : seg;
+      const ancestor = findNode(data.nodes, accumulated);
+      if (ancestor) ancestors.push(ancestor);
+    }
+    ancestors.reverse(); // immediate parent first
+  }
 
   // Render rows
   let yOffset = 0;
@@ -266,13 +276,13 @@ function renderChart(): void {
     const isDimmed = expandedNode !== null && expandedNode !== node.path;
     const isExpanded = expandedNode === node.path;
 
-    const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded, parentNode });
+    const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded, parentNode: ancestors[0] || null });
     renderedRows.push(row);
     yOffset += row.height;
 
-    // Expanded issue rows
+    // Expanded issue rows — pass the node itself + ancestors for inheritance
     if (isExpanded && node.issues.length > 0) {
-      const issueRows = renderIssueRows(node, scaleState, layout, yOffset, expandedShowAll);
+      const issueRows = renderIssueRows(node, scaleState, layout, yOffset, expandedShowAll, ancestors);
       renderedRows.push(...issueRows);
       yOffset += issueRows.reduce((sum, r) => sum + r.height, 0);
     }

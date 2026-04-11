@@ -163,6 +163,15 @@
   }
 
   // ts/render-nodes.ts
+  function resolveTimeline(node, ancestors) {
+    if (node.start && node.end) return { start: node.start, end: node.end };
+    if (node.eff_start && node.eff_end) return { start: node.eff_start, end: node.eff_end };
+    for (const ancestor of ancestors) {
+      if (ancestor.start && ancestor.end) return { start: ancestor.start, end: ancestor.end };
+      if (ancestor.eff_start && ancestor.eff_end) return { start: ancestor.eff_start, end: ancestor.eff_end };
+    }
+    return null;
+  }
   var STATUS_COLORS = {
     active: "#3b82f6",
     completed: "#6b7280",
@@ -222,8 +231,10 @@
     layout2.labelsEl.appendChild(row);
     const statusColor = STATUS_COLORS[node.status] || STATUS_COLORS.active;
     const barY = yOffset;
-    const barStart = node.eff_start || options.parentNode?.eff_start || options.parentNode?.start;
-    const barEnd = node.eff_end || options.parentNode?.eff_end || options.parentNode?.end;
+    const ancestors = options.parentNode ? [options.parentNode] : [];
+    const timeline = resolveTimeline(node, ancestors);
+    const barStart = timeline?.start;
+    const barEnd = timeline?.end;
     const isInherited = !node.eff_start && !node.eff_end && !!barStart;
     if (barStart && barEnd) {
       const x1 = dateToX(state, barStart);
@@ -313,7 +324,7 @@
     if (!match) return "#";
     return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
   }
-  function renderIssueRows(node, state, layout2, yOffset, showAll) {
+  function renderIssueRows(node, state, layout2, yOffset, showAll, ancestors = []) {
     const rows = [];
     const sorted = sortIssues(node.issues, node.end);
     const allSorted = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
@@ -332,7 +343,7 @@
         insertedSeparator = true;
       }
       if (isOverdue) insertedOverdue = true;
-      const issueRow = renderSingleIssueRow(issue, node, state, layout2, y, isOverdue);
+      const issueRow = renderSingleIssueRow(issue, node, state, layout2, y, isOverdue, ancestors);
       rows.push(issueRow);
       y += issueRow.height;
     }
@@ -344,7 +355,7 @@
     }
     return rows;
   }
-  function renderSingleIssueRow(issue, parentNode, state, layout2, yOffset, isOverdue) {
+  function renderSingleIssueRow(issue, parentNode, state, layout2, yOffset, isOverdue, ancestors = []) {
     const height = getRowHeight("issue");
     const row = document.createElement("div");
     row.className = `chart-row issue`;
@@ -368,8 +379,9 @@
     layout2.labelsEl.appendChild(row);
     const hasStart = !!issue.start_date;
     const hasTarget = !!issue.target_date;
-    const barStart = issue.start_date || parentNode.start || parentNode.eff_start;
-    const barEnd = issue.target_date || parentNode.end || parentNode.eff_end;
+    const inherited = resolveTimeline(parentNode, ancestors);
+    const barStart = issue.start_date || inherited?.start;
+    const barEnd = issue.target_date || inherited?.end;
     const isAssumed = !hasStart && !hasTarget;
     const isOpenEnded = hasStart && !hasTarget;
     if (barStart && barEnd) {
@@ -660,16 +672,26 @@
     layout.labelsEl.innerHTML = "";
     layout.barsGroup.innerHTML = "";
     renderedRows = [];
-    const parentNode = currentPath ? findNode(data.nodes, currentPath) : null;
+    const ancestors = [];
+    if (currentPath) {
+      const segments = currentPath.split("/");
+      let accumulated = "";
+      for (const seg of segments) {
+        accumulated = accumulated ? `${accumulated}/${seg}` : seg;
+        const ancestor = findNode(data.nodes, accumulated);
+        if (ancestor) ancestors.push(ancestor);
+      }
+      ancestors.reverse();
+    }
     let yOffset = 0;
     for (const node of nodes) {
       const isDimmed = expandedNode !== null && expandedNode !== node.path;
       const isExpanded = expandedNode === node.path;
-      const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded, parentNode });
+      const row = renderNodeRow(node, scaleState, layout, yOffset, { isDimmed, isExpanded, parentNode: ancestors[0] || null });
       renderedRows.push(row);
       yOffset += row.height;
       if (isExpanded && node.issues.length > 0) {
-        const issueRows = renderIssueRows(node, scaleState, layout, yOffset, expandedShowAll);
+        const issueRows = renderIssueRows(node, scaleState, layout, yOffset, expandedShowAll, ancestors);
         renderedRows.push(...issueRows);
         yOffset += issueRows.reduce((sum, r) => sum + r.height, 0);
       }
@@ -682,9 +704,9 @@
     const okrs = collectOkrs(data.nodes);
     renderMilestoneLines(scaleState, layout, totalHeight, okrs);
     if (currentPath !== "") {
-      const parentNode2 = findNode(data.nodes, currentPath);
-      if (parentNode2) {
-        const checkpoints = allCheckpoints(parentNode2);
+      const parentNode = findNode(data.nodes, currentPath);
+      if (parentNode) {
+        const checkpoints = allCheckpoints(parentNode);
         const filtered = checkpoints.filter((m) => !okrs.some((o) => o.name === m.name && o.date === m.date));
         renderMilestoneLines(scaleState, layout, totalHeight, filtered);
       }
