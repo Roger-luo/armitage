@@ -11,7 +11,6 @@ use armitage_chart::data::{IssueDates, build_chart_data};
 use armitage_chart::render_chart;
 use armitage_core::tree::walk_nodes;
 use rusqlite::Connection;
-use serde_json;
 
 /// Build an IssueDates map from the mock org's SQLite database,
 /// replicating the query from armitage/src/cli/chart.rs.
