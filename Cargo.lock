@@ -91,6 +91,7 @@ dependencies = [
  "armitage-github",
  "armitage-labels",
  "armitage-milestones",
+ "armitage-project",
  "armitage-sync",
  "armitage-triage",
  "chrono",
@@ -174,6 +175,21 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toml",
+]
+
+[[package]]
+name = "armitage-project"
+version = "0.1.0"
+dependencies = [
+ "armitage-core",
+ "armitage-github",
+ "chrono",
+ "ionem",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml",
+ "tracing",
 ]
 
 [[package]]

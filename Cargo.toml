@@ -8,6 +8,7 @@ members = [
     "crates/armitage-sync",
     "crates/armitage-triage",
     "crates/armitage-chart",
+    "crates/armitage-project",
     "crates/armitage",
 ]
 
@@ -23,6 +24,7 @@ armitage-github = { path = "crates/armitage-github" }
 armitage-sync = { path = "crates/armitage-sync" }
 armitage-triage = { path = "crates/armitage-triage" }
 armitage-chart = { path = "crates/armitage-chart" }
+armitage-project = { path = "crates/armitage-project" }
 
 # External crates
 askama = "0.14"

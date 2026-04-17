@@ -116,6 +116,46 @@ armitage resolve [<path>] [--list]   # resolve sync conflicts
 armitage status                      # show org overview
 ```
 
+### GitHub Project Board Sync
+
+```
+armitage project sync [--dry-run]   # add nodes to board and set date/status fields
+armitage project clear-cache        # force re-fetch of project field metadata
+```
+
+Syncs every node that has both `github_issue` and `[timeline]` to a configured GitHub Projects v2
+board: adds the issue if not already present, then sets the start date, target date, and status
+fields based on the node's timeline.
+
+**Setup:** Add a `[github_project]` section to `armitage.toml`:
+
+```toml
+[github_project]
+org = "MyOrg"
+number = 42                       # project number from the URL
+start_date_field = "Start date"   # display name of the date field
+target_date_field = "Target date" # display name of the target date field
+status_field = "Status"           # optional; skip status sync if omitted
+
+[github_project.status_values]
+backlog     = "Backlog"           # maps rule → project option name
+todo        = "Todo"
+sprint_todo = "Sprint Todo"
+in_progress = "In Progress"       # never auto-set; requires explicit user action
+```
+
+**Status auto-assignment** (based on `target_date` relative to today):
+- Target date > 1 quarter away → `Backlog`
+- Target date within this quarter → `Todo`
+- Target date within next 2 weeks → `Sprint Todo`
+- `In Progress` is never set automatically
+
+**No-op detection:** compares current field values on the board before mutating; skips items
+that are already up to date.
+
+**Cache:** field IDs are cached in `.armitage/project/field-cache.toml`. Run
+`project clear-cache` to force a re-fetch (e.g. after renaming fields on the board).
+
 ### Triage Pipeline
 
 The triage pipeline: **fetch** → **classify** → **review** → **apply**.

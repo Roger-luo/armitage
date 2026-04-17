@@ -12,6 +12,7 @@ armitage-github = { workspace = true }
 armitage-sync = { workspace = true }
 armitage-triage = { workspace = true }
 armitage-chart = { workspace = true }
+armitage-project = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 ionem = { workspace = true }

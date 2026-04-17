@@ -4,6 +4,7 @@ pub mod config;
 pub mod init;
 pub mod milestone;
 pub mod node;
+pub mod project;
 pub mod pull;
 pub mod push;
 pub mod resolve;
@@ -94,12 +95,29 @@ enum Commands {
         #[arg(long)]
         no_serve: bool,
     },
+    /// Sync node timelines to a GitHub Project board
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
+    },
     /// Self-management commands
     #[command(name = "self")]
     SelfCmd {
         #[command(subcommand)]
         command: SelfCommands,
     },
+}
+
+#[derive(Subcommand)]
+enum ProjectCommands {
+    /// Add nodes with timelines to a GitHub Project board and set date/status fields
+    Sync {
+        /// Show what would change without making any mutations
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Clear the cached project field IDs (forces re-fetch on next sync)
+    ClearCache,
 }
 
 #[derive(Subcommand)]
@@ -1011,6 +1029,14 @@ pub fn run() -> Result<()> {
                     format,
                     body_max,
                 )?;
+            }
+        },
+        Commands::Project { command } => match command {
+            ProjectCommands::Sync { dry_run } => {
+                project::run_sync(dry_run)?;
+            }
+            ProjectCommands::ClearCache => {
+                project::run_clear_cache()?;
             }
         },
         Commands::SelfCmd { command } => run_self(command),
