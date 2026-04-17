@@ -190,6 +190,12 @@ enum NodeCommands {
         labels: Option<String>,
         #[arg(long)]
         status: Option<String>,
+        /// Set the timeline start date (YYYY-MM-DD)
+        #[arg(long)]
+        timeline_start: Option<String>,
+        /// Set the timeline end date (YYYY-MM-DD)
+        #[arg(long)]
+        timeline_end: Option<String>,
     },
     /// Display indented tree of all nodes
     Tree {
@@ -735,6 +741,8 @@ pub fn run() -> Result<()> {
                 repos,
                 labels,
                 status,
+                timeline_start,
+                timeline_end,
             } => {
                 node::run_set(
                     path,
@@ -746,6 +754,8 @@ pub fn run() -> Result<()> {
                     repos,
                     labels,
                     status,
+                    timeline_start,
+                    timeline_end,
                 )?;
             }
             NodeCommands::Tree { depth } => {

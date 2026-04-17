@@ -1510,6 +1510,8 @@ pub fn run_set(
     repos: Option<String>,
     labels: Option<String>,
     status: Option<String>,
+    timeline_start: Option<String>,
+    timeline_end: Option<String>,
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
@@ -1559,6 +1561,52 @@ pub fn run_set(
     }
     if let Some(s) = status {
         node.status = parse_node_status(&s)?;
+    }
+    if timeline_start.is_some() || timeline_end.is_some() {
+        let new_start = timeline_start
+            .map(|s| {
+                chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").map_err(|_| {
+                    Error::Other(format!(
+                        "invalid --timeline-start '{}': expected YYYY-MM-DD",
+                        s.trim()
+                    ))
+                })
+            })
+            .transpose()?;
+        let new_end = timeline_end
+            .map(|s| {
+                chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").map_err(|_| {
+                    Error::Other(format!(
+                        "invalid --timeline-end '{}': expected YYYY-MM-DD",
+                        s.trim()
+                    ))
+                })
+            })
+            .transpose()?;
+
+        let existing = node.timeline.as_ref();
+        let start = new_start
+            .or_else(|| existing.map(|t| t.start))
+            .ok_or_else(|| {
+                Error::Other(
+                    "cannot set --timeline-end without an existing start date; \
+                     also provide --timeline-start"
+                        .into(),
+                )
+            })?;
+        let end = new_end.or_else(|| existing.map(|t| t.end)).ok_or_else(|| {
+            Error::Other(
+                "cannot set --timeline-start without an existing end date; \
+                     also provide --timeline-end"
+                    .into(),
+            )
+        })?;
+        if end < start {
+            return Err(Error::Other(format!(
+                "end date ({end}) is before start date ({start})"
+            )));
+        }
+        node.timeline = Some(armitage_core::node::Timeline { start, end });
     }
 
     let toml_content = node.to_toml()?;

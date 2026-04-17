@@ -91,7 +91,7 @@ armitage node list [<path>] [-r]
 armitage node tree [--depth N]         # -d N for short; omit for full tree
 armitage node show <path>
 armitage node edit <path>
-armitage node set <path> [--name ...] [--description ...] [--triage-hint ...] [--owners ...] [--team ...] [--repos ...] [--labels ...] [--status ...]
+armitage node set <path> [--name ...] [--description ...] [--triage-hint ...] [--owners ...] [--team ...] [--repos ...] [--labels ...] [--status ...] [--timeline-start YYYY-MM-DD] [--timeline-end YYYY-MM-DD]
 armitage node move <from> <to>
 armitage node merge <from> <to> [-y]   # merge source into target
 armitage node remove <path> [-y]
@@ -99,9 +99,9 @@ armitage node check                    # timeline violations + issue date valida
 armitage node fmt [<path>...]          # re-serialize node.toml files
 ```
 
-Note: `node set` does not support `--timeline`. To set or change a timeline, use `node edit`
-(interactive) or edit the `[timeline]` section in `node.toml` directly. `node new` supports
-`--timeline "2026-01-01 2026-12-31"` for setting it at creation time.
+Use `--timeline-start` and `--timeline-end` independently — each updates only its own bound.
+If only one bound is provided and the node has no existing timeline, both flags are required.
+To clear a timeline, edit `node.toml` directly.
 
 `node check` validates: (1) parent-child timeline containment, (2) issue start/target dates
 from the GitHub Project board against node timelines. Requires `triage fetch` to have run with
