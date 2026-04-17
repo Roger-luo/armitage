@@ -95,7 +95,7 @@ armitage node set <path> [--name ...] [--description ...] [--triage-hint ...] [-
 armitage node move <from> <to>
 armitage node merge <from> <to> [-y]   # merge source into target
 armitage node remove <path> [-y]
-armitage node check                    # timeline violations + issue date validation
+armitage node check                    # timeline violations, issue date validation, owner warnings
 armitage node fmt [<path>...]          # re-serialize node.toml files
 ```
 
@@ -104,8 +104,10 @@ If only one bound is provided and the node has no existing timeline, both flags 
 To clear a timeline, edit `node.toml` directly.
 
 `node check` validates: (1) parent-child timeline containment, (2) issue start/target dates
-from the GitHub Project board against node timelines. Requires `triage fetch` to have run with
-`[triage.project]` configured.
+from the GitHub Project board against node timelines (requires `triage fetch` with `[triage.project]`
+configured), (3) node owners exist in `team.toml` (warnings, not errors — external collaborators
+may legitimately be owners without a team entry). `node set --owners` also warns interactively
+when an unrecognized username is entered.
 
 ### GitHub Sync
 

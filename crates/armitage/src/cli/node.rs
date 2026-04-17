@@ -7,6 +7,7 @@ use crate::cli::complete::{CommaCompleteHelper, NodePathHelper};
 use crate::error::{Error, Result};
 use armitage_core::node::{self, Node, NodeStatus};
 use armitage_core::org::Org;
+use armitage_core::team::TeamFile;
 use armitage_core::tree::{NodeEntry, find_org_root, list_children, read_node, walk_nodes};
 use armitage_labels::def::LabelsFile;
 
@@ -1612,6 +1613,19 @@ pub fn run_set(
     let toml_content = node.to_toml()?;
     std::fs::write(entry.dir.join("node.toml"), toml_content)?;
     println!("Updated '{path}'");
+
+    // Warn about any owners not registered in team.toml
+    let team_file = TeamFile::read(&org_root).unwrap_or_default();
+    for owner in &node.owners {
+        if !team_file.has(owner) {
+            eprintln!(
+                "{}warning:{} owner '{owner}' is not in team.toml",
+                color::YELLOW,
+                color::RESET,
+            );
+        }
+    }
+
     Ok(())
 }
 
@@ -1814,11 +1828,40 @@ pub fn run_check() -> Result<()> {
         }
     }
 
-    if violations == 0 {
+    // --- Owner validation against team.toml ---
+    let team_file = TeamFile::read(&org_root).unwrap_or_default();
+    let mut warnings = 0;
+    for entry in &all {
+        for owner in &entry.node.owners {
+            if !team_file.has(owner) {
+                warnings += 1;
+                println!(
+                    "{}warning:{} owner {bold}{owner}{reset} in node {dim}{}{reset} is not in team.toml",
+                    color::YELLOW,
+                    color::RESET,
+                    entry.path,
+                    bold = color::BOLD,
+                    dim = color::DIM,
+                    reset = color::RESET,
+                );
+            }
+        }
+    }
+    if warnings > 0 {
+        println!();
+    }
+
+    if violations == 0 && warnings == 0 {
         println!("{}No issues found.{}", color::GREEN, color::RESET);
+    } else if violations == 0 {
+        println!(
+            "{}Found {warnings} warning(s).{}",
+            color::YELLOW,
+            color::RESET,
+        );
     } else {
         println!(
-            "{}Found {violations} issue(s).{}",
+            "{}Found {violations} issue(s), {warnings} warning(s).{}",
             color::YELLOW,
             color::RESET,
         );
