@@ -329,6 +329,38 @@ pub fn list_org_repos(gh: &ionem::shell::gh::Gh, org: &str) -> Result<Vec<String
     Ok(repos.into_iter().map(|r| r.name_with_owner).collect())
 }
 
+/// Metadata fetched from GitHub for a single repo.
+#[derive(Debug, Clone)]
+pub struct RepoMetadata {
+    /// Canonical `owner/repo` name as reported by GitHub.
+    pub name_with_owner: String,
+    pub is_archived: bool,
+}
+
+/// Fetch archived status and canonical name for a single repo.
+///
+/// Returns `None` when the repo does not exist or the `gh` call fails (e.g.
+/// network unavailable), so callers can skip rather than hard-error.
+pub fn fetch_repo_metadata(gh: &ionem::shell::gh::Gh, repo: &str) -> Option<RepoMetadata> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        #[serde(rename = "nameWithOwner")]
+        name_with_owner: String,
+        #[serde(rename = "isArchived")]
+        is_archived: bool,
+    }
+
+    tracing::debug!(repo = repo, "gh repo view metadata");
+    let json = gh
+        .run(&["repo", "view", repo, "--json", "isArchived,nameWithOwner"])
+        .ok()?;
+    let raw: Raw = serde_json::from_str(&json).ok()?;
+    Some(RepoMetadata {
+        name_with_owner: raw.name_with_owner,
+        is_archived: raw.is_archived,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

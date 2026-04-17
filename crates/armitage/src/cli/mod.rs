@@ -209,7 +209,11 @@ enum NodeCommands {
         paths: Vec<String>,
     },
     /// Check for timeline violations and other issues
-    Check,
+    Check {
+        /// Query GitHub to detect archived or renamed repos in node.toml files
+        #[arg(long)]
+        check_repos: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -764,8 +768,8 @@ pub fn run() -> Result<()> {
             NodeCommands::Fmt { paths } => {
                 node::run_fmt(paths)?;
             }
-            NodeCommands::Check => {
-                node::run_check()?;
+            NodeCommands::Check { check_repos } => {
+                node::run_check(check_repos)?;
             }
         },
         Commands::Milestone { command } => match command {

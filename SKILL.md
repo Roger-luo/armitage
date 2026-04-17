@@ -95,7 +95,7 @@ armitage node set <path> [--name ...] [--description ...] [--triage-hint ...] [-
 armitage node move <from> <to>
 armitage node merge <from> <to> [-y]   # merge source into target
 armitage node remove <path> [-y]
-armitage node check                    # timeline violations, issue date validation, owner warnings
+armitage node check [--check-repos]    # timeline violations, issue date validation, owner/repo warnings
 armitage node fmt [<path>...]          # re-serialize node.toml files
 ```
 
@@ -108,6 +108,10 @@ from the GitHub Project board against node timelines (requires `triage fetch` wi
 configured), (3) node owners exist in `team.toml` (warnings, not errors — external collaborators
 may legitimately be owners without a team entry). `node set --owners` also warns interactively
 when an unrecognized username is entered.
+
+`--check-repos` queries GitHub for each unique repo in node.toml files (deduplicated) and warns
+when a repo is archived or has been renamed (canonical name differs from what's stored). Gated
+behind a flag because it makes one `gh repo view` call per unique repo.
 
 ### GitHub Sync
 

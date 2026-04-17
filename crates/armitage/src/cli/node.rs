@@ -1666,7 +1666,7 @@ pub fn run_fmt(paths: Vec<String>) -> Result<()> {
 
 /// CLI entry point: armitage node check
 /// Scans the whole tree for timeline violations and other issues.
-pub fn run_check() -> Result<()> {
+pub fn run_check(check_repos: bool) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
     let all = walk_nodes(&org_root)?;
@@ -1849,6 +1849,82 @@ pub fn run_check() -> Result<()> {
     }
     if warnings > 0 {
         println!();
+    }
+
+    // --- Repo archived / renamed check (requires --check-repos) ---
+    if check_repos {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        // Collect unique bare repo names across all nodes.
+        let mut repo_nodes: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for entry in &all {
+            for repo in &entry.node.repos {
+                let bare = armitage_triage::fetch::strip_repo_qualifier(repo);
+                repo_nodes.entry(bare).or_default().push(entry.path.clone());
+            }
+        }
+
+        if repo_nodes.is_empty() {
+            println!("{}No repos to check.{}", color::DIM, color::RESET);
+        } else {
+            let gh = armitage_github::require_gh()?;
+            let total = repo_nodes.len();
+            println!("Checking {total} repo(s)...");
+            let mut checked: BTreeSet<String> = BTreeSet::new();
+            for (repo, node_paths) in &repo_nodes {
+                if checked.contains(repo) {
+                    continue;
+                }
+                checked.insert(repo.clone());
+                match armitage_github::issue::fetch_repo_metadata(&gh, repo) {
+                    None => {
+                        warnings += 1;
+                        for node_path in node_paths {
+                            println!(
+                                "{}warning:{} repo {bold}{repo}{reset} in node {dim}{node_path}{reset} could not be fetched — may not exist",
+                                color::YELLOW,
+                                color::RESET,
+                                bold = color::BOLD,
+                                dim = color::DIM,
+                                reset = color::RESET,
+                            );
+                        }
+                    }
+                    Some(meta) => {
+                        // Rename detection: canonical name differs from what's in node.toml.
+                        let canonical = meta.name_with_owner.to_lowercase();
+                        let stored = repo.to_lowercase();
+                        if canonical != stored {
+                            warnings += 1;
+                            for node_path in node_paths {
+                                println!(
+                                    "{}warning:{} repo {bold}{repo}{reset} has been renamed to {bold}{}{reset} — update node {dim}{node_path}{reset}",
+                                    color::YELLOW,
+                                    color::RESET,
+                                    meta.name_with_owner,
+                                    bold = color::BOLD,
+                                    dim = color::DIM,
+                                    reset = color::RESET,
+                                );
+                            }
+                        } else if meta.is_archived {
+                            warnings += 1;
+                            for node_path in node_paths {
+                                println!(
+                                    "{}warning:{} repo {bold}{repo}{reset} is archived — consider removing from node {dim}{node_path}{reset}",
+                                    color::YELLOW,
+                                    color::RESET,
+                                    bold = color::BOLD,
+                                    dim = color::DIM,
+                                    reset = color::RESET,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            println!();
+        }
     }
 
     if violations == 0 && warnings == 0 {
