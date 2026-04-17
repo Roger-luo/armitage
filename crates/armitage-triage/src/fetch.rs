@@ -40,6 +40,8 @@ struct ApiIssue {
     // Present on PR entries returned by the issues API
     #[serde(default)]
     pull_request: Option<serde_json::Value>,
+    #[serde(default)]
+    comments: u64,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -101,6 +103,7 @@ pub fn fetch_repo_issues(
                 .map(|u| u.login.clone())
                 .collect(),
             is_pr: api_issue.pull_request.is_some(),
+            comment_count: api_issue.comments as i64,
         };
         db::upsert_issue(conn, &stored)?;
         count += 1;

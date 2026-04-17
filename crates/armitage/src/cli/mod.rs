@@ -396,6 +396,24 @@ enum TriageCommands {
         #[arg(long, default_value = "table")]
         format: String,
     },
+    /// Find open issues with no recent activity and optionally batch-inquire
+    Inactive {
+        /// Number of days since last update to consider inactive (default: 180)
+        #[arg(long, default_value_t = 180)]
+        days: u32,
+        /// Cutoff date (ISO 8601) instead of --days (e.g. "2025-10-01")
+        #[arg(long, conflicts_with = "days")]
+        since: Option<String>,
+        /// Filter to a single repo (owner/repo)
+        #[arg(long)]
+        repo: Option<String>,
+        /// Output format: "table" (default) or "json"
+        #[arg(long, default_value = "table")]
+        format: String,
+        /// Post this message as a comment on all matching unreviewed issues (stages as inquire decisions)
+        #[arg(long)]
+        inquire: Option<String>,
+    },
     /// List triage suggestions with filtering
     Suggestions {
         /// Filter by issue number(s), comma-separated (e.g. "247,276,32")
@@ -951,6 +969,15 @@ pub fn run() -> Result<()> {
                     triage::run_examples_remove(issue_ref)?;
                 }
             },
+            TriageCommands::Inactive {
+                days,
+                since,
+                repo,
+                format,
+                inquire,
+            } => {
+                triage::run_inactive(days, since, repo, format, inquire)?;
+            }
             TriageCommands::Summary { repo, format } => {
                 triage::run_summary(repo, format)?;
             }

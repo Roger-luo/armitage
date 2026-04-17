@@ -171,6 +171,7 @@ mod tests {
             author: String::new(),
             assignees: vec![],
             is_pr: false,
+            comment_count: -1,
         }
     }
 
@@ -195,6 +196,9 @@ mod tests {
                 is_tracking_issue: false,
                 suggested_new_categories: vec![],
                 is_stale: false,
+                is_inactive: false,
+                needs_followup: false,
+                followup_reason: String::new(),
             },
         )
         .unwrap();

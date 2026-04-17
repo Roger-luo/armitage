@@ -2524,6 +2524,193 @@ pub fn run_examples_remove(issue_ref: String) -> Result<()> {
     Ok(())
 }
 
+pub fn run_inactive(
+    days: u32,
+    since: Option<String>,
+    repo: Option<String>,
+    format: String,
+    inquire: Option<String>,
+) -> Result<()> {
+    let fmt = format.parse::<OutputFormat>()?;
+    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let conn = db::open_db(&org_root)?;
+
+    // Resolve the effective threshold in days
+    let effective_days = if let Some(ref since_str) = since {
+        let cutoff = chrono::DateTime::parse_from_rfc3339(since_str)
+            .or_else(|_| {
+                chrono::NaiveDate::parse_from_str(since_str, "%Y-%m-%d")
+                    .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
+                    .map(|dt| dt.and_local_timezone(chrono::Utc).unwrap().fixed_offset())
+                    .map_err(|e| chrono::DateTime::parse_from_rfc3339(&e.to_string()).unwrap_err())
+            })
+            .map_err(|_| {
+                Error::Other(format!(
+                    "invalid date '{since_str}'; expected ISO 8601 (e.g. '2025-10-01')"
+                ))
+            })?;
+        let now = chrono::Utc::now();
+        (now - cutoff.with_timezone(&chrono::Utc)).num_days().max(0) as u32
+    } else {
+        days
+    };
+
+    let rows = db::get_inactive_issues(&conn, effective_days, repo.as_deref())?;
+
+    if rows.is_empty() {
+        println!(
+            "No open issues inactive for {effective_days}+ days{}.",
+            repo.as_ref()
+                .map(|r| format!(" in {r}"))
+                .unwrap_or_default()
+        );
+        return Ok(());
+    }
+
+    if fmt == OutputFormat::Json {
+        let items: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|(issue, node)| {
+                serde_json::json!({
+                    "ref": format!("{}#{}", issue.repo, issue.number),
+                    "repo": issue.repo,
+                    "number": issue.number,
+                    "title": issue.title,
+                    "updated_at": issue.updated_at,
+                    "author": issue.author,
+                    "comment_count": if issue.comment_count >= 0 { issue.comment_count } else { -1 },
+                    "suggested_node": node,
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&items).map_err(|e| Error::Other(e.to_string()))?
+        );
+        return Ok(());
+    }
+
+    // Table output
+    println!(
+        "Open issues inactive for {effective_days}+ days{} ({} found):",
+        repo.as_ref()
+            .map(|r| format!(" in {r}"))
+            .unwrap_or_default(),
+        rows.len()
+    );
+    println!();
+    println!(
+        "  {:<25}  {:<45}  {:<12}  {:<25}",
+        "REF", "TITLE", "LAST UPDATED", "SUGGESTED NODE"
+    );
+    println!("  {}", "-".repeat(115));
+    for (issue, node) in &rows {
+        let ref_str = format!("{}#{}", issue.repo, issue.number);
+        let title = if issue.title.len() > 43 {
+            format!("{}…", &issue.title[..42])
+        } else {
+            issue.title.clone()
+        };
+        // Format last updated as human-readable relative time
+        let age_str = if let Ok(updated) = chrono::DateTime::parse_from_rfc3339(&issue.updated_at) {
+            let days_ago = (chrono::Utc::now() - updated.with_timezone(&chrono::Utc)).num_days();
+            if days_ago >= 365 {
+                format!("{:.1}y ago", days_ago as f64 / 365.25)
+            } else {
+                format!("{days_ago}d ago")
+            }
+        } else {
+            issue.updated_at[..10].to_string()
+        };
+        let node_str = node.as_deref().unwrap_or("—");
+        println!(
+            "  {:<25}  {:<45}  {:<12}  {:<25}",
+            ref_str, title, age_str, node_str
+        );
+    }
+    println!();
+
+    // Batch inquire action
+    if let Some(ref question) = inquire {
+        let org = Org::open(&org_root)?;
+        let triage_config: TriageConfig = org.domain_config::<TriageDomain>()?;
+        let nodes = walk_nodes(&org_root)?;
+        let label_schema: LabelSchema = org.domain_config::<LabelsDomain>()?;
+        let curated_labels = armitage_labels::def::LabelsFile::read(&org_root)?;
+
+        // For each inactive issue, ensure it has a suggestion (create a placeholder if not),
+        // then record an inquire decision.
+        let now = Utc::now().to_rfc3339();
+        let mut staged = 0usize;
+        let mut skipped = 0usize;
+
+        for (issue, _node) in &rows {
+            // Check if there's already a decided suggestion
+            match db::get_suggestion_by_issue(&conn, &issue.repo, issue.number)? {
+                Some((_, _, Some(_))) => {
+                    // Already has a decision — skip
+                    skipped += 1;
+                    continue;
+                }
+                Some((_, sug, None)) => {
+                    // Has pending suggestion, record inquire decision
+                    let decision = db::ReviewDecision {
+                        id: 0,
+                        suggestion_id: sug.id,
+                        decision: "inquired".to_string(),
+                        final_node: sug.suggested_node.clone(),
+                        final_labels: sug.suggested_labels.clone(),
+                        decided_at: now.clone(),
+                        applied_at: None,
+                        question: question.clone(),
+                    };
+                    db::insert_decision(&conn, &decision)?;
+                    staged += 1;
+                }
+                None => {
+                    // No suggestion yet — create a minimal one so we can attach a decision
+                    let _ = (&nodes, &label_schema, &curated_labels, &triage_config);
+                    let backend_str = triage_config.backend.as_deref().unwrap_or("claude");
+                    let placeholder_sug = db::TriageSuggestion {
+                        id: 0,
+                        issue_id: issue.id,
+                        suggested_node: None,
+                        suggested_labels: vec![],
+                        confidence: None,
+                        reasoning: "Inactive issue — no LLM classification yet.".to_string(),
+                        llm_backend: backend_str.to_string(),
+                        created_at: now.clone(),
+                        is_tracking_issue: false,
+                        suggested_new_categories: vec![],
+                        is_stale: false,
+                        is_inactive: true,
+                        needs_followup: false,
+                        followup_reason: String::new(),
+                    };
+                    let sug_id = db::upsert_suggestion(&conn, &placeholder_sug)?;
+                    let decision = db::ReviewDecision {
+                        id: 0,
+                        suggestion_id: sug_id,
+                        decision: "inquired".to_string(),
+                        final_node: None,
+                        final_labels: vec![],
+                        decided_at: now.clone(),
+                        applied_at: None,
+                        question: question.clone(),
+                    };
+                    db::insert_decision(&conn, &decision)?;
+                    staged += 1;
+                }
+            }
+        }
+
+        println!("Staged {staged} inquire decision(s) (skipped {skipped} already decided).");
+        println!("Run `armitage triage apply` to post the comments to GitHub.");
+    }
+
+    Ok(())
+}
+
 pub fn run_summary(repo: Option<String>, format: String) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;

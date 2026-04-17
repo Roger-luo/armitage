@@ -87,6 +87,15 @@ pub struct LlmClassification {
     /// True if the issue references features/APIs/components that no longer exist.
     #[serde(default)]
     pub is_stale: bool,
+    /// True if the issue has had no GitHub activity for 6+ months.
+    #[serde(default)]
+    pub is_inactive: bool,
+    /// True if the issue discussion lacks concrete next steps or actionable resolution.
+    #[serde(default)]
+    pub needs_followup: bool,
+    /// Brief explanation of why follow-up is needed (non-empty when needs_followup is true).
+    #[serde(default)]
+    pub followup_reason: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +263,23 @@ fn build_issue_section(issue: &StoredIssue) -> String {
         "## Issue\nRepo: {}  Number: #{}\nState: {}\nTitle: {}\nCurrent Labels: {}\n",
         issue.repo, issue.number, issue.state, issue.title, labels,
     );
+
+    // Include activity context to help the LLM assess inactivity/staleness
+    if let Ok(updated) = chrono::DateTime::parse_from_rfc3339(&issue.updated_at) {
+        let now = chrono::Utc::now();
+        let days = (now - updated.with_timezone(&chrono::Utc)).num_days();
+        let _ = writeln!(
+            section,
+            "Last updated: {} ({days} days ago)",
+            issue.updated_at
+        );
+    } else {
+        let _ = writeln!(section, "Last updated: {}", issue.updated_at);
+    }
+    if issue.comment_count >= 0 {
+        let _ = writeln!(section, "Comments: {}", issue.comment_count);
+    }
+
     if issue.sub_issues_count > 0 {
         let _ = writeln!(
             section,
@@ -290,6 +316,16 @@ fn build_classification_guidelines() -> String {
      - Set is_stale to true if the issue references features, APIs, modules, or components \
        that have been removed, deprecated, or no longer exist in the project. Stale issues \
        are outdated and should typically have suggested_node set to null.\n\
+     - **Inactivity detection:** The issue section includes \"Last updated\" and \"Comments\" \
+       metadata.\n\
+       - Set is_inactive to true if the issue has had NO GitHub activity for 180+ days \
+         (i.e. \"Last updated\" is 180 or more days ago). This is purely time-based.\n\
+       - Set needs_followup to true if the issue discussion lacks concrete next steps, \
+         actionable items, or resolution — for example: an open question with no answers, \
+         a vague feature request with no design, or a bug with no reproduction steps or \
+         proposed fix. Populate followup_reason with a brief (1-2 sentence) explanation of \
+         what is missing or unclear. needs_followup can be true even for recent issues.\n\
+       - Both flags can be set simultaneously (e.g. inactive AND lacks next steps).\n\
      - **Labels are additive only.** The issue's Current Labels were applied by humans and are \
        authoritative. In suggested_labels, include ONLY labels that are missing and should be \
        added. Do NOT repeat labels the issue already has. If the existing labels are already \
@@ -342,6 +378,7 @@ fn build_prompt(
          Respond with ONLY valid JSON (no markdown fences, no extra text):\n\
          {\"suggested_node\": \"path/to/node or null\", \"suggested_labels\": [\"label1\"], \
          \"confidence\": 0.85, \"is_tracking_issue\": false, \"is_stale\": false, \
+         \"is_inactive\": false, \"needs_followup\": false, \"followup_reason\": \"\", \
          \"suggested_new_categories\": [], \"reasoning\": \"...\"}\n\
          \n\
          If the issue does not belong to any node, set suggested_node to null.\n\
@@ -386,6 +423,7 @@ fn build_batch_prompt(
          One object per issue, in the same order:\n\
          [{\"suggested_node\": \"path/to/node or null\", \"suggested_labels\": [\"label1\"], \
          \"confidence\": 0.85, \"is_tracking_issue\": false, \"is_stale\": false, \
+         \"is_inactive\": false, \"needs_followup\": false, \"followup_reason\": \"\", \
          \"suggested_new_categories\": [], \"reasoning\": \"...\"}]\n\
          \n\
          If an issue does not belong to any node, set suggested_node to null.\n\
@@ -1717,6 +1755,9 @@ pub fn triage_issues(
                                                 .suggested_new_categories
                                                 .clone(),
                                             is_stale: c.is_stale,
+                                            is_inactive: c.is_inactive,
+                                            needs_followup: c.needs_followup,
+                                            followup_reason: c.followup_reason.clone(),
                                         };
                                         if let Err(e) =
                                             db::upsert_suggestion(&conn_guard, &sug)
@@ -1889,6 +1930,7 @@ mod tests {
             author: String::new(),
             assignees: vec![],
             is_pr: false,
+            comment_count: -1,
         };
         let nodes = vec![NodeEntry {
             path: "infra".to_string(),
