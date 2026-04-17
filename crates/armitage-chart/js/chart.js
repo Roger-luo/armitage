@@ -321,10 +321,11 @@
 
   // ts/render-issues.ts
   var INITIAL_ISSUE_LIMIT = 7;
-  function issueUrl(ref) {
+  function issueUrl(ref, isPr) {
     const match = ref.match(/^(.+?)\/(.+?)#(\d+)$/);
     if (!match) return "#";
-    return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
+    const type = isPr ? "pull" : "issues";
+    return `https://github.com/${match[1]}/${match[2]}/${type}/${match[3]}`;
   }
   function renderIssueRows(node, state, layout2, yOffset, showAll, ancestors = []) {
     const rows = [];
@@ -359,23 +360,25 @@
   }
   function renderSingleIssueRow(issue, parentNode, state, layout2, yOffset, isOverdue, ancestors = []) {
     const height = getRowHeight("issue");
+    const isPr = issue.is_pr;
     const row = document.createElement("div");
-    row.className = `chart-row issue`;
+    row.className = `chart-row issue${isPr ? " pr" : ""}`;
     row.style.height = `${height}px`;
     row.dataset.issueRef = issue.issue_ref;
     const label = document.createElement("span");
-    label.className = `chart-label issue-title${isOverdue ? " overdue" : ""}`;
+    label.className = `chart-label issue-title${isOverdue ? " overdue" : ""}${isPr ? " pr" : ""}`;
     label.textContent = issue.title || issue.issue_ref;
     label.title = `${issue.title || ""} (${issue.issue_ref})`;
     row.appendChild(label);
     const meta = document.createElement("span");
-    meta.className = "chart-badge issues";
+    meta.className = `chart-badge issues${isPr ? " pr" : ""}`;
     if (isOverdue && parentNode.end) {
       meta.textContent = formatOverdue(issue.target_date, parentNode.end);
       meta.style.color = "#f85149";
     } else {
       const refMatch = issue.issue_ref.match(/#(\d+)$/);
-      meta.textContent = refMatch ? `#${refMatch[1]}` : issue.issue_ref;
+      const num = refMatch ? refMatch[1] : issue.issue_ref;
+      meta.textContent = isPr ? `\u2934 #${num}` : `#${num}`;
     }
     row.appendChild(meta);
     layout2.labelsEl.appendChild(row);
@@ -405,7 +408,7 @@
       rect.setAttribute("width", `${barW}`);
       rect.setAttribute("height", "6");
       rect.setAttribute("rx", "2");
-      rect.setAttribute("fill", "#58a6ff");
+      rect.setAttribute("fill", isPr ? "#a371f7" : "#58a6ff");
       if (isAssumed) {
         rect.setAttribute("opacity", "0.3");
         rect.setAttribute("stroke", "#58a6ff");
@@ -643,8 +646,9 @@
       html += `<div class="panel-section"><h3>Issues (${node.issues.length})</h3>`;
       html += `<ul class="panel-issues">`;
       for (const issue of node.issues) {
-        const url = issueUrl(issue.issue_ref);
-        const label = issue.title ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>` : escapeHtml(issue.issue_ref);
+        const url = issueUrl(issue.issue_ref, issue.is_pr);
+        const prBadge = issue.is_pr ? `<span class="panel-pr-badge">PR</span>` : "";
+        const label = issue.title ? `${prBadge}${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>` : `${prBadge}${escapeHtml(issue.issue_ref)}`;
         html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
       }
       html += `</ul></div>`;
@@ -654,7 +658,7 @@
   }
   function showIssuePanel(issue, parentNode) {
     selectedNode = null;
-    const url = issueUrl(issue.issue_ref);
+    const url = issueUrl(issue.issue_ref, issue.is_pr);
     const isOverdue = issue.target_date && parentNode.end && issue.target_date > parentNode.end;
     let html = "";
     html += `<h2>${escapeHtml(issue.title || issue.issue_ref)}</h2>`;

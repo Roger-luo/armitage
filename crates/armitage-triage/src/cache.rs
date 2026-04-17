@@ -170,6 +170,7 @@ mod tests {
             sub_issues_count: 0,
             author: String::new(),
             assignees: vec![],
+            is_pr: false,
         }
     }
 

@@ -37,6 +37,9 @@ struct ApiIssue {
     user: Option<ApiUser>,
     #[serde(default)]
     assignees: Vec<ApiUser>,
+    // Present on PR entries returned by the issues API
+    #[serde(default)]
+    pull_request: Option<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -97,6 +100,7 @@ pub fn fetch_repo_issues(
                 .iter()
                 .map(|u| u.login.clone())
                 .collect(),
+            is_pr: api_issue.pull_request.is_some(),
         };
         db::upsert_issue(conn, &stored)?;
         count += 1;

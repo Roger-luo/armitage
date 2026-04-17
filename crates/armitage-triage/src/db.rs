@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 // ---------------------------------------------------------------------------
 
 /// Current schema version. Bump this when adding migrations.
-const SCHEMA_VERSION: u32 = 8;
+const SCHEMA_VERSION: u32 = 9;
 
 /// Full schema for a fresh database (always represents the latest version).
 const SCHEMA_V6: &str = "
@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS issues (
     sub_issues_count  INTEGER NOT NULL DEFAULT 0,
     author            TEXT NOT NULL DEFAULT '',
     assignees_json    TEXT NOT NULL DEFAULT '[]',
+    is_pr             INTEGER NOT NULL DEFAULT 0,
     UNIQUE(repo, number)
 );
 
@@ -115,6 +116,8 @@ const MIGRATIONS: &[Option<&str>] = &[
     Some("ALTER TABLE issues ADD COLUMN author TEXT NOT NULL DEFAULT '';"),
     // v7 → v8: add assignees_json column to issues
     Some("ALTER TABLE issues ADD COLUMN assignees_json TEXT NOT NULL DEFAULT '[]';"),
+    // v8 → v9: add is_pr column to distinguish pull requests from issues
+    Some("ALTER TABLE issues ADD COLUMN is_pr INTEGER NOT NULL DEFAULT 0;"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -135,6 +138,7 @@ pub struct StoredIssue {
     pub sub_issues_count: u64,
     pub author: String,
     pub assignees: Vec<String>,
+    pub is_pr: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -338,8 +342,8 @@ pub fn upsert_issue(conn: &Connection, issue: &StoredIssue) -> Result<i64> {
     let assignees_json =
         serde_json::to_string(&issue.assignees).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
-        "INSERT INTO issues (repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count, author, assignees_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        "INSERT INTO issues (repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count, author, assignees_json, is_pr)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
          ON CONFLICT(repo, number) DO UPDATE SET
             title = excluded.title,
             body = excluded.body,
@@ -349,7 +353,8 @@ pub fn upsert_issue(conn: &Connection, issue: &StoredIssue) -> Result<i64> {
             fetched_at = excluded.fetched_at,
             sub_issues_count = excluded.sub_issues_count,
             author = excluded.author,
-            assignees_json = excluded.assignees_json",
+            assignees_json = excluded.assignees_json,
+            is_pr = excluded.is_pr",
         params![
             issue.repo,
             issue.number as i64,
@@ -362,6 +367,7 @@ pub fn upsert_issue(conn: &Connection, issue: &StoredIssue) -> Result<i64> {
             issue.sub_issues_count as i64,
             issue.author,
             assignees_json,
+            i64::from(issue.is_pr),
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -369,10 +375,10 @@ pub fn upsert_issue(conn: &Connection, issue: &StoredIssue) -> Result<i64> {
 
 pub fn get_untriaged_issues(conn: &Connection) -> Result<Vec<StoredIssue>> {
     let mut stmt = conn.prepare(
-        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json, i.is_pr
          FROM issues i
          LEFT JOIN triage_suggestions ts ON ts.issue_id = i.id
-         WHERE ts.id IS NULL AND LOWER(i.state) = 'open'
+         WHERE ts.id IS NULL AND LOWER(i.state) = 'open' AND i.is_pr = 0
          ORDER BY i.repo, i.number",
     )?;
     let rows = stmt.query_map([], row_to_issue)?;
@@ -382,10 +388,10 @@ pub fn get_untriaged_issues(conn: &Connection) -> Result<Vec<StoredIssue>> {
 
 pub fn get_untriaged_issues_by_repo(conn: &Connection, repo: &str) -> Result<Vec<StoredIssue>> {
     let mut stmt = conn.prepare(
-        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json, i.is_pr
          FROM issues i
          LEFT JOIN triage_suggestions ts ON ts.issue_id = i.id
-         WHERE ts.id IS NULL AND LOWER(i.state) = 'open' AND i.repo = ?1
+         WHERE ts.id IS NULL AND LOWER(i.state) = 'open' AND i.repo = ?1 AND i.is_pr = 0
          ORDER BY i.number",
     )?;
     let rows = stmt.query_map(params![repo], row_to_issue)?;
@@ -395,7 +401,7 @@ pub fn get_untriaged_issues_by_repo(conn: &Connection, repo: &str) -> Result<Vec
 
 pub fn get_issues_by_repo(conn: &Connection, repo: &str) -> Result<Vec<StoredIssue>> {
     let mut stmt = conn.prepare(
-        "SELECT id, repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count, author, assignees_json
+        "SELECT id, repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count, author, assignees_json, is_pr
          FROM issues WHERE repo = ?1 ORDER BY number",
     )?;
     let rows = stmt.query_map(params![repo], row_to_issue)?;
@@ -427,6 +433,7 @@ fn row_to_issue(row: &rusqlite::Row) -> rusqlite::Result<StoredIssue> {
         sub_issues_count: row.get::<_, i64>(9)? as u64,
         author: row.get(10)?,
         assignees,
+        is_pr: row.get::<_, i64>(12)? != 0,
     })
 }
 
@@ -543,7 +550,7 @@ pub fn get_pending_suggestions_filtered(
     max_confidence: Option<f64>,
 ) -> Result<Vec<(StoredIssue, TriageSuggestion)>> {
     let mut sql = String::from(
-        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json,
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json, i.is_pr,
                 ts.id, ts.issue_id, ts.suggested_node, ts.suggested_labels, ts.confidence, ts.reasoning, ts.llm_backend, ts.created_at, ts.is_tracking_issue, ts.suggested_new_categories, ts.is_stale
          FROM triage_suggestions ts
          JOIN issues i ON i.id = ts.issue_id
@@ -563,23 +570,23 @@ pub fn get_pending_suggestions_filtered(
 
     let row_mapper = |row: &rusqlite::Row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(15)?;
+        let labels_json: String = row.get(16)?;
         let suggested_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let suggestion = TriageSuggestion {
-            id: row.get(12)?,
-            issue_id: row.get(13)?,
-            suggested_node: row.get(14)?,
+            id: row.get(13)?,
+            issue_id: row.get(14)?,
+            suggested_node: row.get(15)?,
             suggested_labels,
-            confidence: row.get(16)?,
-            reasoning: row.get(17)?,
-            llm_backend: row.get(18)?,
-            created_at: row.get(19)?,
-            is_tracking_issue: row.get::<_, i64>(20)? != 0,
+            confidence: row.get(17)?,
+            reasoning: row.get(18)?,
+            llm_backend: row.get(19)?,
+            created_at: row.get(20)?,
+            is_tracking_issue: row.get::<_, i64>(21)? != 0,
             suggested_new_categories: {
-                let json: String = row.get(21)?;
+                let json: String = row.get(22)?;
                 serde_json::from_str(&json).unwrap_or_default()
             },
-            is_stale: row.get::<_, i64>(22)? != 0,
+            is_stale: row.get::<_, i64>(23)? != 0,
         };
         Ok((issue, suggestion))
     };
@@ -771,7 +778,7 @@ pub fn get_suggestion_by_issue(
     let number = number as i64;
     let mut stmt = conn.prepare(
         "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json,
-                i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json,
+                i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json, i.is_pr,
                 ts.id, ts.issue_id, ts.suggested_node, ts.suggested_labels,
                 ts.confidence, ts.reasoning, ts.llm_backend, ts.created_at,
                 ts.is_tracking_issue, ts.suggested_new_categories, ts.is_stale,
@@ -785,36 +792,36 @@ pub fn get_suggestion_by_issue(
 
     let mut rows = stmt.query_map(params![repo, number], |row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(15)?;
+        let labels_json: String = row.get(16)?;
         let suggested_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let suggestion = TriageSuggestion {
-            id: row.get(12)?,
-            issue_id: row.get(13)?,
-            suggested_node: row.get(14)?,
+            id: row.get(13)?,
+            issue_id: row.get(14)?,
+            suggested_node: row.get(15)?,
             suggested_labels,
-            confidence: row.get(16)?,
-            reasoning: row.get(17)?,
-            llm_backend: row.get(18)?,
-            created_at: row.get(19)?,
-            is_tracking_issue: row.get::<_, i64>(20)? != 0,
+            confidence: row.get(17)?,
+            reasoning: row.get(18)?,
+            llm_backend: row.get(19)?,
+            created_at: row.get(20)?,
+            is_tracking_issue: row.get::<_, i64>(21)? != 0,
             suggested_new_categories: {
-                let json: String = row.get(21)?;
+                let json: String = row.get(22)?;
                 serde_json::from_str(&json).unwrap_or_default()
             },
-            is_stale: row.get::<_, i64>(22)? != 0,
+            is_stale: row.get::<_, i64>(23)? != 0,
         };
 
-        let decision = if row.get::<_, Option<i64>>(23)?.is_some() {
-            let final_labels_json: String = row.get(27)?;
+        let decision = if row.get::<_, Option<i64>>(24)?.is_some() {
+            let final_labels_json: String = row.get(28)?;
             Some(ReviewDecision {
-                id: row.get(23)?,
-                suggestion_id: row.get(24)?,
-                decision: row.get(25)?,
-                final_node: row.get(26)?,
+                id: row.get(24)?,
+                suggestion_id: row.get(25)?,
+                decision: row.get(26)?,
+                final_node: row.get(27)?,
                 final_labels: serde_json::from_str(&final_labels_json).unwrap_or_default(),
-                decided_at: row.get(28)?,
-                applied_at: row.get(29)?,
-                question: row.get(30)?,
+                decided_at: row.get(29)?,
+                applied_at: row.get(30)?,
+                question: row.get(31)?,
             })
         } else {
             None
@@ -832,7 +839,7 @@ pub fn get_suggestion_by_issue(
 
 pub fn get_unapplied_decisions(conn: &Connection) -> Result<Vec<(StoredIssue, ReviewDecision)>> {
     let mut stmt = conn.prepare(
-        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json,
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json, i.is_pr,
                 rd.id, rd.suggestion_id, rd.decision, rd.final_node, rd.final_labels, rd.decided_at, rd.applied_at, rd.question
          FROM review_decisions rd
          JOIN triage_suggestions ts ON ts.id = rd.suggestion_id
@@ -842,17 +849,17 @@ pub fn get_unapplied_decisions(conn: &Connection) -> Result<Vec<(StoredIssue, Re
     )?;
     let rows = stmt.query_map([], |row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(16)?;
+        let labels_json: String = row.get(17)?;
         let final_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let decision = ReviewDecision {
-            id: row.get(12)?,
-            suggestion_id: row.get(13)?,
-            decision: row.get(14)?,
-            final_node: row.get(15)?,
+            id: row.get(13)?,
+            suggestion_id: row.get(14)?,
+            decision: row.get(15)?,
+            final_node: row.get(16)?,
             final_labels,
-            decided_at: row.get(17)?,
-            applied_at: row.get(18)?,
-            question: row.get(19)?,
+            decided_at: row.get(18)?,
+            applied_at: row.get(19)?,
+            question: row.get(20)?,
         };
         Ok((issue, decision))
     })?;
@@ -877,7 +884,7 @@ pub fn get_pipeline_counts(conn: &Connection) -> Result<PipelineCounts> {
     let untriaged: i64 = conn.query_row(
         "SELECT COUNT(*) FROM issues i
          LEFT JOIN triage_suggestions ts ON ts.issue_id = i.id
-         WHERE ts.id IS NULL AND LOWER(i.state) = 'open'",
+         WHERE ts.id IS NULL AND LOWER(i.state) = 'open' AND i.is_pr = 0",
         [],
         |r| r.get(0),
     )?;
@@ -1112,7 +1119,7 @@ pub fn get_decisions_filtered(
 ) -> Result<Vec<(StoredIssue, ReviewDecision)>> {
     let mut sql = String::from(
         "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json,
-                i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json,
+                i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json, i.is_pr,
                 rd.id, rd.suggestion_id, rd.decision, rd.final_node, rd.final_labels,
                 rd.decided_at, rd.applied_at, rd.question
          FROM review_decisions rd
@@ -1167,17 +1174,17 @@ pub fn get_decisions_filtered(
 
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(16)?;
+        let labels_json: String = row.get(17)?;
         let final_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let decision = ReviewDecision {
-            id: row.get(12)?,
-            suggestion_id: row.get(13)?,
-            decision: row.get(14)?,
-            final_node: row.get(15)?,
+            id: row.get(13)?,
+            suggestion_id: row.get(14)?,
+            decision: row.get(15)?,
+            final_node: row.get(16)?,
             final_labels,
-            decided_at: row.get(17)?,
-            applied_at: row.get(18)?,
-            question: row.get(19)?,
+            decided_at: row.get(18)?,
+            applied_at: row.get(19)?,
+            question: row.get(20)?,
         };
         Ok((issue, decision))
     })?;
@@ -1194,7 +1201,7 @@ pub fn get_decisions_with_original(
     let placeholders: Vec<String> = (1..=statuses.len()).map(|i| format!("?{i}")).collect();
     let mut sql = format!(
         "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json,
-                i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json,
+                i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json, i.is_pr,
                 ts.id, ts.issue_id, ts.suggested_node, ts.suggested_labels,
                 ts.confidence, ts.reasoning, ts.llm_backend, ts.created_at,
                 ts.is_tracking_issue, ts.suggested_new_categories, ts.is_stale,
@@ -1221,35 +1228,35 @@ pub fn get_decisions_with_original(
     let rows = stmt.query_map(params.as_slice(), |row| {
         let issue = row_to_issue(row)?;
 
-        let sug_labels_json: String = row.get(15)?;
+        let sug_labels_json: String = row.get(16)?;
         let sug_labels: Vec<String> = serde_json::from_str(&sug_labels_json).unwrap_or_default();
-        let sug_cats_json: String = row.get(21)?;
+        let sug_cats_json: String = row.get(22)?;
         let sug_cats: Vec<String> = serde_json::from_str(&sug_cats_json).unwrap_or_default();
         let suggestion = TriageSuggestion {
-            id: row.get(12)?,
-            issue_id: row.get(13)?,
-            suggested_node: row.get(14)?,
+            id: row.get(13)?,
+            issue_id: row.get(14)?,
+            suggested_node: row.get(15)?,
             suggested_labels: sug_labels,
-            confidence: row.get(16)?,
-            reasoning: row.get(17)?,
-            llm_backend: row.get(18)?,
-            created_at: row.get(19)?,
-            is_tracking_issue: row.get::<_, i32>(20)? != 0,
+            confidence: row.get(17)?,
+            reasoning: row.get(18)?,
+            llm_backend: row.get(19)?,
+            created_at: row.get(20)?,
+            is_tracking_issue: row.get::<_, i32>(21)? != 0,
             suggested_new_categories: sug_cats,
-            is_stale: row.get::<_, i32>(22)? != 0,
+            is_stale: row.get::<_, i32>(23)? != 0,
         };
 
-        let dec_labels_json: String = row.get(27)?;
+        let dec_labels_json: String = row.get(28)?;
         let dec_labels: Vec<String> = serde_json::from_str(&dec_labels_json).unwrap_or_default();
         let decision = ReviewDecision {
-            id: row.get(23)?,
-            suggestion_id: row.get(24)?,
-            decision: row.get(25)?,
-            final_node: row.get(26)?,
+            id: row.get(24)?,
+            suggestion_id: row.get(25)?,
+            decision: row.get(26)?,
+            final_node: row.get(27)?,
             final_labels: dec_labels,
-            decided_at: row.get(28)?,
-            applied_at: row.get(29)?,
-            question: row.get(30)?,
+            decided_at: row.get(29)?,
+            applied_at: row.get(30)?,
+            question: row.get(31)?,
         };
 
         Ok((issue, suggestion, decision))
@@ -1269,7 +1276,7 @@ pub fn get_suggestions_filtered(
 ) -> Result<Vec<(StoredIssue, TriageSuggestion)>> {
     let mut sql = String::from(
         "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json,
-                i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json,
+                i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json, i.is_pr,
                 ts.id, ts.issue_id, ts.suggested_node, ts.suggested_labels,
                 ts.confidence, ts.reasoning, ts.llm_backend, ts.created_at,
                 ts.is_tracking_issue, ts.suggested_new_categories, ts.is_stale,
@@ -1365,23 +1372,23 @@ pub fn get_suggestions_filtered(
 
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
         let issue = row_to_issue(row)?;
-        let labels_json: String = row.get(15)?;
+        let labels_json: String = row.get(16)?;
         let suggested_labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let suggestion = TriageSuggestion {
-            id: row.get(12)?,
-            issue_id: row.get(13)?,
-            suggested_node: row.get(14)?,
+            id: row.get(13)?,
+            issue_id: row.get(14)?,
+            suggested_node: row.get(15)?,
             suggested_labels,
-            confidence: row.get(16)?,
-            reasoning: row.get(17)?,
-            llm_backend: row.get(18)?,
-            created_at: row.get(19)?,
-            is_tracking_issue: row.get::<_, i64>(20)? != 0,
+            confidence: row.get(17)?,
+            reasoning: row.get(18)?,
+            llm_backend: row.get(19)?,
+            created_at: row.get(20)?,
+            is_tracking_issue: row.get::<_, i64>(21)? != 0,
             suggested_new_categories: {
-                let json: String = row.get(21)?;
+                let json: String = row.get(22)?;
                 serde_json::from_str(&json).unwrap_or_default()
             },
-            is_stale: row.get::<_, i64>(22)? != 0,
+            is_stale: row.get::<_, i64>(23)? != 0,
         };
         Ok((issue, suggestion))
     })?;
@@ -1418,6 +1425,7 @@ mod tests {
             sub_issues_count: 0,
             author: String::new(),
             assignees: vec![],
+            is_pr: false,
         }
     }
 
@@ -1520,6 +1528,25 @@ mod tests {
         let untriaged_repo = get_untriaged_issues_by_repo(&conn, "owner/repo").unwrap();
         assert_eq!(untriaged_repo.len(), 1);
         assert_eq!(untriaged_repo[0].number, 1);
+    }
+
+    #[test]
+    fn untriaged_excludes_prs() {
+        let conn = memory_db();
+        upsert_issue(&conn, &sample_issue("owner/repo", 1)).unwrap();
+
+        let mut pr = sample_issue("owner/repo", 2);
+        pr.is_pr = true;
+        upsert_issue(&conn, &pr).unwrap();
+
+        let untriaged = get_untriaged_issues(&conn).unwrap();
+        assert_eq!(untriaged.len(), 1);
+        assert_eq!(untriaged[0].number, 1);
+
+        // PR is stored in DB but excluded from untriaged
+        let all = get_issues_by_repo(&conn, "owner/repo").unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all[1].is_pr);
     }
 
     #[test]

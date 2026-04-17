@@ -11,10 +11,11 @@ import { sortIssues, formatOverdue, resolveTimeline, type RenderedRow } from "./
 
 const INITIAL_ISSUE_LIMIT = 7;
 
-function issueUrl(ref: string): string {
+function issueUrl(ref: string, isPr: boolean): string {
   const match = ref.match(/^(.+?)\/(.+?)#(\d+)$/);
   if (!match) return "#";
-  return `https://github.com/${match[1]}/${match[2]}/issues/${match[3]}`;
+  const type = isPr ? "pull" : "issues";
+  return `https://github.com/${match[1]}/${match[2]}/${type}/${match[3]}`;
 }
 
 /**
@@ -80,26 +81,29 @@ function renderSingleIssueRow(
   const height = getRowHeight("issue");
 
   // --- HTML label ---
+  const isPr = issue.is_pr;
+
   const row = document.createElement("div");
-  row.className = `chart-row issue`;
+  row.className = `chart-row issue${isPr ? " pr" : ""}`;
   row.style.height = `${height}px`;
   row.dataset.issueRef = issue.issue_ref;
 
   const label = document.createElement("span");
-  label.className = `chart-label issue-title${isOverdue ? " overdue" : ""}`;
+  label.className = `chart-label issue-title${isOverdue ? " overdue" : ""}${isPr ? " pr" : ""}`;
   label.textContent = issue.title || issue.issue_ref;
   label.title = `${issue.title || ""} (${issue.issue_ref})`;
   row.appendChild(label);
 
   // Right-side label
   const meta = document.createElement("span");
-  meta.className = "chart-badge issues";
+  meta.className = `chart-badge issues${isPr ? " pr" : ""}`;
   if (isOverdue && parentNode.end) {
     meta.textContent = formatOverdue(issue.target_date!, parentNode.end);
     meta.style.color = "#f85149";
   } else {
     const refMatch = issue.issue_ref.match(/#(\d+)$/);
-    meta.textContent = refMatch ? `#${refMatch[1]}` : issue.issue_ref;
+    const num = refMatch ? refMatch[1] : issue.issue_ref;
+    meta.textContent = isPr ? `⤴ #${num}` : `#${num}`;
   }
   row.appendChild(meta);
 
@@ -139,7 +143,7 @@ function renderSingleIssueRow(
     rect.setAttribute("width", `${barW}`);
     rect.setAttribute("height", "6");
     rect.setAttribute("rx", "2");
-    rect.setAttribute("fill", "#58a6ff");
+    rect.setAttribute("fill", isPr ? "#a371f7" : "#58a6ff");
     if (isAssumed) {
       // Dimmed dashed style for assumed-from-parent timeline
       rect.setAttribute("opacity", "0.3");

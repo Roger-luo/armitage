@@ -213,10 +213,11 @@ function showNodePanel(node: ChartNode): void {
     html += `<div class="panel-section"><h3>Issues (${node.issues.length})</h3>`;
     html += `<ul class="panel-issues">`;
     for (const issue of node.issues) {
-      const url = issueUrl(issue.issue_ref);
+      const url = issueUrl(issue.issue_ref, issue.is_pr);
+      const prBadge = issue.is_pr ? `<span class="panel-pr-badge">PR</span>` : "";
       const label = issue.title
-        ? `${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>`
-        : escapeHtml(issue.issue_ref);
+        ? `${prBadge}${escapeHtml(issue.title)} <span class="issue-ref">${escapeHtml(issue.issue_ref)}</span>`
+        : `${prBadge}${escapeHtml(issue.issue_ref)}`;
       html += `<li><a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${label}</a></li>`;
     }
     html += `</ul></div>`;
@@ -228,7 +229,7 @@ function showNodePanel(node: ChartNode): void {
 
 function showIssuePanel(issue: ChartIssue, parentNode: ChartNode): void {
   selectedNode = null;
-  const url = issueUrl(issue.issue_ref);
+  const url = issueUrl(issue.issue_ref, issue.is_pr);
   const isOverdue = issue.target_date && parentNode.end && issue.target_date > parentNode.end;
 
   let html = "";

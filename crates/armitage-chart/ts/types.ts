@@ -9,6 +9,7 @@ export interface ChartIssue {
   labels: string[];
   author: string | null;
   assignees: string[];
+  is_pr: boolean;
 }
 
 /** Mirrors the Rust ChartMilestone struct. */
