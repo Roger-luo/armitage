@@ -45,33 +45,52 @@ function findNode(nodes: ChartNode[], path: string): ChartNode | null {
   return null;
 }
 
-function collectOkrs(nodes: ChartNode[]): ChartMilestone[] {
+/**
+ * Collect milestones relevant to the current view.
+ *
+ * Scoping rules:
+ * - Top-level (currentPath = ""): all milestones from the entire tree.
+ * - Drilled into node P: milestones from P's subtree (P itself + all descendants)
+ *   PLUS milestones from every ancestor of P (a milestone on a non-leaf node
+ *   propagates to all its children, so ancestors apply to the viewed children).
+ *   Milestones from sibling branches are excluded.
+ *
+ * `typeFilter`: "okr" | "checkpoint" | "all"
+ */
+function collectMilestonesForView(typeFilter: "okr" | "checkpoint" | "all"): ChartMilestone[] {
   const seen = new Set<string>();
   const result: ChartMilestone[] = [];
-  function walk(ns: ChartNode[]) {
-    for (const n of ns) {
-      for (const m of n.milestones) {
-        if (m.milestone_type === "okr") {
-          const key = `${m.name}|${m.date}`;
-          if (!seen.has(key)) { seen.add(key); result.push(m); }
-        }
-      }
-      walk(n.children);
-    }
-  }
-  walk(nodes);
-  return result;
-}
 
-function allCheckpoints(node: ChartNode): ChartMilestone[] {
-  const result: ChartMilestone[] = [];
-  function walk(n: ChartNode) {
-    for (const m of n.milestones) {
-      if (m.milestone_type !== "okr") result.push(m);
+  function add(m: ChartMilestone) {
+    const isOkr = m.milestone_type === "okr";
+    if (typeFilter === "all" || (typeFilter === "okr" && isOkr) || (typeFilter === "checkpoint" && !isOkr)) {
+      const key = `${m.name}|${m.date}`;
+      if (!seen.has(key)) { seen.add(key); result.push(m); }
     }
-    for (const c of n.children) walk(c);
   }
-  walk(node);
+
+  function walkSubtree(n: ChartNode) {
+    n.milestones.forEach(add);
+    n.children.forEach(walkSubtree);
+  }
+
+  if (currentPath === "") {
+    data.nodes.forEach(walkSubtree);
+  } else {
+    // Subtree rooted at currentPath
+    const node = findNode(data.nodes, currentPath);
+    if (node) walkSubtree(node);
+
+    // Ancestor milestones: a milestone on a non-leaf propagates to all descendants.
+    // The ancestors of "a/b/c" are "a" and "a/b".
+    const parts = currentPath.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const ancestorPath = parts.slice(0, i).join("/");
+      const ancestor = findNode(data.nodes, ancestorPath);
+      if (ancestor) ancestor.milestones.forEach(add);
+    }
+  }
+
   return result;
 }
 
@@ -384,18 +403,10 @@ function renderChart(): void {
   renderGridLines(scaleState, layout, totalHeight);
   renderTodayLine(scaleState, layout, totalHeight);
 
-  // Milestone lines
-  const okrs = collectOkrs(data.nodes);
-  renderMilestoneLines(scaleState, layout, totalHeight, okrs);
-
-  if (currentPath !== "") {
-    const parentNode = findNode(data.nodes, currentPath);
-    if (parentNode) {
-      const checkpoints = allCheckpoints(parentNode);
-      const filtered = checkpoints.filter((m) => !okrs.some((o) => o.name === m.name && o.date === m.date));
-      renderMilestoneLines(scaleState, layout, totalHeight, filtered);
-    }
-  }
+  // Milestone lines — scoped to the current view (see collectMilestonesForView).
+  // OKRs and checkpoints are rendered in one pass; deduplication is inside the collector.
+  const milestones = collectMilestonesForView("all");
+  renderMilestoneLines(scaleState, layout, totalHeight, milestones);
 }
 
 function onZoom(): void {

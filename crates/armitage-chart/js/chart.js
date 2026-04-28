@@ -526,35 +526,35 @@
     }
     return null;
   }
-  function collectOkrs(nodes) {
+  function collectMilestonesForView(typeFilter) {
     const seen = /* @__PURE__ */ new Set();
     const result = [];
-    function walk(ns) {
-      for (const n of ns) {
-        for (const m of n.milestones) {
-          if (m.milestone_type === "okr") {
-            const key = `${m.name}|${m.date}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              result.push(m);
-            }
-          }
+    function add(m) {
+      const isOkr = m.milestone_type === "okr";
+      if (typeFilter === "all" || typeFilter === "okr" && isOkr || typeFilter === "checkpoint" && !isOkr) {
+        const key = `${m.name}|${m.date}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push(m);
         }
-        walk(n.children);
       }
     }
-    walk(nodes);
-    return result;
-  }
-  function allCheckpoints(node) {
-    const result = [];
-    function walk(n) {
-      for (const m of n.milestones) {
-        if (m.milestone_type !== "okr") result.push(m);
-      }
-      for (const c of n.children) walk(c);
+    function walkSubtree(n) {
+      n.milestones.forEach(add);
+      n.children.forEach(walkSubtree);
     }
-    walk(node);
+    if (currentPath === "") {
+      data.nodes.forEach(walkSubtree);
+    } else {
+      const node = findNode(data.nodes, currentPath);
+      if (node) walkSubtree(node);
+      const parts = currentPath.split("/");
+      for (let i = 1; i < parts.length; i++) {
+        const ancestorPath = parts.slice(0, i).join("/");
+        const ancestor = findNode(data.nodes, ancestorPath);
+        if (ancestor) ancestor.milestones.forEach(add);
+      }
+    }
     return result;
   }
   function computeTimeRange(nodes) {
@@ -791,16 +791,8 @@
     renderAxis(scaleState, layout, totalHeight);
     renderGridLines(scaleState, layout, totalHeight);
     renderTodayLine(scaleState, layout, totalHeight);
-    const okrs = collectOkrs(data.nodes);
-    renderMilestoneLines(scaleState, layout, totalHeight, okrs);
-    if (currentPath !== "") {
-      const parentNode = findNode(data.nodes, currentPath);
-      if (parentNode) {
-        const checkpoints = allCheckpoints(parentNode);
-        const filtered = checkpoints.filter((m) => !okrs.some((o) => o.name === m.name && o.date === m.date));
-        renderMilestoneLines(scaleState, layout, totalHeight, filtered);
-      }
-    }
+    const milestones = collectMilestonesForView("all");
+    renderMilestoneLines(scaleState, layout, totalHeight, milestones);
   }
   function onZoom() {
     renderChart();
