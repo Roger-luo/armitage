@@ -43,7 +43,7 @@ nesting). Each node represents an initiative, project, or task.
 - `labels` — labels to apply to issues classified under this node
 - `owners` — GitHub usernames responsible for this node (references `team.toml`)
 - `team` — functional team that owns this node (e.g. `circuit`, `flair`, `shuttle`, `kirin`)
-- `github_issue` — linked issue in `owner/repo#number` format
+- `track` — tracking issue in `owner/repo#number` format; also forces that issue to appear under this node in `okr show` without going through the full triage pipeline
 - `timeline` — `start` and `end` dates
 
 **Repo `@branch` convention** — nodes can declare which branch of a repo they cover:
@@ -129,7 +129,7 @@ armitage project sync [--dry-run]   # add nodes to board and set date/status fie
 armitage project clear-cache        # force re-fetch of project field metadata
 ```
 
-Syncs every node that has both `github_issue` and `[timeline]` to a configured GitHub Projects v2
+Syncs every node that has both `track` and `[timeline]` to a configured GitHub Projects v2
 board: adds the issue if not already present, then sets the start date, target date, and status
 fields based on the node's timeline.
 
@@ -298,6 +298,10 @@ armitage okr check [--period <YYYY-Qn|YYYY|current>] [--goal <slug>] [--team <t>
 - **check** — flag nodes with no key results, unowned nodes, and issues whose target dates fall outside the node's timeline.
 - `--goal <slug>` — filter to nodes that belong to a named cross-cutting goal from `goals.toml`.
 
+**Node timeline is required.** A node must have a `[timeline]` section with a `start` and `end` that overlaps the OKR period to appear in `okr show`. Nodes without a timeline are silently excluded. If a node is missing from the OKR output, add a timeline: `armitage node set <path> --timeline-start YYYY-MM-DD --timeline-end YYYY-MM-DD`.
+
+**`track` field as OKR shortcut.** Setting `track = "owner/repo#N"` in a node's `node.toml` forces that issue to appear under the node in `okr show` immediately — without running `triage fetch`/`classify`/`decide`/`apply`. Useful for tracking issues that represent the node itself on a GitHub project board.
+
 **How issues appear in OKR:** The OKR reads exclusively from the triage DB — `issues.toml` files are NOT used. To make a newly-created or re-classified issue appear:
 1. `triage fetch --repo <owner/repo>` — pull the issue into the DB
 2. `triage classify --repo <owner/repo> --limit N` — get an LLM node assignment
@@ -342,7 +346,7 @@ armitage chart [--output PATH] [--no-open] [--offline] [--watch|-w]
 **Chart visualization:**
 - Nodes render as horizontal bars with nested sub-bars for children and issues
 - Child node sub-bars: solid colored by status (blue=active, gray=completed, amber=paused)
-- Issue sub-bars (from triage DB + project board dates):
+- Issue sub-bars (from issues.toml + project board dates):
   - **Green pills**: on-track (target date within node timeline)
   - **Green→purple split pills**: overflowing (transitions at the violated deadline)
   - **Gray dashed pills**: no project board dates assigned (spans full width)
