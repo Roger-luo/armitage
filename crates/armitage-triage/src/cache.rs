@@ -50,7 +50,7 @@ pub fn build_repo_cache(conn: &Connection, repo: &str) -> Result<RepoCache> {
                 ts.suggested_node, ts.confidence
          FROM issues i
          LEFT JOIN triage_suggestions ts ON ts.issue_id = i.id
-         WHERE i.repo = ?1 AND LOWER(i.state) = 'open'
+         WHERE i.repo = ?1 AND LOWER(i.state) = 'open' AND i.is_pr = 0
          ORDER BY i.number",
     )?;
 

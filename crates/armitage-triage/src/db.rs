@@ -670,7 +670,7 @@ pub fn get_pending_suggestions_filtered(
          FROM triage_suggestions ts
          JOIN issues i ON i.id = ts.issue_id
          LEFT JOIN review_decisions rd ON rd.suggestion_id = ts.id
-         WHERE rd.id IS NULL",
+         WHERE rd.id IS NULL AND i.is_pr = 0",
     );
     if min_confidence.is_some() {
         sql.push_str(" AND COALESCE(ts.confidence, 0.0) >= ?1");
@@ -1006,7 +1006,10 @@ pub fn mark_applied(conn: &Connection, decision_id: i64, applied_at: &str) -> Re
 // ---------------------------------------------------------------------------
 
 pub fn get_pipeline_counts(conn: &Connection) -> Result<PipelineCounts> {
-    let total_fetched: i64 = conn.query_row("SELECT COUNT(*) FROM issues", [], |r| r.get(0))?;
+    let total_fetched: i64 =
+        conn.query_row("SELECT COUNT(*) FROM issues WHERE is_pr = 0", [], |r| {
+            r.get(0)
+        })?;
     let untriaged: i64 = conn.query_row(
         "SELECT COUNT(*) FROM issues i
          LEFT JOIN triage_suggestions ts ON ts.issue_id = i.id
@@ -1016,8 +1019,9 @@ pub fn get_pipeline_counts(conn: &Connection) -> Result<PipelineCounts> {
     )?;
     let pending_review: i64 = conn.query_row(
         "SELECT COUNT(*) FROM triage_suggestions ts
+         JOIN issues i ON i.id = ts.issue_id
          LEFT JOIN review_decisions rd ON rd.suggestion_id = ts.id
-         WHERE rd.id IS NULL",
+         WHERE rd.id IS NULL AND i.is_pr = 0",
         [],
         |r| r.get(0),
     )?;
@@ -1417,7 +1421,7 @@ pub fn get_suggestions_filtered(
          FROM triage_suggestions ts
          JOIN issues i ON i.id = ts.issue_id
          LEFT JOIN review_decisions rd ON rd.suggestion_id = ts.id
-         WHERE 1=1",
+         WHERE i.is_pr = 0",
     );
 
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
