@@ -275,9 +275,9 @@ pub fn run_show(
             let subtree_issues = issues_for_node(&e.path);
 
             // Collect issues relevant to this period.
-            // An issue is included when its target_date falls in the period.
-            // Issues without a target_date are included when they are still open
-            // (they represent ongoing work with no scheduled deadline).
+            // Open issues always appear — a project can span multiple OKR periods and
+            // all open work is relevant context regardless of when it is due.
+            // Closed issues appear only if they completed within this period.
             let period_issues: Vec<&&armitage_triage::db::IssueWithProjectData> = subtree_issues
                 .iter()
                 .filter(|i| {
@@ -287,12 +287,15 @@ pub fn run_show(
                     {
                         return false;
                     }
-                    match i.target_date.as_deref() {
-                        Some(d) => NaiveDate::parse_from_str(d, "%Y-%m-%d")
-                            .ok()
-                            .is_some_and(|d| period.contains_date(d)),
-                        None => i.issue.state.eq_ignore_ascii_case("open"),
+                    let is_open = i.issue.state.eq_ignore_ascii_case("open");
+                    if is_open {
+                        return true;
                     }
+                    // Closed: only include if it completed within this period.
+                    i.target_date
+                        .as_deref()
+                        .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                        .is_some_and(|d| period.contains_date(d))
                 })
                 .collect();
 
