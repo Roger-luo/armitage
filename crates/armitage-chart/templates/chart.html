@@ -37,6 +37,11 @@
       --overflow-border: rgba(239, 68, 68, 0.3);
       --row-hover: rgba(88, 166, 255, 0.08);
       --row-highlight: rgba(88, 166, 255, 0.12);
+      /* Milestone markers — muted periwinkle (OKR) and sage (checkpoint) */
+      --milestone-okr: #7aa2d4;
+      --milestone-okr-dim: rgba(122, 162, 212, 0.28);
+      --milestone-cp: #6ab499;
+      --milestone-cp-dim: rgba(106, 180, 153, 0.28);
     }
     [data-theme="light"] {
       --bg: #f6f8fa;
@@ -62,6 +67,11 @@
       --overflow-border: rgba(239, 68, 68, 0.25);
       --row-hover: rgba(9, 105, 218, 0.1);
       --row-highlight: rgba(9, 105, 218, 0.15);
+      /* Milestone markers — deeper tones for light background contrast */
+      --milestone-okr: #2c6aad;
+      --milestone-okr-dim: rgba(44, 106, 173, 0.22);
+      --milestone-cp: #2d8a66;
+      --milestone-cp-dim: rgba(45, 138, 102, 0.22);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -403,15 +413,26 @@
       z-index: 200;
       background: var(--bg-surface);
       border: 1px solid var(--border);
+      border-left: 3px solid transparent;
       border-radius: 6px;
-      padding: 8px 12px;
+      padding: 7px 12px 7px 10px;
       font-size: 12px;
       color: var(--text-secondary);
       pointer-events: none;
-      max-width: 260px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+      max-width: 280px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.22);
       line-height: 1.5;
       display: none;
+    }
+    #milestone-tooltip .ms-type-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.7;
+      margin-left: 6px;
+      vertical-align: middle;
     }
   </style>
 </head>

@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // ts/layout.ts
+  // crates/armitage-chart/ts/layout.ts
   var NODE_ROW_HEIGHT = 48;
   var ISSUE_ROW_HEIGHT = 28;
   var SEPARATOR_HEIGHT = 12;
@@ -38,7 +38,7 @@
     layout2.barsGroup.setAttribute("transform", `translate(0, ${barsTop})`);
   }
 
-  // ts/scale.ts
+  // crates/armitage-chart/ts/scale.ts
   function createScale(domain, rangeWidth) {
     const baseScale = d3.scaleTime().domain(domain).range([0, rangeWidth]);
     return {
@@ -84,7 +84,7 @@
     return state.currentScale(parseDate(dateStr));
   }
 
-  // ts/render-axis.ts
+  // crates/armitage-chart/ts/render-axis.ts
   function renderAxis(state, layout2, totalHeight) {
     const axisHeight = getAxisHeight();
     layout2.axisGroup.innerHTML = "";
@@ -139,16 +139,15 @@
   function renderMilestoneLines(state, layout2, totalHeight, milestones, barsTop) {
     layout2.markersGroup.querySelectorAll(".milestone-line").forEach((el) => el.remove());
     const axisHeight = getAxisHeight();
-    const diamondSize = 5;
-    const fontSize = 9;
-    const maxChars = 14;
+    const diamondSize = 6;
+    const maxChars = 13;
     const tooltip = document.getElementById("milestone-tooltip");
     for (const m of milestones) {
       const x = state.currentScale(parseDate(m.date));
       const isOkr = m.milestone_type === "okr";
-      const colorDim = isOkr ? "rgba(167, 139, 250, 0.5)" : "rgba(245, 158, 11, 0.5)";
-      const colorBright = isOkr ? "rgba(167, 139, 250, 0.9)" : "rgba(245, 158, 11, 0.9)";
-      const labelColor = isOkr ? "#a78bfa" : "#f59e0b";
+      const colorDimVar = isOkr ? "var(--milestone-okr-dim)" : "var(--milestone-cp-dim)";
+      const colorVar = isOkr ? "var(--milestone-okr)" : "var(--milestone-cp)";
+      const typeLabel = isOkr ? "OKR" : "Checkpoint";
       const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
       g.classList.add("milestone-line");
       g.style.cursor = "pointer";
@@ -157,18 +156,18 @@
       line.setAttribute("y1", `${barsTop}`);
       line.setAttribute("x2", `${x}`);
       line.setAttribute("y2", `${totalHeight}`);
-      line.setAttribute("stroke", colorDim);
-      line.setAttribute("stroke-width", "1");
-      line.setAttribute("stroke-dasharray", "4,3");
+      line.style.stroke = colorDimVar;
+      line.style.strokeWidth = "0.8";
+      line.style.strokeDasharray = "4,3";
       g.appendChild(line);
-      const diamond = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
       const d = diamondSize;
+      const diamond = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
       diamond.setAttribute(
         "points",
         `${x},${axisHeight - d} ${x + d},${axisHeight} ${x},${axisHeight + d} ${x - d},${axisHeight}`
       );
-      diamond.setAttribute("fill", labelColor);
-      diamond.setAttribute("opacity", "0.85");
+      diamond.style.fill = colorVar;
+      diamond.style.opacity = "0.7";
       g.appendChild(diamond);
       const hitZoneWidth = 32;
       const hitRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -186,19 +185,27 @@
       text.setAttribute("y", `${barsTop}`);
       text.setAttribute("text-anchor", "end");
       text.setAttribute("dominant-baseline", "auto");
-      text.setAttribute("fill", labelColor);
-      text.setAttribute("font-size", `${fontSize}px`);
+      text.style.fill = colorVar;
+      text.style.stroke = "var(--bg)";
+      text.style.strokeWidth = "2.5";
+      text.style.paintOrder = "stroke fill";
+      text.style.fontSize = "10px";
+      text.style.letterSpacing = "0.01em";
       text.textContent = label;
       g.appendChild(text);
       g.addEventListener("mouseover", (evt) => {
-        line.setAttribute("stroke", colorBright);
-        line.setAttribute("stroke-width", "2");
-        diamond.setAttribute("opacity", "1");
-        text.setAttribute("font-weight", "bold");
+        line.style.stroke = colorVar;
+        line.style.strokeWidth = "1.5";
+        diamond.style.opacity = "1";
+        text.style.fontWeight = "600";
         if (tooltip) {
-          let html = `<strong>${m.name}</strong>&nbsp;<span style="color:var(--text-muted);font-size:11px">${m.date}</span>`;
-          if (m.description) html += `<br><span style="color:var(--text-secondary)">${m.description}</span>`;
+          const typeBadgeColor = isOkr ? "var(--milestone-okr)" : "var(--milestone-cp)";
+          let html = `<strong style="color:var(--text)">${m.name}</strong><span class="ms-type-badge" style="color:${typeBadgeColor}">${typeLabel}</span><br><span style="color:var(--text-muted);font-size:11px">${m.date}</span>`;
+          if (m.description) {
+            html += `<div style="margin-top:5px;color:var(--text-secondary);font-size:11px;line-height:1.45">${m.description}</div>`;
+          }
           tooltip.innerHTML = html;
+          tooltip.style.borderLeftColor = isOkr ? "var(--milestone-okr)" : "var(--milestone-cp)";
           tooltip.style.display = "block";
           const me = evt;
           tooltip.style.left = `${me.clientX + 14}px`;
@@ -213,10 +220,10 @@
         }
       });
       g.addEventListener("mouseout", () => {
-        line.setAttribute("stroke", colorDim);
-        line.setAttribute("stroke-width", "1");
-        diamond.setAttribute("opacity", "0.85");
-        text.removeAttribute("font-weight");
+        line.style.stroke = colorDimVar;
+        line.style.strokeWidth = "0.8";
+        diamond.style.opacity = "0.7";
+        text.style.fontWeight = "";
         if (tooltip) tooltip.style.display = "none";
       });
       g.addEventListener("click", (evt) => {
@@ -230,7 +237,7 @@
     }
   }
 
-  // ts/render-nodes.ts
+  // crates/armitage-chart/ts/render-nodes.ts
   function resolveTimeline(node, ancestors) {
     if (node.start && node.end) return { start: node.start, end: node.end };
     if (node.eff_start && node.eff_end) return { start: node.eff_start, end: node.eff_end };
@@ -387,7 +394,7 @@
     return `+${diffWeeks} wks`;
   }
 
-  // ts/render-issues.ts
+  // crates/armitage-chart/ts/render-issues.ts
   var INITIAL_ISSUE_LIMIT = 7;
   function issueUrl(ref, isPr) {
     const match = ref.match(/^(.+?)\/(.+?)#(\d+)$/);
@@ -553,7 +560,7 @@
     };
   }
 
-  // ts/chart.ts
+  // crates/armitage-chart/ts/chart.ts
   var data = window.__CHART_DATA__;
   var currentPath = "";
   var useGlobalRange = false;
