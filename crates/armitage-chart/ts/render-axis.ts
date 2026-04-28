@@ -105,9 +105,15 @@ export function renderMilestoneLines(
   totalHeight: number,
   milestones: ChartMilestone[],
 ): void {
-  // Remove previous milestone lines
   layout.markersGroup.querySelectorAll(".milestone-line").forEach((el) => el.remove());
   const axisHeight = getAxisHeight();
+
+  // Small diamond marker height above axis
+  const diamondSize = 5;
+  // Labels run vertically downward along the milestone line, starting just below the axis.
+  // This means arbitrarily close milestones never overlap — each label lives in its own column.
+  const labelOffsetFromAxis = 8;
+  const fontSize = 10;
 
   for (const m of milestones) {
     const x = state.currentScale(parseDate(m.date));
@@ -115,6 +121,7 @@ export function renderMilestoneLines(
     const color = isOkr ? "rgba(167, 139, 250, 0.5)" : "rgba(245, 158, 11, 0.5)";
     const labelColor = isOkr ? "#a78bfa" : "#f59e0b";
 
+    // Dashed vertical line through the chart body
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.classList.add("milestone-line");
     line.setAttribute("x1", `${x}`);
@@ -126,14 +133,35 @@ export function renderMilestoneLines(
     line.setAttribute("stroke-dasharray", "4,3");
     layout.markersGroup.appendChild(line);
 
+    // Small diamond on the axis line to mark the milestone date
+    const diamond = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    diamond.classList.add("milestone-line");
+    const d = diamondSize;
+    diamond.setAttribute(
+      "points",
+      `${x},${axisHeight - d} ${x + d},${axisHeight} ${x},${axisHeight + d} ${x - d},${axisHeight}`,
+    );
+    diamond.setAttribute("fill", labelColor);
+    diamond.setAttribute("opacity", "0.85");
+    layout.markersGroup.appendChild(diamond);
+
+    // Label rotated 90° CW (reads top-to-bottom) running downward along the milestone line.
+    // After rotate(90, x, y): local +x → global +y (down), local -y (above baseline) → global +x (right).
+    // So with text-anchor:start and default baseline, characters sit to the RIGHT of x in global space.
+    // dx shifts the text start downward (local +x = global +y), creating a gap below the axis.
+    const labelY = axisHeight + labelOffsetFromAxis;
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
     text.classList.add("milestone-line");
+    text.setAttribute("transform", `rotate(90, ${x}, ${labelY})`);
     text.setAttribute("x", `${x}`);
-    text.setAttribute("y", `${axisHeight - 4}`);
-    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("y", `${labelY}`);
+    text.setAttribute("text-anchor", "start");
     text.setAttribute("fill", labelColor);
-    text.setAttribute("font-size", "10px");
-    text.textContent = m.name;
+    text.setAttribute("font-size", `${fontSize}px`);
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `${m.name} (${m.date})`;
+    text.appendChild(title);
+    text.appendChild(document.createTextNode(m.name));
     layout.markersGroup.appendChild(text);
   }
 }
