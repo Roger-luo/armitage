@@ -85,24 +85,22 @@
   }
 
   // crates/armitage-chart/ts/render-axis.ts
-  function renderAxis(state, layout2, totalHeight) {
-    const axisHeight = getAxisHeight();
+  function renderAxis(state, layout2, totalHeight, barsTop) {
     layout2.axisGroup.innerHTML = "";
     const axis = d3.axisTop(state.currentScale).tickSizeOuter(0).tickPadding(8);
-    const g = d3.select(layout2.axisGroup).attr("transform", `translate(0, ${axisHeight})`).call(axis);
+    const g = d3.select(layout2.axisGroup).attr("transform", `translate(0, ${barsTop})`).call(axis);
     g.selectAll("text").attr("fill", "var(--chart-axis)").attr("font-size", "11px");
     g.selectAll("line").attr("stroke", "var(--chart-axis-line)");
     g.select(".domain").attr("stroke", "var(--chart-axis-line)");
   }
-  function renderGridLines(state, layout2, totalHeight) {
+  function renderGridLines(state, layout2, totalHeight, barsTop) {
     layout2.gridGroup.innerHTML = "";
     const ticks = state.currentScale.ticks();
-    const axisHeight = getAxisHeight();
     for (const tick of ticks) {
       const x = state.currentScale(tick);
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("x1", `${x}`);
-      line.setAttribute("y1", `${axisHeight}`);
+      line.setAttribute("y1", `${barsTop}`);
       line.setAttribute("x2", `${x}`);
       line.setAttribute("y2", `${totalHeight}`);
       line.setAttribute("stroke", "var(--chart-grid)");
@@ -111,7 +109,7 @@
       layout2.gridGroup.appendChild(line);
     }
   }
-  function renderTodayLine(state, layout2, totalHeight) {
+  function renderTodayLine(state, layout2, totalHeight, barsTop) {
     layout2.markersGroup.querySelectorAll(".today-line").forEach((el) => el.remove());
     const today = /* @__PURE__ */ new Date();
     today.setHours(0, 0, 0, 0);
@@ -120,7 +118,7 @@
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.classList.add("today-line");
     line.setAttribute("x1", `${x}`);
-    line.setAttribute("y1", `${axisHeight}`);
+    line.setAttribute("y1", `${barsTop}`);
     line.setAttribute("x2", `${x}`);
     line.setAttribute("y2", `${totalHeight}`);
     line.setAttribute("stroke", "rgba(239, 68, 68, 0.7)");
@@ -129,7 +127,8 @@
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
     text.classList.add("today-line");
     text.setAttribute("x", `${x}`);
-    text.setAttribute("y", `${axisHeight - 4}`);
+    const textY = barsTop > axisHeight ? barsTop - axisHeight + 4 : barsTop - 4;
+    text.setAttribute("y", `${textY}`);
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("fill", "#ef4444");
     text.setAttribute("font-size", "10px");
@@ -140,7 +139,8 @@
     layout2.markersGroup.querySelectorAll(".milestone-line").forEach((el) => el.remove());
     const axisHeight = getAxisHeight();
     const diamondSize = 6;
-    const maxChars = 13;
+    const zoneHeight = barsTop - axisHeight;
+    const maxChars = Math.max(6, Math.floor(zoneHeight / 7) - 1);
     const tooltip = document.getElementById("milestone-tooltip");
     for (const m of milestones) {
       const x = state.currentScale(parseDate(m.date));
@@ -164,7 +164,7 @@
       const diamond = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
       diamond.setAttribute(
         "points",
-        `${x},${axisHeight - d} ${x + d},${axisHeight} ${x},${axisHeight + d} ${x - d},${axisHeight}`
+        `${x},${barsTop - d} ${x + d},${barsTop} ${x},${barsTop + d} ${x - d},${barsTop}`
       );
       diamond.style.fill = colorVar;
       diamond.style.opacity = "0.7";
@@ -172,17 +172,18 @@
       const hitZoneWidth = 32;
       const hitRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
       hitRect.setAttribute("x", `${x - hitZoneWidth / 2}`);
-      hitRect.setAttribute("y", `${axisHeight}`);
+      hitRect.setAttribute("y", `0`);
       hitRect.setAttribute("width", `${hitZoneWidth}`);
-      hitRect.setAttribute("height", `${barsTop - axisHeight}`);
+      hitRect.setAttribute("height", `${barsTop}`);
       hitRect.setAttribute("fill", "transparent");
       hitRect.setAttribute("pointer-events", "all");
       g.appendChild(hitRect);
+      const labelAnchorY = barsTop - axisHeight;
       const label = m.name.length > maxChars ? m.name.slice(0, maxChars - 1) + "\u2026" : m.name;
       const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      text.setAttribute("transform", `rotate(-45, ${x}, ${barsTop})`);
+      text.setAttribute("transform", `rotate(-45, ${x}, ${labelAnchorY})`);
       text.setAttribute("x", `${x}`);
-      text.setAttribute("y", `${barsTop}`);
+      text.setAttribute("y", `${labelAnchorY}`);
       text.setAttribute("text-anchor", "end");
       text.setAttribute("dominant-baseline", "auto");
       text.style.fill = colorVar;
@@ -861,9 +862,9 @@
     syncSvgHeight(layout, yOffset, barsTop);
     layout.labelsEl.style.paddingTop = `${barsTop}px`;
     const totalHeight = yOffset + barsTop;
-    renderAxis(scaleState, layout, totalHeight);
-    renderGridLines(scaleState, layout, totalHeight);
-    renderTodayLine(scaleState, layout, totalHeight);
+    renderAxis(scaleState, layout, totalHeight, barsTop);
+    renderGridLines(scaleState, layout, totalHeight, barsTop);
+    renderTodayLine(scaleState, layout, totalHeight, barsTop);
     renderMilestoneLines(scaleState, layout, totalHeight, milestones, barsTop);
   }
   function onZoom() {

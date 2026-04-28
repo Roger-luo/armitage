@@ -418,9 +418,9 @@ function renderChart(): void {
   layout.labelsEl.style.paddingTop = `${barsTop}px`;
 
   const totalHeight = yOffset + barsTop;
-  renderAxis(scaleState, layout, totalHeight);
-  renderGridLines(scaleState, layout, totalHeight);
-  renderTodayLine(scaleState, layout, totalHeight);
+  renderAxis(scaleState, layout, totalHeight, barsTop);
+  renderGridLines(scaleState, layout, totalHeight, barsTop);
+  renderTodayLine(scaleState, layout, totalHeight, barsTop);
   renderMilestoneLines(scaleState, layout, totalHeight, milestones, barsTop);
 }
 
