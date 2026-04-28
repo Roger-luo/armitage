@@ -1,6 +1,7 @@
 pub mod chart;
 pub mod complete;
 pub mod config;
+pub mod goal;
 pub mod init;
 pub mod milestone;
 pub mod node;
@@ -85,6 +86,11 @@ enum Commands {
     Okr {
         #[command(subcommand)]
         command: OkrCommands,
+    },
+    /// Manage cross-cutting goals (external milestones spanning multiple initiatives)
+    Goal {
+        #[command(subcommand)]
+        command: GoalCommands,
     },
     /// Generate an interactive HTML roadmap chart (serves on localhost by default)
     Chart {
@@ -262,6 +268,10 @@ enum OkrCommands {
         /// Period: "2026-Q2", "2026-Q1", "2025", or "current" (default)
         #[arg(long, default_value = "current")]
         period: String,
+        /// Filter to a goal slug — shows only nodes listed in that goal, using the
+        /// goal deadline as the period end when no --period is given
+        #[arg(long)]
+        goal: Option<String>,
         /// Filter to a specific person (GitHub username)
         #[arg(long)]
         person: Option<String>,
@@ -280,6 +290,9 @@ enum OkrCommands {
         /// Period to check
         #[arg(long, default_value = "current")]
         period: String,
+        /// Filter to a goal slug
+        #[arg(long)]
+        goal: Option<String>,
         /// Filter to a specific person
         #[arg(long)]
         person: Option<String>,
@@ -289,6 +302,72 @@ enum OkrCommands {
         /// Output format: table, json
         #[arg(long, default_value = "table")]
         format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum GoalCommands {
+    /// List all goals
+    List {
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    /// Show details of a goal
+    Show {
+        slug: String,
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    /// Add a new goal
+    Add {
+        /// Short identifier, e.g. "google-q2"
+        slug: String,
+        /// Display name
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        description: Option<String>,
+        /// Hard deadline (YYYY-MM-DD). Omit if not yet fixed.
+        #[arg(long)]
+        deadline: Option<String>,
+        /// Comma-separated GitHub usernames
+        #[arg(long)]
+        owners: Option<String>,
+        /// Tracking issue in owner/repo#N format
+        #[arg(long)]
+        track: Option<String>,
+        /// Comma-separated roadmap node paths that contribute to this goal
+        #[arg(long)]
+        nodes: Option<String>,
+    },
+    /// Update fields on an existing goal
+    Set {
+        slug: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        deadline: Option<String>,
+        #[arg(long)]
+        owners: Option<String>,
+        #[arg(long)]
+        track: Option<String>,
+        /// Replace the full nodes list
+        #[arg(long)]
+        nodes: Option<String>,
+        /// Add nodes without replacing existing ones
+        #[arg(long)]
+        add_nodes: Option<String>,
+        /// Remove specific nodes
+        #[arg(long)]
+        remove_nodes: Option<String>,
+    },
+    /// Remove a goal
+    Remove {
+        slug: String,
+        #[arg(long, short)]
+        yes: bool,
     },
 }
 
@@ -1104,21 +1183,58 @@ pub fn run() -> Result<()> {
         Commands::Okr { command } => match command {
             OkrCommands::Show {
                 period,
+                goal,
                 person,
                 team,
                 depth,
                 format,
             } => {
-                okr::run_show(period, person, team, depth, format)?;
+                okr::run_show(period, goal, person, team, depth, format)?;
             }
             OkrCommands::Check {
                 period,
+                goal,
                 person,
                 team,
                 format,
             } => {
-                okr::run_check(period, person, team, format)?;
+                okr::run_check(period, goal, person, team, format)?;
             }
+        },
+        Commands::Goal { command } => match command {
+            GoalCommands::List { format } => goal::run_list(format)?,
+            GoalCommands::Show { slug, format } => goal::run_show(slug, format)?,
+            GoalCommands::Add {
+                slug,
+                name,
+                description,
+                deadline,
+                owners,
+                track,
+                nodes,
+            } => goal::run_add(slug, name, description, deadline, owners, track, nodes)?,
+            GoalCommands::Set {
+                slug,
+                name,
+                description,
+                deadline,
+                owners,
+                track,
+                nodes,
+                add_nodes,
+                remove_nodes,
+            } => goal::run_set(
+                slug,
+                name,
+                description,
+                deadline,
+                owners,
+                track,
+                nodes,
+                add_nodes,
+                remove_nodes,
+            )?,
+            GoalCommands::Remove { slug, yes } => goal::run_remove(slug, yes)?,
         },
         Commands::SelfCmd { command } => run_self(command),
     }

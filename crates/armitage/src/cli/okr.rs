@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use armitage_core::goal::{GoalsFile, node_in_goal};
 use armitage_core::node::NodeStatus;
 use armitage_core::period::Period;
 use armitage_core::team::TeamFile;
@@ -131,6 +132,7 @@ fn load_issues_with_track_overrides(
 
 pub fn run_show(
     period_str: String,
+    goal_slug: Option<String>,
     person: Option<String>,
     team: Option<String>,
     depth: usize,
@@ -138,7 +140,33 @@ pub fn run_show(
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
-    let period = Period::parse(&period_str)?;
+
+    // If --goal is given, resolve the goal. When period is "current" and the goal
+    // has a deadline, use the goal's deadline year as the period so all relevant
+    // work in that year is included.
+    let goal_filter = if let Some(ref slug) = goal_slug {
+        let goals = GoalsFile::read(&org_root)?;
+        let g = goals
+            .find(slug)
+            .ok_or_else(|| crate::error::Error::Other(format!("goal '{slug}' not found")))?
+            .clone();
+        Some(g)
+    } else {
+        None
+    };
+
+    let effective_period_str = if period_str == "current" {
+        if let Some(ref g) = goal_filter
+            && let Some(deadline) = g.deadline
+        {
+            deadline.format("%Y").to_string()
+        } else {
+            period_str.clone()
+        }
+    } else {
+        period_str.clone()
+    };
+    let period = Period::parse(&effective_period_str)?;
     let today = chrono::Local::now().date_naive();
 
     let all_nodes = walk_nodes(&org_root)?;
@@ -174,6 +202,12 @@ pub fn run_show(
             }
             // Skip cancelled nodes.
             if e.node.status == NodeStatus::Cancelled {
+                return false;
+            }
+            // Goal filter — only include nodes listed in the goal (exact or subtree match).
+            if let Some(ref g) = goal_filter
+                && !node_in_goal(&e.path, &g.nodes)
+            {
                 return false;
             }
             // Team filter.
@@ -317,13 +351,37 @@ pub fn run_show(
 
 pub fn run_check(
     period_str: String,
+    goal_slug: Option<String>,
     person: Option<String>,
     team: Option<String>,
     format: String,
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
-    let period = Period::parse(&period_str)?;
+
+    let goal_filter = if let Some(ref slug) = goal_slug {
+        let goals = GoalsFile::read(&org_root)?;
+        let g = goals
+            .find(slug)
+            .ok_or_else(|| crate::error::Error::Other(format!("goal '{slug}' not found")))?
+            .clone();
+        Some(g)
+    } else {
+        None
+    };
+
+    let effective_period_str = if period_str == "current" {
+        if let Some(ref g) = goal_filter
+            && let Some(deadline) = g.deadline
+        {
+            deadline.format("%Y").to_string()
+        } else {
+            period_str.clone()
+        }
+    } else {
+        period_str.clone()
+    };
+    let period = Period::parse(&effective_period_str)?;
     let today = chrono::Local::now().date_naive();
 
     let all_nodes = walk_nodes(&org_root)?;
@@ -357,6 +415,11 @@ pub fn run_check(
             .as_ref()
             .is_some_and(|tl| period.overlaps_timeline(tl));
         if !timeline_active {
+            continue;
+        }
+        if let Some(ref g) = goal_filter
+            && !node_in_goal(&e.path, &g.nodes)
+        {
             continue;
         }
         if let Some(ref t) = team
