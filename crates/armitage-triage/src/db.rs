@@ -576,6 +576,41 @@ pub fn get_all_issues_with_project_data(conn: &Connection) -> Result<Vec<IssueWi
     Ok(rows)
 }
 
+/// Fetch a single issue by `(repo, number)` together with its project board
+/// dates.  Unlike `get_all_issues_with_project_data`, this works even if the
+/// issue has no triage suggestion — useful for tracking issues that are linked
+/// via a node's `track` field but have never been classified.
+pub fn get_issue_with_project_data_by_ref(
+    conn: &Connection,
+    repo: &str,
+    number: u64,
+) -> Result<Option<IssueWithProjectData>> {
+    let mut stmt = conn.prepare(
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state,
+                i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count,
+                i.author, i.assignees_json, i.is_pr, i.comment_count,
+                ipi.target_date, ipi.start_date, ipi.status AS project_status
+         FROM issues i
+         LEFT JOIN issue_project_items ipi ON ipi.issue_id = i.id
+         WHERE i.repo = ?1 AND i.number = ?2 AND i.is_pr = 0
+         LIMIT 1",
+    )?;
+    let row = stmt
+        .query_map(rusqlite::params![repo, number as i64], |row| {
+            let issue = row_to_issue(row)?;
+            Ok(IssueWithProjectData {
+                issue,
+                node_path: None, // caller fills this in from node.track
+                target_date: row.get(14)?,
+                start_date: row.get(15)?,
+                project_status: row.get(16)?,
+            })
+        })?
+        .next()
+        .transpose()?;
+    Ok(row)
+}
+
 // ---------------------------------------------------------------------------
 // Triage Suggestion CRUD
 // ---------------------------------------------------------------------------

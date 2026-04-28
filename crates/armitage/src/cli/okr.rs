@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use armitage_core::node::NodeStatus;
 use armitage_core::period::Period;
 use armitage_core::team::TeamFile;
-use armitage_core::tree::{find_org_root, walk_nodes};
+use armitage_core::tree::{NodeEntry, find_org_root, walk_nodes};
 use chrono::NaiveDate;
 use serde::Serialize;
 
@@ -50,6 +50,82 @@ pub struct CheckProblem {
 }
 
 // ---------------------------------------------------------------------------
+// Issue loading with track-field overrides
+// ---------------------------------------------------------------------------
+
+/// Parse "owner/repo#N" into (repo, number).
+fn parse_track_ref(s: &str) -> Option<(String, u64)> {
+    let (repo, num_s) = s.rsplit_once('#')?;
+    let number = num_s.parse::<u64>().ok()?;
+    Some((repo.to_string(), number))
+}
+
+/// Load all classified issues from the DB, then apply `track`-field overrides:
+///
+/// 1. For any issue already present whose (repo, number) matches a node's
+///    `track` field, update `node_path` to that node — making the `track`
+///    field authoritative over the triage suggestion.
+/// 2. For tracking issues that were never classified (no triage suggestion),
+///    fetch them directly from the DB and assign them to their node.
+///
+/// This ensures milestone tracking issues always appear as key results for
+/// their node, even when the triage pipeline has not yet processed them.
+fn load_issues_with_track_overrides(
+    org_root: &std::path::Path,
+    all_nodes: &[NodeEntry],
+) -> Vec<armitage_triage::db::IssueWithProjectData> {
+    let conn_opt = armitage_triage::db::open_db(org_root).ok();
+
+    let mut all_issues = conn_opt
+        .as_ref()
+        .and_then(|c| armitage_triage::db::get_all_issues_with_project_data(c).ok())
+        .unwrap_or_default();
+
+    // Build track_map: (repo, number) -> node_path
+    let track_map: HashMap<(String, u64), String> = all_nodes
+        .iter()
+        .filter_map(|e| {
+            e.node
+                .track
+                .as_deref()
+                .and_then(parse_track_ref)
+                .map(|(repo, num)| ((repo, num), e.path.clone()))
+        })
+        .collect();
+
+    if track_map.is_empty() {
+        return all_issues;
+    }
+
+    // 1. Override node_path for tracking issues already in all_issues.
+    let mut seen: HashMap<(String, u64), ()> = HashMap::new();
+    for issue in &mut all_issues {
+        let key = (issue.issue.repo.clone(), issue.issue.number);
+        if let Some(node_path) = track_map.get(&key) {
+            issue.node_path = Some(node_path.clone());
+            seen.insert(key, ());
+        }
+    }
+
+    // 2. Fetch tracking issues not yet in all_issues (unclassified).
+    if let Some(conn) = &conn_opt {
+        for ((repo, number), node_path) in &track_map {
+            if seen.contains_key(&(repo.clone(), *number)) {
+                continue;
+            }
+            if let Ok(Some(mut issue)) =
+                armitage_triage::db::get_issue_with_project_data_by_ref(conn, repo, *number)
+            {
+                issue.node_path = Some(node_path.clone());
+                all_issues.push(issue);
+            }
+        }
+    }
+
+    all_issues
+}
+
+// ---------------------------------------------------------------------------
 // okr show
 // ---------------------------------------------------------------------------
 
@@ -68,12 +144,8 @@ pub fn run_show(
     let all_nodes = walk_nodes(&org_root)?;
     let team_file = TeamFile::read(&org_root).unwrap_or_default();
 
-    // Load all classified issues with project data from the triage DB.
-    // Gracefully degrade when no DB exists (e.g. fresh org).
-    let all_issues = armitage_triage::db::open_db(&org_root)
-        .ok()
-        .and_then(|conn| armitage_triage::db::get_all_issues_with_project_data(&conn).ok())
-        .unwrap_or_default();
+    // Load all classified issues, with track-field overrides applied.
+    let all_issues = load_issues_with_track_overrides(&org_root, &all_nodes);
 
     // Group issues by their effective node path.
     let mut issues_by_node: HashMap<String, Vec<usize>> = HashMap::new();
@@ -256,10 +328,7 @@ pub fn run_check(
 
     let all_nodes = walk_nodes(&org_root)?;
 
-    let all_issues = armitage_triage::db::open_db(&org_root)
-        .ok()
-        .and_then(|conn| armitage_triage::db::get_all_issues_with_project_data(&conn).ok())
-        .unwrap_or_default();
+    let all_issues = load_issues_with_track_overrides(&org_root, &all_nodes);
 
     let mut issues_by_node: HashMap<String, Vec<usize>> = HashMap::new();
     for (idx, issue) in all_issues.iter().enumerate() {

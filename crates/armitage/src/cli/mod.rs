@@ -268,8 +268,8 @@ enum OkrCommands {
         /// Filter to a team
         #[arg(long)]
         team: Option<String>,
-        /// Max depth of nodes to include (1 = top-level only, 2 = +sub-nodes, default: 2)
-        #[arg(long, default_value = "2")]
+        /// Max depth of nodes to include (1 = top-level only, 4 = milestones, default: 4)
+        #[arg(long, default_value = "4")]
         depth: usize,
         /// Output format: table, json, markdown
         #[arg(long, default_value = "table")]
