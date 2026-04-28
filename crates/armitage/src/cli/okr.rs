@@ -183,7 +183,7 @@ pub fn run_show(
         }
     }
 
-    // Collect all issues for a node path including its subtree.
+    // Full subtree lookup — used only for the initial in-scope determination.
     let issues_for_subtree = |node_path: &str| -> Vec<&armitage_triage::db::IssueWithProjectData> {
         issues_by_node
             .iter()
@@ -192,43 +192,45 @@ pub fn run_show(
             .collect()
     };
 
-    let mut objectives: Vec<OkrObjective> = all_nodes
+    // Predicate shared by both the in-scope pass and the build pass.
+    let node_passes_filters = |e: &&NodeEntry| -> bool {
+        let node_depth = e.path.matches('/').count() + 1;
+        if node_depth > depth {
+            return false;
+        }
+        if e.node.status == NodeStatus::Cancelled {
+            return false;
+        }
+        if let Some(ref g) = goal_filter
+            && !node_in_goal(&e.path, &g.nodes)
+        {
+            return false;
+        }
+        if let Some(ref t) = team
+            && e.node.team.as_deref() != Some(t.as_str())
+        {
+            return false;
+        }
+        if let Some(ref p) = person
+            && !e.node.owners.contains(p)
+        {
+            return false;
+        }
+        true
+    };
+
+    // Pass 1 — collect in-scope paths using full subtree rollup for the date check.
+    let in_scope_paths: std::collections::HashSet<String> = all_nodes
         .iter()
         .filter(|e| {
-            // Depth filter (1-based).
-            let node_depth = e.path.matches('/').count() + 1;
-            if node_depth > depth {
+            if !node_passes_filters(e) {
                 return false;
             }
-            // Skip cancelled nodes.
-            if e.node.status == NodeStatus::Cancelled {
-                return false;
-            }
-            // Goal filter — only include nodes listed in the goal (exact or subtree match).
-            if let Some(ref g) = goal_filter
-                && !node_in_goal(&e.path, &g.nodes)
-            {
-                return false;
-            }
-            // Team filter.
-            if let Some(ref t) = team
-                && e.node.team.as_deref() != Some(t.as_str())
-            {
-                return false;
-            }
-            // Person filter (must be listed as an owner of this node).
-            if let Some(ref p) = person
-                && !e.node.owners.contains(p)
-            {
-                return false;
-            }
-            // Include if the node's timeline overlaps this period …
             let timeline_overlap = e
                 .node
                 .timeline
                 .as_ref()
                 .is_some_and(|tl| period.overlaps_timeline(tl));
-            // … or if it has at least one issue with a target_date in this period.
             let has_dated_issues = issues_for_subtree(&e.path).iter().any(|i| {
                 i.target_date
                     .as_deref()
@@ -237,8 +239,40 @@ pub fn run_show(
             });
             timeline_overlap || has_dated_issues
         })
+        .map(|e| e.path.clone())
+        .collect();
+
+    // Smart issue lookup — for a given node, return its direct issues plus any
+    // subtree issues that are NOT already claimed by an in-scope child node.
+    // This prevents parent nodes from duplicating KRs already shown under a child.
+    let issues_for_node = |node_path: &str| -> Vec<&armitage_triage::db::IssueWithProjectData> {
+        issues_by_node
+            .iter()
+            .filter(|(p, _)| {
+                let p = p.as_str();
+                if p != node_path && !p.starts_with(&format!("{node_path}/")) {
+                    return false;
+                }
+                if p == node_path {
+                    return true;
+                }
+                // Subtree path: include only if no in-scope child of node_path covers it.
+                !in_scope_paths.iter().any(|scope| {
+                    scope.as_str() != node_path
+                        && scope.starts_with(&format!("{node_path}/"))
+                        && (p == scope.as_str() || p.starts_with(&format!("{scope}/")))
+                })
+            })
+            .flat_map(|(_, idxs)| idxs.iter().map(|&i| &all_issues[i]))
+            .collect()
+    };
+
+    // Pass 2 — build objectives using the smart issue lookup.
+    let mut objectives: Vec<OkrObjective> = all_nodes
+        .iter()
+        .filter(|e| in_scope_paths.contains(&e.path))
         .map(|e| {
-            let subtree_issues = issues_for_subtree(&e.path);
+            let subtree_issues = issues_for_node(&e.path);
 
             // Collect issues relevant to this period.
             // An issue is included when its target_date falls in the period.
@@ -395,10 +429,59 @@ pub fn run_check(
         }
     }
 
-    let issues_for_subtree = |node_path: &str| -> Vec<&armitage_triage::db::IssueWithProjectData> {
+    // Collect timeline-active nodes that pass all filters.
+    let in_scope_paths: std::collections::HashSet<String> = all_nodes
+        .iter()
+        .filter(|e| {
+            if e.node.status == NodeStatus::Cancelled {
+                return false;
+            }
+            if !e
+                .node
+                .timeline
+                .as_ref()
+                .is_some_and(|tl| period.overlaps_timeline(tl))
+            {
+                return false;
+            }
+            if let Some(ref g) = goal_filter
+                && !node_in_goal(&e.path, &g.nodes)
+            {
+                return false;
+            }
+            if let Some(ref t) = team
+                && e.node.team.as_deref() != Some(t.as_str())
+            {
+                return false;
+            }
+            if let Some(ref p) = person
+                && !e.node.owners.contains(p)
+            {
+                return false;
+            }
+            true
+        })
+        .map(|e| e.path.clone())
+        .collect();
+
+    // Smart issue lookup — same exclusion logic as run_show.
+    let issues_for_node = |node_path: &str| -> Vec<&armitage_triage::db::IssueWithProjectData> {
         issues_by_node
             .iter()
-            .filter(|(p, _)| *p == node_path || p.starts_with(&format!("{node_path}/")))
+            .filter(|(p, _)| {
+                let p = p.as_str();
+                if p != node_path && !p.starts_with(&format!("{node_path}/")) {
+                    return false;
+                }
+                if p == node_path {
+                    return true;
+                }
+                !in_scope_paths.iter().any(|scope| {
+                    scope.as_str() != node_path
+                        && scope.starts_with(&format!("{node_path}/"))
+                        && (p == scope.as_str() || p.starts_with(&format!("{scope}/")))
+                })
+            })
             .flat_map(|(_, idxs)| idxs.iter().map(|&i| &all_issues[i]))
             .collect()
     };
@@ -406,30 +489,25 @@ pub fn run_check(
     let mut problems: Vec<CheckProblem> = Vec::new();
 
     for e in &all_nodes {
-        if e.node.status == NodeStatus::Cancelled {
+        if !in_scope_paths.contains(&e.path) {
             continue;
         }
-        let timeline_active = e
-            .node
-            .timeline
-            .as_ref()
-            .is_some_and(|tl| period.overlaps_timeline(tl));
-        if !timeline_active {
-            continue;
-        }
-        if let Some(ref g) = goal_filter
-            && !node_in_goal(&e.path, &g.nodes)
-        {
-            continue;
-        }
-        if let Some(ref t) = team
-            && e.node.team.as_deref() != Some(t.as_str())
-        {
-            continue;
-        }
-        if let Some(ref p) = person
-            && !e.node.owners.contains(p)
-        {
+
+        // Skip parent nodes whose in-scope children already cover all the work —
+        // they have no direct key results to check.
+        let has_in_scope_child = in_scope_paths
+            .iter()
+            .any(|p| p != &e.path && p.starts_with(&format!("{}/", e.path)));
+        let has_direct_dated = issues_by_node.get(&e.path).is_some_and(|idxs| {
+            idxs.iter().any(|&i| {
+                all_issues[i]
+                    .target_date
+                    .as_deref()
+                    .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                    .is_some_and(|d| period.contains_date(d))
+            })
+        });
+        if has_in_scope_child && !has_direct_dated {
             continue;
         }
 
@@ -442,7 +520,7 @@ pub fn run_check(
             });
         }
 
-        let subtree_issues = issues_for_subtree(&e.path);
+        let subtree_issues = issues_for_node(&e.path);
         let dated_issues: Vec<_> = subtree_issues
             .iter()
             .filter(|i| {
