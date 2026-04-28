@@ -3,7 +3,7 @@
  */
 
 import type { ChartData, ChartNode, ChartMilestone, ChartIssue } from "./types";
-import { getLayoutElements, getTimelineWidth, syncSvgHeight, getAxisHeight, getRowHeight, type LayoutElements } from "./layout";
+import { getLayoutElements, getTimelineWidth, syncSvgHeight, getAxisHeight, getBarsTop, getRowHeight, type LayoutElements } from "./layout";
 import { createScale, setupZoom, resetZoom, updateScaleRange, parseDate, type ScaleState } from "./scale";
 import { renderAxis, renderGridLines, renderTodayLine, renderMilestoneLines } from "./render-axis";
 import { renderNodeRow, sortIssues, formatOverdue, type RenderedRow } from "./render-nodes";
@@ -313,6 +313,20 @@ function closePanel(): void {
   panelEl.classList.remove("open");
 }
 
+function showMilestonePanel(m: ChartMilestone): void {
+  const typeLabel = m.milestone_type === "okr" ? "OKR" : "Checkpoint";
+  const color = m.milestone_type === "okr" ? "#a78bfa" : "#f59e0b";
+  let html = `<h2 style="color:${color}">${escapeHtml(m.name)}</h2>`;
+  html += `<span class="panel-status active" style="background:none;color:${color}">${typeLabel}</span>`;
+  html += `<div class="panel-section"><h3>Date</h3><div class="panel-meta">${escapeHtml(m.date)}</div></div>`;
+  if (m.description) {
+    html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${renderMarkdown(m.description)}</div></div>`;
+  }
+  panelContentEl.innerHTML = html;
+  panelEl.classList.add("open");
+}
+
+(window as any).__openMilestonePanel = showMilestonePanel;
 (window as any).__closePanel = closePanel;
 
 // ---------------------------------------------------------------------------
@@ -394,19 +408,20 @@ function renderChart(): void {
     }
   }
 
-  // Sync SVG height
-  syncSvgHeight(layout, yOffset);
+  // Milestone lines — scoped to the current view (see collectMilestonesForView).
+  const milestones = collectMilestonesForView("all");
+  const barsTop = getBarsTop(milestones.length > 0);
 
-  // Render axis, grid, markers
-  const totalHeight = yOffset + getAxisHeight();
+  // Sync SVG height and bar position (barsTop accounts for the milestone label zone).
+  syncSvgHeight(layout, yOffset, barsTop);
+  // Keep the label column aligned with the bar rows.
+  layout.labelsEl.style.paddingTop = `${barsTop}px`;
+
+  const totalHeight = yOffset + barsTop;
   renderAxis(scaleState, layout, totalHeight);
   renderGridLines(scaleState, layout, totalHeight);
   renderTodayLine(scaleState, layout, totalHeight);
-
-  // Milestone lines — scoped to the current view (see collectMilestonesForView).
-  // OKRs and checkpoints are rendered in one pass; deduplication is inside the collector.
-  const milestones = collectMilestonesForView("all");
-  renderMilestoneLines(scaleState, layout, totalHeight, milestones);
+  renderMilestoneLines(scaleState, layout, totalHeight, milestones, barsTop);
 }
 
 function onZoom(): void {
@@ -549,9 +564,13 @@ function findRowFromSvgY(e: MouseEvent): RenderedRow | undefined {
   const pt = svg.createSVGPoint();
   pt.x = e.clientX;
   pt.y = e.clientY;
-  const svgY = pt.matrixTransform(svg.getScreenCTM()!.inverse()).y - getAxisHeight();
+  const svgY = pt.matrixTransform(svg.getScreenCTM()!.inverse()).y;
+  const barsTop = getBarsTop(collectMilestonesForView("all").length > 0);
+  // Ignore clicks in the axis / milestone-label zone above the bars
+  if (svgY < barsTop) return undefined;
+  const barsRelY = svgY - barsTop;
   for (const row of renderedRows) {
-    if (svgY >= row.y && svgY < row.y + row.height) return row;
+    if (barsRelY >= row.y && barsRelY < row.y + row.height) return row;
   }
   return undefined;
 }

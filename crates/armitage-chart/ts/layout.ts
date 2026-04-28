@@ -8,6 +8,9 @@ const NODE_ROW_HEIGHT = 48;
 const ISSUE_ROW_HEIGHT = 28;
 const SEPARATOR_HEIGHT = 12;
 const AXIS_HEIGHT = 40;
+// Extra height between the time axis and the first bar row, reserved for 45° milestone labels.
+// Set to 0 when there are no milestones to render.
+export const MILESTONE_ZONE_HEIGHT = 90;
 
 export interface LayoutElements {
   labelsEl: HTMLDivElement;
@@ -46,9 +49,14 @@ export function getAxisHeight(): number {
   return AXIS_HEIGHT;
 }
 
-/** Sync the SVG height to match the total height of label rows + axis. */
-export function syncSvgHeight(layout: LayoutElements, totalRowHeight: number): void {
-  const totalHeight = totalRowHeight + AXIS_HEIGHT;
+/** y-coordinate where bars begin (after axis + optional milestone zone). */
+export function getBarsTop(hasMilestones: boolean): number {
+  return AXIS_HEIGHT + (hasMilestones ? MILESTONE_ZONE_HEIGHT : 0);
+}
+
+/** Sync the SVG height and bar group position. */
+export function syncSvgHeight(layout: LayoutElements, totalRowHeight: number, barsTop: number): void {
+  const totalHeight = totalRowHeight + barsTop;
   layout.timelineSvg.setAttribute("height", `${totalHeight}`);
-  layout.barsGroup.setAttribute("transform", `translate(0, ${AXIS_HEIGHT})`);
+  layout.barsGroup.setAttribute("transform", `translate(0, ${barsTop})`);
 }

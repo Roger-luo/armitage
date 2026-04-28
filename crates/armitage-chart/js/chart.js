@@ -5,6 +5,7 @@
   var ISSUE_ROW_HEIGHT = 28;
   var SEPARATOR_HEIGHT = 12;
   var AXIS_HEIGHT = 40;
+  var MILESTONE_ZONE_HEIGHT = 90;
   function getLayoutElements() {
     return {
       labelsEl: document.getElementById("chart-labels"),
@@ -28,10 +29,13 @@
   function getAxisHeight() {
     return AXIS_HEIGHT;
   }
-  function syncSvgHeight(layout2, totalRowHeight) {
-    const totalHeight = totalRowHeight + AXIS_HEIGHT;
+  function getBarsTop(hasMilestones) {
+    return AXIS_HEIGHT + (hasMilestones ? MILESTONE_ZONE_HEIGHT : 0);
+  }
+  function syncSvgHeight(layout2, totalRowHeight, barsTop) {
+    const totalHeight = totalRowHeight + barsTop;
     layout2.timelineSvg.setAttribute("height", `${totalHeight}`);
-    layout2.barsGroup.setAttribute("transform", `translate(0, ${AXIS_HEIGHT})`);
+    layout2.barsGroup.setAttribute("transform", `translate(0, ${barsTop})`);
   }
 
   // ts/scale.ts
@@ -132,29 +136,32 @@
     text.textContent = "Today";
     layout2.markersGroup.appendChild(text);
   }
-  function renderMilestoneLines(state, layout2, totalHeight, milestones) {
+  function renderMilestoneLines(state, layout2, totalHeight, milestones, barsTop) {
     layout2.markersGroup.querySelectorAll(".milestone-line").forEach((el) => el.remove());
     const axisHeight = getAxisHeight();
     const diamondSize = 5;
-    const labelOffsetFromAxis = 8;
-    const fontSize = 10;
+    const fontSize = 9;
+    const maxChars = 14;
+    const tooltip = document.getElementById("milestone-tooltip");
     for (const m of milestones) {
       const x = state.currentScale(parseDate(m.date));
       const isOkr = m.milestone_type === "okr";
-      const color = isOkr ? "rgba(167, 139, 250, 0.5)" : "rgba(245, 158, 11, 0.5)";
+      const colorDim = isOkr ? "rgba(167, 139, 250, 0.5)" : "rgba(245, 158, 11, 0.5)";
+      const colorBright = isOkr ? "rgba(167, 139, 250, 0.9)" : "rgba(245, 158, 11, 0.9)";
       const labelColor = isOkr ? "#a78bfa" : "#f59e0b";
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.classList.add("milestone-line");
+      g.style.cursor = "pointer";
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.classList.add("milestone-line");
       line.setAttribute("x1", `${x}`);
-      line.setAttribute("y1", `${axisHeight}`);
+      line.setAttribute("y1", `${barsTop}`);
       line.setAttribute("x2", `${x}`);
       line.setAttribute("y2", `${totalHeight}`);
-      line.setAttribute("stroke", color);
+      line.setAttribute("stroke", colorDim);
       line.setAttribute("stroke-width", "1");
       line.setAttribute("stroke-dasharray", "4,3");
-      layout2.markersGroup.appendChild(line);
+      g.appendChild(line);
       const diamond = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-      diamond.classList.add("milestone-line");
       const d = diamondSize;
       diamond.setAttribute(
         "points",
@@ -162,21 +169,64 @@
       );
       diamond.setAttribute("fill", labelColor);
       diamond.setAttribute("opacity", "0.85");
-      layout2.markersGroup.appendChild(diamond);
-      const labelY = axisHeight + labelOffsetFromAxis;
+      g.appendChild(diamond);
+      const hitZoneWidth = 32;
+      const hitRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      hitRect.setAttribute("x", `${x - hitZoneWidth / 2}`);
+      hitRect.setAttribute("y", `${axisHeight}`);
+      hitRect.setAttribute("width", `${hitZoneWidth}`);
+      hitRect.setAttribute("height", `${barsTop - axisHeight}`);
+      hitRect.setAttribute("fill", "transparent");
+      hitRect.setAttribute("pointer-events", "all");
+      g.appendChild(hitRect);
+      const label = m.name.length > maxChars ? m.name.slice(0, maxChars - 1) + "\u2026" : m.name;
       const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      text.classList.add("milestone-line");
-      text.setAttribute("transform", `rotate(90, ${x}, ${labelY})`);
+      text.setAttribute("transform", `rotate(-45, ${x}, ${barsTop})`);
       text.setAttribute("x", `${x}`);
-      text.setAttribute("y", `${labelY}`);
-      text.setAttribute("text-anchor", "start");
+      text.setAttribute("y", `${barsTop}`);
+      text.setAttribute("text-anchor", "end");
+      text.setAttribute("dominant-baseline", "auto");
       text.setAttribute("fill", labelColor);
       text.setAttribute("font-size", `${fontSize}px`);
-      const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-      title.textContent = `${m.name} (${m.date})`;
-      text.appendChild(title);
-      text.appendChild(document.createTextNode(m.name));
-      layout2.markersGroup.appendChild(text);
+      text.textContent = label;
+      g.appendChild(text);
+      g.addEventListener("mouseover", (evt) => {
+        line.setAttribute("stroke", colorBright);
+        line.setAttribute("stroke-width", "2");
+        diamond.setAttribute("opacity", "1");
+        text.setAttribute("font-weight", "bold");
+        if (tooltip) {
+          let html = `<strong>${m.name}</strong>&nbsp;<span style="color:var(--text-muted);font-size:11px">${m.date}</span>`;
+          if (m.description) html += `<br><span style="color:var(--text-secondary)">${m.description}</span>`;
+          tooltip.innerHTML = html;
+          tooltip.style.display = "block";
+          const me = evt;
+          tooltip.style.left = `${me.clientX + 14}px`;
+          tooltip.style.top = `${me.clientY - 8}px`;
+        }
+      });
+      g.addEventListener("mousemove", (evt) => {
+        if (tooltip) {
+          const me = evt;
+          tooltip.style.left = `${me.clientX + 14}px`;
+          tooltip.style.top = `${me.clientY - 8}px`;
+        }
+      });
+      g.addEventListener("mouseout", () => {
+        line.setAttribute("stroke", colorDim);
+        line.setAttribute("stroke-width", "1");
+        diamond.setAttribute("opacity", "0.85");
+        text.removeAttribute("font-weight");
+        if (tooltip) tooltip.style.display = "none";
+      });
+      g.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        if (tooltip) tooltip.style.display = "none";
+        if (window.__openMilestonePanel) {
+          window.__openMilestonePanel(m);
+        }
+      });
+      layout2.markersGroup.appendChild(g);
     }
   }
 
@@ -731,6 +781,19 @@
     selectedNode = null;
     panelEl.classList.remove("open");
   }
+  function showMilestonePanel(m) {
+    const typeLabel = m.milestone_type === "okr" ? "OKR" : "Checkpoint";
+    const color = m.milestone_type === "okr" ? "#a78bfa" : "#f59e0b";
+    let html = `<h2 style="color:${color}">${escapeHtml(m.name)}</h2>`;
+    html += `<span class="panel-status active" style="background:none;color:${color}">${typeLabel}</span>`;
+    html += `<div class="panel-section"><h3>Date</h3><div class="panel-meta">${escapeHtml(m.date)}</div></div>`;
+    if (m.description) {
+      html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${renderMarkdown(m.description)}</div></div>`;
+    }
+    panelContentEl.innerHTML = html;
+    panelEl.classList.add("open");
+  }
+  window.__openMilestonePanel = showMilestonePanel;
   window.__closePanel = closePanel;
   var breadcrumbEl = document.getElementById("breadcrumb");
   function updateBreadcrumb() {
@@ -786,13 +849,15 @@
         yOffset += issueRows.reduce((sum, r) => sum + r.height, 0);
       }
     }
-    syncSvgHeight(layout, yOffset);
-    const totalHeight = yOffset + getAxisHeight();
+    const milestones = collectMilestonesForView("all");
+    const barsTop = getBarsTop(milestones.length > 0);
+    syncSvgHeight(layout, yOffset, barsTop);
+    layout.labelsEl.style.paddingTop = `${barsTop}px`;
+    const totalHeight = yOffset + barsTop;
     renderAxis(scaleState, layout, totalHeight);
     renderGridLines(scaleState, layout, totalHeight);
     renderTodayLine(scaleState, layout, totalHeight);
-    const milestones = collectMilestonesForView("all");
-    renderMilestoneLines(scaleState, layout, totalHeight, milestones);
+    renderMilestoneLines(scaleState, layout, totalHeight, milestones, barsTop);
   }
   function onZoom() {
     renderChart();
@@ -897,9 +962,12 @@
     const pt = svg.createSVGPoint();
     pt.x = e.clientX;
     pt.y = e.clientY;
-    const svgY = pt.matrixTransform(svg.getScreenCTM().inverse()).y - getAxisHeight();
+    const svgY = pt.matrixTransform(svg.getScreenCTM().inverse()).y;
+    const barsTop = getBarsTop(collectMilestonesForView("all").length > 0);
+    if (svgY < barsTop) return void 0;
+    const barsRelY = svgY - barsTop;
     for (const row of renderedRows) {
-      if (svgY >= row.y && svgY < row.y + row.height) return row;
+      if (barsRelY >= row.y && barsRelY < row.y + row.height) return row;
     }
     return void 0;
   }

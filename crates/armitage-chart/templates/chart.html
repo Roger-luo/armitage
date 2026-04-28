@@ -396,6 +396,23 @@
     /* SVG axis styling */
     #axis-group text { fill: var(--chart-axis); font-size: 11px; }
     #axis-group line, #axis-group .domain { stroke: var(--chart-axis-line); }
+
+    /* Milestone tooltip */
+    #milestone-tooltip {
+      position: fixed;
+      z-index: 200;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      pointer-events: none;
+      max-width: 260px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+      line-height: 1.5;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -412,6 +429,7 @@
     </div>
   </div>
   <div class="chart-tooltip" id="tooltip" style="display:none"></div>
+  <div id="milestone-tooltip"></div>
   <div id="main">
     <div id="chart-area">
       <div id="chart-scroll">
