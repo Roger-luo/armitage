@@ -1938,7 +1938,7 @@ mod tests {
             node: Node {
                 name: "Infra".to_string(),
                 description: "Infrastructure work".to_string(),
-                github_issue: None,
+                track: None,
                 labels: vec![],
                 repos: vec![],
                 owners: vec![],
@@ -2070,7 +2070,7 @@ mod tests {
             node: Node {
                 name: "PRISM".to_string(),
                 description: "PRISM language".to_string(),
-                github_issue: None,
+                track: None,
                 labels: vec![],
                 repos: vec![],
                 owners: vec![],

@@ -53,10 +53,7 @@ pub fn run() -> Result<()> {
 
     // --- Node counts ---
     let total = nodes.len();
-    let linked: Vec<_> = nodes
-        .iter()
-        .filter(|n| n.node.github_issue.is_some())
-        .collect();
+    let linked: Vec<_> = nodes.iter().filter(|n| n.node.track.is_some()).collect();
     let local_only = total - linked.len();
 
     println!(
@@ -90,7 +87,7 @@ pub fn run() -> Result<()> {
     // --- New/unlinked nodes (no entry in sync state) ---
     let new_nodes: Vec<_> = nodes
         .iter()
-        .filter(|e| !sync_state.nodes.contains_key(&e.path) && e.node.github_issue.is_none())
+        .filter(|e| !sync_state.nodes.contains_key(&e.path) && e.node.track.is_none())
         .collect();
 
     if !new_nodes.is_empty() {

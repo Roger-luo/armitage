@@ -343,12 +343,15 @@
     .chart-label.issue-title.overdue { color: #f85149; }
     .chart-label.issue-title.overdue::before { content: "⚠ "; }
     .chart-label.issue-title.pr { color: #a371f7; }
+    .chart-label.issue-title.closed { color: var(--text-faint); opacity: 0.6; text-decoration: line-through; }
+    .chart-row.issue.closed { opacity: 0.55; }
 
     /* Badges */
     .chart-badge { flex-shrink: 0; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 3px; margin-left: 8px; background: var(--bg-elevated); }
     .chart-badge.children { color: var(--link); }
     .chart-badge.issues { color: var(--text-muted); }
     .chart-badge.issues.pr { color: #a371f7; }
+    .chart-badge.issues.closed { color: var(--text-faint); }
     .chart-badge .overdue-count { color: #f85149; }
 
     /* Drill arrow */
@@ -361,6 +364,7 @@
     /* Separator line */
     .chart-row.separator { position: relative; }
     .chart-row.separator::after { content: ""; position: absolute; left: 12px; right: 12px; top: 50%; border-top: 1px dashed var(--bg-active); }
+    .separator-label { font-size: 10px; color: var(--text-faint); padding: 0 8px; position: relative; z-index: 1; background: var(--bg); }
 
     /* Tooltip */
     .chart-tooltip { position: fixed; z-index: 100; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--text-secondary); pointer-events: none; max-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); line-height: 1.5; }

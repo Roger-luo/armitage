@@ -47,14 +47,14 @@ pub fn sync(gh: &Gh, org: &Org, dry_run: bool) -> Result<SyncStats> {
 
     for entry in &nodes {
         let node = &entry.node;
-        let (Some(issue_str), Some(timeline)) = (&node.github_issue, &node.timeline) else {
+        let (Some(issue_str), Some(timeline)) = (&node.track, &node.timeline) else {
             continue;
         };
 
         let issue_ref = match IssueRef::parse(issue_str) {
             Ok(r) => r,
             Err(e) => {
-                warn!(node = %entry.path, "invalid github_issue: {e}");
+                warn!(node = %entry.path, "invalid track: {e}");
                 stats.errors += 1;
                 continue;
             }
@@ -199,13 +199,11 @@ fn sync_one(
 
     // --- Add to project if needed ---
     let item_id = if needs_add {
-        let bare_repo = strip_qualifier(&issue_ref.repo);
-        let (owner, repo) = bare_repo
-            .split_once('/')
-            .ok_or_else(|| Error::Other(format!("invalid repo: {bare_repo}")))?;
+        let owner = &issue_ref.owner;
+        let repo = strip_qualifier(&issue_ref.repo);
 
         println!("  add    {node_path} ({canonical})");
-        let content_id = fetch_issue_node_id(gh, owner, repo, issue_ref.number)?;
+        let content_id = fetch_issue_node_id(gh, owner, &repo, issue_ref.number)?;
         add_item_to_project(gh, &cache.project_id, &content_id)?
     } else {
         println!("  update {node_path} ({canonical})");

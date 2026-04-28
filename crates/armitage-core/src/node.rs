@@ -10,7 +10,7 @@ pub struct Node {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub triage_hint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub github_issue: Option<String>,
+    pub track: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -215,7 +215,7 @@ mod tests {
         let toml = r#"
             name = "my-node"
             description = "A full node"
-            github_issue = "owner/repo#42"
+            track = "owner/repo#42"
             labels = ["team:alpha", "priority:high"]
             repos = ["owner/repo1", "owner/repo2"]
             owners = ["alice", "bob"]
@@ -228,7 +228,7 @@ mod tests {
         let node: Node = toml::from_str(toml).expect("deserialize full node");
         assert_eq!(node.name, "my-node");
         assert_eq!(node.description, "A full node");
-        assert_eq!(node.github_issue.as_deref(), Some("owner/repo#42"));
+        assert_eq!(node.track.as_deref(), Some("owner/repo#42"));
         assert_eq!(node.labels, vec!["team:alpha", "priority:high"]);
         assert_eq!(node.repos, vec!["owner/repo1", "owner/repo2"]);
         assert_eq!(node.owners, vec!["alice", "bob"]);
@@ -247,7 +247,7 @@ mod tests {
         let node: Node = toml::from_str(toml).expect("deserialize minimal node");
         assert_eq!(node.name, "bare");
         assert_eq!(node.description, "Minimal node");
-        assert!(node.github_issue.is_none());
+        assert!(node.track.is_none());
         assert!(node.labels.is_empty());
         assert!(node.repos.is_empty());
         assert!(node.owners.is_empty());
@@ -261,7 +261,7 @@ mod tests {
             name: "round-trip".to_string(),
             description: "Testing roundtrip".to_string(),
             triage_hint: None,
-            github_issue: Some("acme/widget#7".to_string()),
+            track: Some("acme/widget#7".to_string()),
             labels: vec!["area:core".to_string()],
             repos: vec!["acme/widget".to_string()],
             owners: vec!["alice".to_string()],
@@ -276,7 +276,7 @@ mod tests {
         let deserialized: Node = toml::from_str(&serialized).expect("deserialize node");
         assert_eq!(deserialized.name, original.name);
         assert_eq!(deserialized.description, original.description);
-        assert_eq!(deserialized.github_issue, original.github_issue);
+        assert_eq!(deserialized.track, original.track);
         assert_eq!(deserialized.labels, original.labels);
         assert_eq!(deserialized.repos, original.repos);
         assert_eq!(deserialized.owners, original.owners);
@@ -353,7 +353,7 @@ mod tests {
             name: "test".to_string(),
             description: desc.to_string(),
             triage_hint: None,
-            github_issue: None,
+            track: None,
             labels: vec![],
             repos: vec![],
             owners: vec![],
@@ -394,7 +394,7 @@ mod tests {
             name: "test".to_string(),
             description: "Short".to_string(),
             triage_hint: None,
-            github_issue: None,
+            track: None,
             labels: vec![],
             repos: vec![],
             owners: vec![],

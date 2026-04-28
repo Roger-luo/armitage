@@ -311,7 +311,7 @@ pub fn create_node(
     path: &str,
     name: Option<&str>,
     description: Option<&str>,
-    github_issue: Option<&str>,
+    track: Option<&str>,
     labels: Option<&str>,
     status: &str,
 ) -> Result<()> {
@@ -320,7 +320,7 @@ pub fn create_node(
         path,
         name,
         description,
-        github_issue,
+        track,
         labels,
         &[],
         &[],
@@ -347,7 +347,7 @@ pub fn run_create(
     path: Option<String>,
     name: Option<String>,
     description: Option<String>,
-    github_issue: Option<String>,
+    track: Option<String>,
     labels: Option<String>,
     repos: Option<String>,
     owners: Option<String>,
@@ -357,7 +357,7 @@ pub fn run_create(
     let has_any_option = path.is_some()
         || name.is_some()
         || description.is_some()
-        || github_issue.is_some()
+        || track.is_some()
         || labels.is_some()
         || repos.is_some()
         || owners.is_some()
@@ -369,7 +369,7 @@ pub fn run_create(
             path,
             name,
             description,
-            github_issue,
+            track,
             labels,
             repos,
             owners,
@@ -386,7 +386,7 @@ fn run_create_noninteractive(
     path: Option<String>,
     name: Option<String>,
     description: Option<String>,
-    github_issue: Option<String>,
+    track: Option<String>,
     labels: Option<String>,
     repos: Option<String>,
     owners: Option<String>,
@@ -426,7 +426,7 @@ fn run_create_noninteractive(
         &path,
         name.as_deref(),
         description.as_deref(),
-        github_issue.as_deref(),
+        track.as_deref(),
         labels.as_deref(),
         &repos_vec,
         &owners_vec,
@@ -476,7 +476,7 @@ fn run_create_interactive() -> Result<()> {
     let mut repos_str: Option<String> = None;
     let mut labels_str: Option<String> = None;
     let mut owners_str: Option<String> = None;
-    let mut github_issue: Option<String> = None;
+    let mut track: Option<String> = None;
     let mut tl: Option<armitage_core::node::Timeline> = None;
 
     let mut step: usize = 0;
@@ -611,7 +611,7 @@ fn run_create_interactive() -> Result<()> {
             6 => {
                 match rl_field_optional(&mut rl, "GitHub issue (owner/repo#number, or blank): ")? {
                     Input::Value(v) => {
-                        github_issue = v;
+                        track = v;
                         step += 1;
                     }
                     Input::Back => {
@@ -712,7 +712,7 @@ fn run_create_interactive() -> Result<()> {
         &path,
         Some(&name),
         description.as_deref(),
-        github_issue.as_deref(),
+        track.as_deref(),
         labels_str.as_deref(),
         &repos,
         &owners,
@@ -728,7 +728,7 @@ pub(crate) fn create_node_full(
     path: &str,
     name: Option<&str>,
     description: Option<&str>,
-    github_issue: Option<&str>,
+    track: Option<&str>,
     labels: Option<&str>,
     repos: &[String],
     owners: &[String],
@@ -808,7 +808,7 @@ pub(crate) fn create_node_full(
         name: derived_name,
         description: description.unwrap_or("").to_string(),
         triage_hint: None,
-        github_issue: github_issue.map(std::string::ToString::to_string),
+        track: track.map(std::string::ToString::to_string),
         labels: labels_vec,
         repos: repos.to_vec(),
         owners: owners.to_vec(),
@@ -909,7 +909,7 @@ pub fn run_show(path: String) -> Result<()> {
         println!("triage_hint: {hint}");
     }
     println!("status:      {}", entry.node.status);
-    if let Some(ref issue) = entry.node.github_issue {
+    if let Some(ref issue) = entry.node.track {
         println!("github:      {issue}");
     }
     if !entry.node.labels.is_empty() {
@@ -976,7 +976,7 @@ pub fn run_edit(path: String) -> Result<()> {
     let repos_default = node.repos.join(", ");
     let labels_default = node.labels.join(", ");
     let owners_default = node.owners.join(", ");
-    let gh_default = node.github_issue.as_deref().unwrap_or("").to_string();
+    let gh_default = node.track.as_deref().unwrap_or("").to_string();
 
     let mut name = node.name.clone();
     let mut description = node.description.clone();
@@ -984,7 +984,7 @@ pub fn run_edit(path: String) -> Result<()> {
     let mut repos: Vec<String> = node.repos.clone();
     let mut labels: Vec<String> = node.labels.clone();
     let mut owners: Vec<String> = node.owners.clone();
-    let mut github_issue: Option<String> = node.github_issue.clone();
+    let mut track: Option<String> = node.track.clone();
     let mut timeline: Option<armitage_core::node::Timeline> = node.timeline.clone();
 
     let mut step: usize = 0;
@@ -1113,7 +1113,7 @@ pub fn run_edit(path: String) -> Result<()> {
                 &gh_default,
             )? {
                 Input::Value(v) => {
-                    github_issue = match v.as_str() {
+                    track = match v.as_str() {
                         "" | "none" | "null" => None,
                         s => Some(s.to_string()),
                     };
@@ -1204,7 +1204,7 @@ pub fn run_edit(path: String) -> Result<()> {
         name,
         description,
         triage_hint: node.triage_hint.clone(),
-        github_issue,
+        track,
         labels,
         repos,
         owners,
@@ -1511,6 +1511,7 @@ pub fn run_set(
     repos: Option<String>,
     labels: Option<String>,
     status: Option<String>,
+    track: Option<String>,
     timeline_start: Option<String>,
     timeline_end: Option<String>,
 ) -> Result<()> {
@@ -1562,6 +1563,19 @@ pub fn run_set(
     }
     if let Some(s) = status {
         node.status = parse_node_status(&s)?;
+    }
+    if let Some(issue) = track {
+        node.track = if issue.is_empty() || issue == "none" {
+            None
+        } else {
+            // Validate the format before storing
+            armitage_core::node::IssueRef::parse(&issue).map_err(|_| {
+                Error::Other(format!(
+                    "invalid track format '{issue}': expected owner/repo#number"
+                ))
+            })?;
+            Some(issue)
+        };
     }
     if timeline_start.is_some() || timeline_end.is_some() {
         let new_start = timeline_start
@@ -2147,7 +2161,7 @@ mod tests {
                 description: desc.to_string(),
                 triage_hint: None,
                 status,
-                github_issue: None,
+                track: None,
                 labels: vec![],
                 repos: vec![],
                 owners: vec![],

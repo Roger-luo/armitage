@@ -20,7 +20,7 @@ pub struct Milestone {
     pub date: NaiveDate,
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub github_issue: Option<String>,
+    pub track: Option<String>,
     #[serde(rename = "type", default)]
     pub milestone_type: MilestoneType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -71,7 +71,7 @@ mod tests {
             name = "Alpha Release"
             date = "2025-03-31"
             description = "First alpha"
-            github_issue = "acme/project#10"
+            track = "acme/project#10"
             type = "okr"
             expected_progress = 0.5
 
@@ -87,13 +87,13 @@ mod tests {
         assert_eq!(alpha.name, "Alpha Release");
         assert_eq!(alpha.date, NaiveDate::from_ymd_opt(2025, 3, 31).unwrap());
         assert_eq!(alpha.description, "First alpha");
-        assert_eq!(alpha.github_issue.as_deref(), Some("acme/project#10"));
+        assert_eq!(alpha.track.as_deref(), Some("acme/project#10"));
         assert_eq!(alpha.milestone_type, MilestoneType::Okr);
         assert_eq!(alpha.expected_progress, Some(0.5));
 
         let beta = &mf.milestones[1];
         assert_eq!(beta.milestone_type, MilestoneType::Checkpoint);
-        assert!(beta.github_issue.is_none());
+        assert!(beta.track.is_none());
         assert!(beta.expected_progress.is_none());
     }
 
@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(m.name, "Simple");
         assert_eq!(m.date, NaiveDate::from_ymd_opt(2025, 7, 4).unwrap());
         assert_eq!(m.description, "Just the basics");
-        assert!(m.github_issue.is_none());
+        assert!(m.track.is_none());
         assert_eq!(m.milestone_type, MilestoneType::Checkpoint);
         assert!(m.expected_progress.is_none());
     }
@@ -121,7 +121,7 @@ mod tests {
                     name: "M1".to_string(),
                     date: NaiveDate::from_ymd_opt(2025, 9, 15).unwrap(),
                     description: "First milestone".to_string(),
-                    github_issue: Some("org/repo#5".to_string()),
+                    track: Some("org/repo#5".to_string()),
                     milestone_type: MilestoneType::Okr,
                     expected_progress: Some(0.75),
                 },
@@ -129,7 +129,7 @@ mod tests {
                     name: "M2".to_string(),
                     date: NaiveDate::from_ymd_opt(2025, 12, 1).unwrap(),
                     description: "Second milestone".to_string(),
-                    github_issue: None,
+                    track: None,
                     milestone_type: MilestoneType::Checkpoint,
                     expected_progress: None,
                 },
@@ -159,7 +159,7 @@ mod tests {
             name: "q1".to_string(),
             date: NaiveDate::from_ymd_opt(2025, 2, 15).unwrap(),
             description: String::new(),
-            github_issue: None,
+            track: None,
             milestone_type: MilestoneType::Checkpoint,
             expected_progress: None,
         };
@@ -171,7 +171,7 @@ mod tests {
             name: "q2".to_string(),
             date: NaiveDate::from_ymd_opt(2025, 6, 30).unwrap(),
             description: String::new(),
-            github_issue: None,
+            track: None,
             milestone_type: MilestoneType::Checkpoint,
             expected_progress: None,
         };
@@ -183,7 +183,7 @@ mod tests {
             name: "q4".to_string(),
             date: NaiveDate::from_ymd_opt(2025, 12, 31).unwrap(),
             description: String::new(),
-            github_issue: None,
+            track: None,
             milestone_type: MilestoneType::Checkpoint,
             expected_progress: None,
         };
@@ -195,7 +195,7 @@ mod tests {
             name: "q3".to_string(),
             date: NaiveDate::from_ymd_opt(2025, 7, 1).unwrap(),
             description: String::new(),
-            github_issue: None,
+            track: None,
             milestone_type: MilestoneType::Checkpoint,
             expected_progress: None,
         };

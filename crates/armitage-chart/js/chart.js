@@ -178,14 +178,30 @@
     paused: "#f59e0b",
     cancelled: "#ef4444"
   };
+  function isClosed(issue) {
+    const s = (issue.state || "").toLowerCase();
+    return s === "closed";
+  }
+  var TODAY_STR = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  function isDelayed(issue) {
+    return !isClosed(issue) && !!issue.target_date && issue.target_date <= TODAY_STR;
+  }
   function sortIssues(issues, nodeEnd) {
     const overdue = [];
     const onTrack = [];
     const noDates = [];
+    const closed = [];
     for (const issue of issues) {
+      if (isClosed(issue)) {
+        closed.push(issue);
+        continue;
+      }
       if (!issue.target_date) {
         noDates.push(issue);
-      } else if (nodeEnd && issue.target_date > nodeEnd) {
+      } else if ((nodeEnd && issue.target_date > nodeEnd) || isDelayed(issue)) {
         overdue.push(issue);
       } else {
         onTrack.push(issue);
@@ -193,7 +209,7 @@
     }
     overdue.sort((a, b) => b.target_date.localeCompare(a.target_date));
     onTrack.sort((a, b) => a.target_date.localeCompare(b.target_date));
-    return { overdue, onTrack, noDates };
+    return { overdue, onTrack, noDates, closed };
   }
   function renderNodeRow(node, state, layout2, yOffset, options) {
     const height = getRowHeight("node");
@@ -215,16 +231,21 @@
       arrow.className = "chart-drill";
       arrow.textContent = "\u25B8";
       row.appendChild(arrow);
-    } else if (node.issues.length > 0) {
+    }
+    if (node.issues.length > 0) {
       const badge = document.createElement("span");
       badge.className = "chart-badge issues";
-      const overdueCount = node.issues.filter(
+      const openIssues = node.issues.filter((i) => !isClosed(i));
+      const closedCount = node.issues.length - openIssues.length;
+      const overdueCount = openIssues.filter(
         (i) => i.target_date && node.end && i.target_date > node.end
       ).length;
+      let text = `${openIssues.length} open`;
+      if (closedCount > 0) text += ` \xB7 ${closedCount} done`;
       if (overdueCount > 0) {
-        badge.innerHTML = `${node.issues.length} issues \xB7 <span class="overdue-count">${overdueCount} overdue</span>`;
+        badge.innerHTML = `${text} \xB7 <span class="overdue-count">${overdueCount} overdue</span>`;
       } else {
-        badge.textContent = `${node.issues.length} issues`;
+        badge.textContent = text;
       }
       row.appendChild(badge);
     }
@@ -290,7 +311,7 @@
         for (const issue of node.issues) {
           if (!issue.target_date) continue;
           const tickX = dateToX(state, issue.target_date);
-          const isOverdue = node.end && issue.target_date > node.end;
+          const isOverdue = (node.end && issue.target_date > node.end) || isDelayed(issue);
           const tickColor = isOverdue ? "#f85149" : "#58a6ff";
           const tick = document.createElementNS("http://www.w3.org/2000/svg", "rect");
           tick.dataset.path = node.path;
@@ -330,20 +351,29 @@
   function renderIssueRows(node, state, layout2, yOffset, showAll, ancestors = []) {
     const rows = [];
     const sorted = sortIssues(node.issues, node.end);
-    const allSorted = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
+    const openSorted = [...sorted.overdue, ...sorted.onTrack, ...sorted.noDates];
+    const allSorted = [...openSorted, ...sorted.closed];
     const limit = showAll ? allSorted.length : INITIAL_ISSUE_LIMIT;
     const visible = allSorted.slice(0, limit);
     let y = yOffset;
     let insertedOverdue = false;
     let insertedSeparator = false;
+    let insertedClosedSeparator = false;
     for (const issue of visible) {
       const isOverdue = sorted.overdue.includes(issue);
-      const isOnTrackOrNoDates = !isOverdue;
+      const isClosed_ = isClosed(issue);
+      const isOnTrackOrNoDates = !isOverdue && !isClosed_;
       if (isOnTrackOrNoDates && !insertedSeparator && insertedOverdue) {
         const sepRow = renderSeparatorRow(layout2, y);
         rows.push(sepRow);
         y += sepRow.height;
         insertedSeparator = true;
+      }
+      if (isClosed_ && !insertedClosedSeparator) {
+        const sepRow = renderSeparatorRow(layout2, y, "completed");
+        rows.push(sepRow);
+        y += sepRow.height;
+        insertedClosedSeparator = true;
       }
       if (isOverdue) insertedOverdue = true;
       const issueRow = renderSingleIssueRow(issue, node, state, layout2, y, isOverdue, ancestors);
@@ -361,18 +391,24 @@
   function renderSingleIssueRow(issue, parentNode, state, layout2, yOffset, isOverdue, ancestors = []) {
     const height = getRowHeight("issue");
     const isPr = issue.is_pr;
+    const isClosed_ = isClosed(issue);
     const row = document.createElement("div");
-    row.className = `chart-row issue${isPr ? " pr" : ""}`;
+    row.className = `chart-row issue${isPr ? " pr" : ""}${isClosed_ ? " closed" : ""}`;
     row.style.height = `${height}px`;
     row.dataset.issueRef = issue.issue_ref;
     const label = document.createElement("span");
-    label.className = `chart-label issue-title${isOverdue ? " overdue" : ""}${isPr ? " pr" : ""}`;
-    label.textContent = issue.title || issue.issue_ref;
+    label.className = `chart-label issue-title${isOverdue ? " overdue" : ""}${isPr ? " pr" : ""}${isClosed_ ? " closed" : ""}`;
+    label.textContent = (isClosed_ ? "\u2713 " : "") + (issue.title || issue.issue_ref);
     label.title = `${issue.title || ""} (${issue.issue_ref})`;
     row.appendChild(label);
     const meta = document.createElement("span");
-    meta.className = `chart-badge issues${isPr ? " pr" : ""}`;
-    if (isOverdue && parentNode.end) {
+    meta.className = `chart-badge issues${isPr ? " pr" : ""}${isClosed_ ? " closed" : ""}`;
+    if (isOverdue && isDelayed(issue)) {
+      const diffDays = Math.ceil((parseDate(TODAY_STR).getTime() - parseDate(issue.target_date).getTime()) / (24 * 3600 * 1e3));
+      const diffStr = diffDays < 14 ? `${diffDays}d late` : `${Math.round(diffDays / 7)}wks late`;
+      meta.textContent = `#${(issue.issue_ref.match(/#(\d+)$/) || ["", issue.issue_ref])[1]} · ${diffStr}`;
+      meta.style.color = "#f85149";
+    } else if (isOverdue && parentNode.end) {
       meta.textContent = formatOverdue(issue.target_date, parentNode.end);
       meta.style.color = "#f85149";
     } else {
@@ -450,18 +486,24 @@
       height
     };
   }
-  function renderSeparatorRow(layout2, yOffset) {
+  function renderSeparatorRow(layout2, yOffset, label) {
     const height = getRowHeight("separator");
     const row = document.createElement("div");
     row.className = "chart-row separator";
     row.style.height = `${height}px`;
+    if (label) {
+      const span = document.createElement("span");
+      span.className = "separator-label";
+      span.textContent = label;
+      row.appendChild(span);
+    }
     layout2.labelsEl.appendChild(row);
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("x1", "0");
     line.setAttribute("y1", `${yOffset + height / 2}`);
     line.setAttribute("x2", "100%");
     line.setAttribute("y2", `${yOffset + height / 2}`);
-    line.setAttribute("stroke", "#21262d");
+    line.setAttribute("stroke", label ? "#388bfd44" : "#21262d");
     line.setAttribute("stroke-dasharray", "4,3");
     layout2.barsGroup.appendChild(line);
     return { type: "separator", labelEl: row, y: yOffset, height };
@@ -492,6 +534,7 @@
   var selectedNode = null;
   var expandedNode = null;
   var expandedShowAll = false;
+  var clickTimer = null;
   var layout;
   var scaleState;
   var renderedRows = [];
@@ -659,7 +702,7 @@
   function showIssuePanel(issue, parentNode) {
     selectedNode = null;
     const url = issueUrl(issue.issue_ref, issue.is_pr);
-    const isOverdue = issue.target_date && parentNode.end && issue.target_date > parentNode.end;
+    const isOverdue = (issue.target_date && parentNode.end && issue.target_date > parentNode.end) || isDelayed(issue);
     let html = "";
     html += `<h2>${escapeHtml(issue.title || issue.issue_ref)}</h2>`;
     html += `<a class="panel-issue-link" href="${url}" target="_blank" rel="noopener">${escapeHtml(issue.issue_ref)} &rarr; Open on GitHub</a>`;
@@ -801,17 +844,25 @@
   function handleRowClick(row) {
     if (row.type === "node" && row.node) {
       const node = row.node;
-      if (node.children.length === 0 && node.issues.length > 0) {
-        if (expandedNode === node.path) {
-          expandedNode = null;
-          expandedShowAll = false;
-          closePanel();
+      if (node.issues.length > 0) {
+        const doExpand = () => {
+          if (expandedNode === node.path) {
+            expandedNode = null;
+            expandedShowAll = false;
+            closePanel();
+          } else {
+            expandedNode = node.path;
+            expandedShowAll = false;
+            showNodePanel(node);
+          }
+          renderChart();
+        };
+        if (node.children.length > 0) {
+          clearTimeout(clickTimer);
+          clickTimer = setTimeout(doExpand, 220);
         } else {
-          expandedNode = node.path;
-          expandedShowAll = false;
-          showNodePanel(node);
+          doExpand();
         }
-        renderChart();
       } else {
         showNodePanel(node);
       }
@@ -825,6 +876,7 @@
     }
   }
   function handleRowDblClick(row) {
+    clearTimeout(clickTimer);
     if (row.type === "node" && row.node && row.node.children.length > 0) {
       navigateTo(row.node.path);
     }

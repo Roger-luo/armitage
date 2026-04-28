@@ -29,7 +29,7 @@ pub fn add_milestone(
     description: &str,
     milestone_type: &str,
     expected_progress: Option<f64>,
-    github_issue: Option<&str>,
+    track: Option<&str>,
 ) -> Result<()> {
     // Parse date
     let parsed_date = NaiveDate::parse_from_str(date, "%Y-%m-%d")
@@ -53,7 +53,7 @@ pub fn add_milestone(
         name: name.to_string(),
         date: parsed_date,
         description: description.to_string(),
-        github_issue: github_issue.map(std::string::ToString::to_string),
+        track: track.map(std::string::ToString::to_string),
         milestone_type: mt,
         expected_progress,
     });
@@ -95,7 +95,7 @@ pub fn run_add(
     description: String,
     milestone_type: String,
     expected_progress: Option<f64>,
-    github_issue: Option<String>,
+    track: Option<String>,
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
@@ -114,7 +114,7 @@ pub fn run_add(
         &description,
         &milestone_type,
         expected_progress,
-        github_issue.as_deref(),
+        track.as_deref(),
     )?;
 
     println!("Added milestone '{name}' to '{node_path}'");
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(mf.milestones[0].description, "First alpha release");
         assert_eq!(mf.milestones[0].milestone_type, MilestoneType::Checkpoint);
         assert!(mf.milestones[0].expected_progress.is_none());
-        assert!(mf.milestones[0].github_issue.is_none());
+        assert!(mf.milestones[0].track.is_none());
     }
 
     #[test]
@@ -298,7 +298,7 @@ mod tests {
         let m = &mf.milestones[0];
         assert_eq!(m.milestone_type, MilestoneType::Okr);
         assert_eq!(m.expected_progress, Some(0.75));
-        assert_eq!(m.github_issue.as_deref(), Some("owner/repo#42"));
+        assert_eq!(m.track.as_deref(), Some("owner/repo#42"));
     }
 
     #[test]

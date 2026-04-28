@@ -69,6 +69,12 @@ pub struct ChartData {
     pub global_end: Option<String>,
 }
 
+impl ChartIssue {
+    pub fn is_closed(&self) -> bool {
+        matches!(self.state.as_deref(), Some("closed") | Some("CLOSED"))
+    }
+}
+
 /// Project metadata for a single issue, passed into chart data builder.
 #[derive(Debug, Clone, Default)]
 pub struct IssueDates {
@@ -90,16 +96,13 @@ fn read_issues(node_dir: &Path, dates_map: &HashMap<String, IssueDates>) -> Vec<
     let Ok(file) = IssuesFile::read(node_dir) else {
         return vec![];
     };
-    file.issues
+    let mut issues: Vec<ChartIssue> = file
+        .issues
         .into_iter()
-        .filter_map(|e| {
+        .map(|e| {
             let dates = dates_map.get(&e.issue_ref);
             let state = dates.and_then(|d| d.state.clone());
-            // Skip closed issues
-            if state.as_deref() == Some("CLOSED") {
-                return None;
-            }
-            Some(ChartIssue {
+            ChartIssue {
                 issue_ref: e.issue_ref,
                 title: e.title,
                 start_date: dates.and_then(|d| d.start_date.clone()),
@@ -110,9 +113,12 @@ fn read_issues(node_dir: &Path, dates_map: &HashMap<String, IssueDates>) -> Vec<
                 author: dates.and_then(|d| d.author.clone()),
                 assignees: dates.map(|d| d.assignees.clone()).unwrap_or_default(),
                 is_pr: dates.map(|d| d.is_pr).unwrap_or(false),
-            })
+            }
         })
-        .collect()
+        .collect();
+    // Open issues first, closed issues at the end
+    issues.sort_by_key(|i| i.is_closed());
+    issues
 }
 
 fn read_milestones(node_dir: &Path) -> Vec<ChartMilestone> {
@@ -172,7 +178,13 @@ fn build_node(
     let milestones = read_milestones(&entry.dir);
     let issues = read_issues(&entry.dir, dates_map);
 
-    let own_issue_start = issues.iter().filter_map(|i| i.start_date.as_deref()).min();
+    // Date range and overflow use open issues only — closed ones are done.
+    let open_issues: Vec<&ChartIssue> = issues.iter().filter(|i| !i.is_closed()).collect();
+
+    let own_issue_start = open_issues
+        .iter()
+        .filter_map(|i| i.start_date.as_deref())
+        .min();
     let child_issue_start = children.iter().filter_map(|c| c.issue_start.as_deref());
     let issue_start = own_issue_start
         .into_iter()
@@ -180,7 +192,10 @@ fn build_node(
         .min()
         .map(String::from);
 
-    let own_issue_end = issues.iter().filter_map(|i| i.target_date.as_deref()).max();
+    let own_issue_end = open_issues
+        .iter()
+        .filter_map(|i| i.target_date.as_deref())
+        .max();
     let child_issue_end = children.iter().filter_map(|c| c.issue_end.as_deref());
     let issue_end = own_issue_end
         .into_iter()
@@ -189,7 +204,7 @@ fn build_node(
         .map(String::from);
     // Compute overflow: max of own issues overshooting + children's overflows
     let own_overflow = end.as_deref().and_then(|node_end| {
-        issues
+        open_issues
             .iter()
             .filter_map(|i| i.target_date.as_deref())
             .filter(|t| *t > node_end)
@@ -314,7 +329,7 @@ mod tests {
         Node {
             name: name.to_string(),
             description: format!("{name} description"),
-            github_issue: None,
+            track: None,
             labels: vec![],
             repos: vec![],
             owners: vec![],

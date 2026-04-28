@@ -4,6 +4,7 @@ pub mod config;
 pub mod init;
 pub mod milestone;
 pub mod node;
+pub mod okr;
 pub mod project;
 pub mod pull;
 pub mod push;
@@ -80,6 +81,11 @@ enum Commands {
         #[command(subcommand)]
         command: TriageCommands,
     },
+    /// Derive OKR views from the roadmap (no manual authoring required)
+    Okr {
+        #[command(subcommand)]
+        command: OkrCommands,
+    },
     /// Generate an interactive HTML roadmap chart (serves on localhost by default)
     Chart {
         /// Output file path (default: .armitage/chart.html). Implies --no-serve.
@@ -131,7 +137,7 @@ enum NodeCommands {
         #[arg(long)]
         description: Option<String>,
         #[arg(long)]
-        github_issue: Option<String>,
+        track: Option<String>,
         #[arg(long)]
         labels: Option<String>,
         #[arg(long)]
@@ -190,6 +196,9 @@ enum NodeCommands {
         labels: Option<String>,
         #[arg(long)]
         status: Option<String>,
+        /// Link a GitHub tracking issue (owner/repo#number)
+        #[arg(long)]
+        track: Option<String>,
         /// Set the timeline start date (YYYY-MM-DD)
         #[arg(long)]
         timeline_start: Option<String>,
@@ -232,7 +241,7 @@ enum MilestoneCommands {
         #[arg(long)]
         expected_progress: Option<f64>,
         #[arg(long)]
-        github_issue: Option<String>,
+        track: Option<String>,
     },
     /// List milestones
     List {
@@ -244,6 +253,43 @@ enum MilestoneCommands {
     },
     /// Remove a milestone
     Remove { node_path: String, name: String },
+}
+
+#[derive(Subcommand)]
+enum OkrCommands {
+    /// Derive OKR view from roadmap nodes and issues (no manual authoring)
+    Show {
+        /// Period: "2026-Q2", "2026-Q1", "2025", or "current" (default)
+        #[arg(long, default_value = "current")]
+        period: String,
+        /// Filter to a specific person (GitHub username)
+        #[arg(long)]
+        person: Option<String>,
+        /// Filter to a team
+        #[arg(long)]
+        team: Option<String>,
+        /// Max depth of nodes to include (1 = top-level only, 2 = +sub-nodes, default: 2)
+        #[arg(long, default_value = "2")]
+        depth: usize,
+        /// Output format: table, json, markdown
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    /// Surface OKR gaps: missing owners, no key results scheduled, overdue issues
+    Check {
+        /// Period to check
+        #[arg(long, default_value = "current")]
+        period: String,
+        /// Filter to a specific person
+        #[arg(long)]
+        person: Option<String>,
+        /// Filter to a team
+        #[arg(long)]
+        team: Option<String>,
+        /// Output format: table, json
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -698,7 +744,7 @@ pub fn run() -> Result<()> {
                 path,
                 name,
                 description,
-                github_issue,
+                track,
                 labels,
                 repos,
                 owners,
@@ -709,7 +755,7 @@ pub fn run() -> Result<()> {
                     path,
                     name,
                     description,
-                    github_issue,
+                    track,
                     labels,
                     repos,
                     owners,
@@ -745,6 +791,7 @@ pub fn run() -> Result<()> {
                 repos,
                 labels,
                 status,
+                track,
                 timeline_start,
                 timeline_end,
             } => {
@@ -758,6 +805,7 @@ pub fn run() -> Result<()> {
                     repos,
                     labels,
                     status,
+                    track,
                     timeline_start,
                     timeline_end,
                 )?;
@@ -780,7 +828,7 @@ pub fn run() -> Result<()> {
                 description,
                 milestone_type,
                 expected_progress,
-                github_issue,
+                track,
             } => {
                 milestone::run_add(
                     node_path,
@@ -789,7 +837,7 @@ pub fn run() -> Result<()> {
                     description,
                     milestone_type,
                     expected_progress,
-                    github_issue,
+                    track,
                 )?;
             }
             MilestoneCommands::List {
@@ -1051,6 +1099,25 @@ pub fn run() -> Result<()> {
             }
             ProjectCommands::ClearCache => {
                 project::run_clear_cache()?;
+            }
+        },
+        Commands::Okr { command } => match command {
+            OkrCommands::Show {
+                period,
+                person,
+                team,
+                depth,
+                format,
+            } => {
+                okr::run_show(period, person, team, depth, format)?;
+            }
+            OkrCommands::Check {
+                period,
+                person,
+                team,
+                format,
+            } => {
+                okr::run_check(period, person, team, format)?;
             }
         },
         Commands::SelfCmd { command } => run_self(command),

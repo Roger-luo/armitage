@@ -17,7 +17,7 @@ use armitage_github::issue::{GitHubIssue, fetch_issue};
 // ---------------------------------------------------------------------------
 
 pub enum PullNodeResult {
-    /// No github_issue or no remote changes — nothing to do.
+    /// No track or no remote changes — nothing to do.
     Skipped,
     /// Only remote changed — overwrite local with remote data.
     FastForward,
@@ -62,8 +62,8 @@ fn apply_remote_to_local(entry: &NodeEntry, issue: &GitHubIssue) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNodeResult> {
-    // 1. Skip if no github_issue
-    let Some(issue_ref_str) = entry.node.github_issue.as_deref() else {
+    // 1. Skip if no track
+    let Some(issue_ref_str) = entry.node.track.as_deref() else {
         return Ok(PullNodeResult::Skipped);
     };
     let issue_ref = IssueRef::parse(issue_ref_str)?;
@@ -112,7 +112,7 @@ pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNode
             name: remote_issue.title.clone(),
             description: local_node.description.clone(), // not in GitHub issue
             triage_hint: local_node.triage_hint.clone(), // not in GitHub issue
-            github_issue: local_node.github_issue.clone(), // keep local ref
+            track: local_node.track.clone(),             // keep local ref
             labels: remote_issue
                 .labels
                 .iter()
@@ -188,7 +188,7 @@ pub fn pull_node(gh: &Gh, org_root: &Path, entry: &NodeEntry) -> Result<PullNode
     // 7. Update sync state
     let new_hash = compute_node_hash(&entry.dir)?;
     let entry_state = NodeSyncEntry {
-        github_issue: issue_ref_str.to_string(),
+        track: issue_ref_str.to_string(),
         last_pulled_at: Some(Utc::now()),
         last_pushed_at: stored.as_ref().and_then(|s| s.last_pushed_at),
         remote_updated_at: Some(remote_updated_at),
@@ -215,7 +215,7 @@ pub fn pull_all(gh: &Gh, org_root: &Path, scope: Option<&str>, dry_run: bool) ->
     let filtered = filter_by_scope(nodes, scope);
 
     for entry in &filtered {
-        if dry_run && entry.node.github_issue.is_some() {
+        if dry_run && entry.node.track.is_some() {
             println!("would pull: {}", entry.path);
             continue;
         } else if dry_run {

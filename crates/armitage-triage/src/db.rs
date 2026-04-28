@@ -525,6 +525,58 @@ pub fn get_project_items_for_issue(
 }
 
 // ---------------------------------------------------------------------------
+// OKR / project-data bulk query
+// ---------------------------------------------------------------------------
+
+/// An issue combined with its effective roadmap node and GitHub Projects v2 dates.
+/// Used by the `okr` command to derive OKR views from existing triage data.
+#[derive(Debug, Clone, Serialize)]
+pub struct IssueWithProjectData {
+    pub issue: StoredIssue,
+    /// Effective node path: `review_decisions.final_node` when a decision exists,
+    /// otherwise `triage_suggestions.suggested_node`.
+    pub node_path: Option<String>,
+    pub target_date: Option<String>,
+    pub start_date: Option<String>,
+    pub project_status: Option<String>,
+}
+
+/// Load every classified, non-PR issue together with its effective node path and
+/// GitHub Projects v2 dates in a single query.  Issues that have no triage
+/// suggestion are excluded (they have never been classified).
+pub fn get_all_issues_with_project_data(conn: &Connection) -> Result<Vec<IssueWithProjectData>> {
+    let mut stmt = conn.prepare(
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state,
+                i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count,
+                i.author, i.assignees_json, i.is_pr, i.comment_count,
+                COALESCE(rd.final_node, ts.suggested_node) AS effective_node,
+                ipi.target_date, ipi.start_date, ipi.status AS project_status
+         FROM issues i
+         JOIN triage_suggestions ts ON i.id = ts.issue_id
+         LEFT JOIN review_decisions rd ON rd.suggestion_id = ts.id
+         LEFT JOIN issue_project_items ipi ON ipi.issue_id = i.id
+         WHERE i.is_pr = 0
+         ORDER BY effective_node ASC NULLS LAST,
+                  ipi.target_date ASC NULLS LAST,
+                  i.number ASC",
+    )?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let issue = row_to_issue(row)?;
+            Ok(IssueWithProjectData {
+                issue,
+                node_path: row.get(14)?,
+                target_date: row.get(15)?,
+                start_date: row.get(16)?,
+                project_status: row.get(17)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
 // Triage Suggestion CRUD
 // ---------------------------------------------------------------------------
 

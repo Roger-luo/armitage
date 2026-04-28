@@ -63,12 +63,12 @@ pub fn merge_nodes(base: &Node, local: &Node, remote: &Node) -> MergeResult {
         &mut conflicts,
     );
 
-    // --- github_issue ---
-    let github_issue = merge_option_string_field(
-        "github_issue",
-        base.github_issue.as_deref(),
-        local.github_issue.as_deref(),
-        remote.github_issue.as_deref(),
+    // --- track ---
+    let track = merge_option_string_field(
+        "track",
+        base.track.as_deref(),
+        local.track.as_deref(),
+        remote.track.as_deref(),
         &mut conflicts,
     );
 
@@ -133,7 +133,7 @@ pub fn merge_nodes(base: &Node, local: &Node, remote: &Node) -> MergeResult {
         name,
         description,
         triage_hint,
-        github_issue,
+        track,
         labels,
         repos,
         owners,
@@ -425,7 +425,7 @@ mod tests {
         Node {
             name: "test-node".to_string(),
             description: "A test node".to_string(),
-            github_issue: Some("owner/repo#1".to_string()),
+            track: Some("owner/repo#1".to_string()),
             labels: vec!["team:alpha".to_string(), "priority:low".to_string()],
             repos: vec!["owner/repo".to_string()],
             owners: vec![],
