@@ -151,14 +151,14 @@ pub fn run_show(
                         Some(d) => NaiveDate::parse_from_str(d, "%Y-%m-%d")
                             .ok()
                             .is_some_and(|d| period.contains_date(d)),
-                        None => i.issue.state == "OPEN",
+                        None => i.issue.state.eq_ignore_ascii_case("open"),
                     }
                 })
                 .collect();
 
             let closed = period_issues
                 .iter()
-                .filter(|i| i.issue.state == "CLOSED")
+                .filter(|i| i.issue.state.eq_ignore_ascii_case("closed"))
                 .count();
             let total = period_issues.len();
             let progress = if total > 0 {
@@ -170,7 +170,7 @@ pub fn run_show(
             let at_risk: Vec<String> = period_issues
                 .iter()
                 .filter(|i| {
-                    i.issue.state == "OPEN"
+                    i.issue.state.eq_ignore_ascii_case("open")
                         && i.target_date
                             .as_deref()
                             .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
@@ -182,7 +182,7 @@ pub fn run_show(
             let key_results: Vec<KeyResult> = period_issues
                 .iter()
                 .map(|i| {
-                    let overdue = i.issue.state == "OPEN"
+                    let overdue = i.issue.state.eq_ignore_ascii_case("open")
                         && i.target_date
                             .as_deref()
                             .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
@@ -335,7 +335,7 @@ pub fn run_check(
 
         // Overdue open issues.
         for i in &subtree_issues {
-            if i.issue.state != "OPEN" {
+            if !i.issue.state.eq_ignore_ascii_case("open") {
                 continue;
             }
             if let Some(d) = i
@@ -357,7 +357,7 @@ pub fn run_check(
 
         // Unassigned open issues with a target date this period.
         for i in &dated_issues {
-            if i.issue.state == "OPEN" && i.issue.assignees.is_empty() {
+            if i.issue.state.eq_ignore_ascii_case("open") && i.issue.assignees.is_empty() {
                 problems.push(CheckProblem {
                     kind: "unassigned".to_string(),
                     node_path: e.path.clone(),
@@ -430,7 +430,7 @@ fn print_table(period: &Period, objectives: &[OkrObjective], today: NaiveDate) {
             println!("  owners: {}", obj.owners.join(", "));
         }
         for kr in &obj.key_results {
-            let state_icon = if kr.state == "CLOSED" {
+            let state_icon = if kr.state.eq_ignore_ascii_case("closed") {
                 "✓"
             } else if kr.overdue {
                 "⚠"
@@ -441,7 +441,7 @@ fn print_table(period: &Period, objectives: &[OkrObjective], today: NaiveDate) {
                 .target_date
                 .as_deref()
                 .map(|d| {
-                    if kr.state == "OPEN" {
+                    if kr.state.eq_ignore_ascii_case("open") {
                         let date = NaiveDate::parse_from_str(d, "%Y-%m-%d").ok();
                         let overdue = date.is_some_and(|dt| dt < today);
                         if overdue {
@@ -502,7 +502,7 @@ fn print_markdown(period: &Period, objectives: &[OkrObjective], team_file: &Team
         println!("| Issue | Title | Status | Target | Assignees |");
         println!("|---|---|---|---|---|");
         for kr in &obj.key_results {
-            let status = if kr.state == "CLOSED" {
+            let status = if kr.state.eq_ignore_ascii_case("closed") {
                 "✅ CLOSED"
             } else if kr.overdue {
                 "⚠️ OVERDUE"
