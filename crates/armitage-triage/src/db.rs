@@ -458,6 +458,16 @@ pub fn get_issues_by_repo(conn: &Connection, repo: &str) -> Result<Vec<StoredIss
         .map_err(Into::into)
 }
 
+pub fn get_issue_by_id(conn: &Connection, id: i64) -> Result<StoredIssue> {
+    conn.query_row(
+        "SELECT id, repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count, author, assignees_json, is_pr, comment_count
+         FROM issues WHERE id = ?1",
+        params![id],
+        row_to_issue,
+    )
+    .map_err(Into::into)
+}
+
 pub fn get_latest_updated_at(conn: &Connection, repo: &str) -> Result<Option<String>> {
     let mut stmt = conn.prepare("SELECT MAX(updated_at) FROM issues WHERE repo = ?1")?;
     let result: Option<String> = stmt.query_row(params![repo], |row| row.get(0))?;

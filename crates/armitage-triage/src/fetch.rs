@@ -112,6 +112,65 @@ pub fn fetch_repo_issues(
     Ok(count)
 }
 
+/// Fetch a single issue by number, upsert it into the DB, and return its DB row id.
+/// Returns `None` if the issue doesn't exist on GitHub (404).
+pub fn fetch_single_issue(
+    gh: &armitage_github::Gh,
+    conn: &Connection,
+    repo: &str,
+    number: u64,
+) -> Result<Option<i64>> {
+    let endpoint = format!("repos/{repo}/issues/{number}");
+    let json = match gh.run(&["api", &endpoint]) {
+        Ok(j) => j,
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("404") || msg.contains("Not Found") {
+                return Ok(None);
+            }
+            return Err(armitage_github::error::Error::from(e).into());
+        }
+    };
+
+    let api_issue: ApiIssue =
+        serde_json::from_str(&json).map_err(|e| Error::Other(format!("JSON parse error: {e}")))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let labels: Vec<String> = api_issue.labels.iter().map(|l| l.name.clone()).collect();
+    let sub_issues_count = api_issue.sub_issues_summary.as_ref().map_or(0, |s| s.total);
+    let stored = StoredIssue {
+        id: 0,
+        repo: repo.to_string(),
+        number: api_issue.number,
+        title: api_issue.title.clone(),
+        body: api_issue.body.clone().unwrap_or_default(),
+        state: api_issue.state.clone(),
+        labels,
+        updated_at: api_issue.updated_at.clone(),
+        fetched_at: now,
+        sub_issues_count,
+        author: api_issue
+            .user
+            .as_ref()
+            .map(|u| u.login.clone())
+            .unwrap_or_default(),
+        assignees: api_issue
+            .assignees
+            .iter()
+            .map(|u| u.login.clone())
+            .collect(),
+        is_pr: api_issue.pull_request.is_some(),
+        comment_count: api_issue.comments as i64,
+    };
+    db::upsert_issue(conn, &stored)?;
+    let id = db::lookup_issue_id(conn, repo, number)?.ok_or_else(|| {
+        Error::Other(format!(
+            "upsert succeeded but lookup failed for {repo}#{number}"
+        ))
+    })?;
+    Ok(Some(id))
+}
+
 /// Fetch issues from multiple repos.
 /// If `repos` is empty, collects repos from node.toml files.
 /// The org's `default_repo` is always included if set.

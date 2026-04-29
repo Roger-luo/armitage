@@ -750,6 +750,11 @@ enum WatchCommands {
         #[arg(long, default_value = "table")]
         format: String,
     },
+    /// Watch one or more issues for new replies
+    Add {
+        /// Issue references (owner/repo#number), one or more
+        issue_refs: Vec<String>,
+    },
     /// Stop watching one or more issues
     Dismiss {
         /// Issue references (owner/repo#number), one or more
@@ -1257,6 +1262,7 @@ pub fn run() -> Result<()> {
             }
             TriageCommands::Watch { command } => match command {
                 WatchCommands::List { status, format } => triage::run_watch_list(status, format)?,
+                WatchCommands::Add { issue_refs } => triage::run_watch_add(issue_refs)?,
                 WatchCommands::Dismiss { issue_refs } => triage::run_watch_dismiss(issue_refs)?,
             },
         },

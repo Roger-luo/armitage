@@ -3569,6 +3569,48 @@ fn parse_yes_no(input: &str, default: bool) -> bool {
     }
 }
 
+pub fn run_watch_add(issue_refs: Vec<String>) -> Result<()> {
+    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let gh = armitage_github::require_gh()?;
+    let conn = db::open_db(&org_root)?;
+
+    if issue_refs.is_empty() {
+        return Err(Error::Other(
+            "provide at least one issue ref (owner/repo#number)".to_string(),
+        ));
+    }
+
+    let mut added = 0usize;
+    for ref_str in &issue_refs {
+        let issue_ref = IssueRef::parse(ref_str)?;
+        let repo = issue_ref.repo_full();
+
+        // Ensure the issue is in the local DB with a fresh comment count.
+        // We always fetch from GitHub so the baseline reflects the current state.
+        let issue_id = match fetch::fetch_single_issue(&gh, &conn, &repo, issue_ref.number)? {
+            Some(id) => id,
+            None => {
+                eprintln!("  {ref_str}: issue not found on GitHub (404), skipping");
+                continue;
+            }
+        };
+
+        // Use the current comment count as the baseline — any comment posted after
+        // this point will be detected as a new reply on the next `triage fetch`.
+        let issue = db::get_issue_by_id(&conn, issue_id)?;
+        db::add_watch(&conn, issue_id, issue.comment_count)?;
+        println!(
+            "  {ref_str}: watching (baseline: {} comment{})",
+            issue.comment_count,
+            if issue.comment_count == 1 { "" } else { "s" }
+        );
+        added += 1;
+    }
+
+    println!("Watching {added} issue(s). Run `triage fetch` to check for replies.");
+    Ok(())
+}
+
 pub fn run_watch_list(status: String, format: String) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;
@@ -3579,18 +3621,6 @@ pub fn run_watch_list(status: String, format: String) -> Result<()> {
         s => Some(s),
     };
     let watches = db::get_watches(&conn, filter_str)?;
-
-    if watches.is_empty() {
-        println!(
-            "No watched issues{}.",
-            if status == "active" {
-                " with pending replies"
-            } else {
-                ""
-            }
-        );
-        return Ok(());
-    }
 
     if fmt == OutputFormat::Json {
         let items: Vec<serde_json::Value> = watches
@@ -3612,6 +3642,18 @@ pub fn run_watch_list(status: String, format: String) -> Result<()> {
         println!(
             "{}",
             serde_json::to_string_pretty(&items).map_err(|e| Error::Other(e.to_string()))?
+        );
+        return Ok(());
+    }
+
+    if watches.is_empty() {
+        println!(
+            "No watched issues{}.",
+            if status == "active" {
+                " with pending replies"
+            } else {
+                ""
+            }
         );
         return Ok(());
     }
