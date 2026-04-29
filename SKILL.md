@@ -130,8 +130,9 @@ armitage status                      # show org overview
 ### GitHub Project Board Sync
 
 ```
-armitage project sync [<node_path>] [--dry-run]   # add nodes to board and set date/status fields
-armitage project clear-cache                       # force re-fetch of project field metadata
+armitage project sync [<node_path>] [--dry-run]                         # add nodes to board and set date/status fields
+armitage project set <owner/repo#N> [--start-date YYYY-MM-DD] [--target-date YYYY-MM-DD] [--dry-run]  # set dates for a single issue
+armitage project clear-cache                                            # force re-fetch of project field metadata
 ```
 
 Syncs every node that has both `track` and `[timeline]` to a configured GitHub Projects v2
@@ -530,7 +531,7 @@ When reviewing a person's OKR (e.g. comparing a manually written plan against th
 1. **Generate the view:** `okr show --period 2026-Q2 --person <username> --format markdown`
 2. **Surface deadline drift:** `triage overdue` — lists all open issues with past target dates org-wide; scope with `--repo` if needed
 3. **Fix node tracking issue dates:** `project sync <node_path>` — pushes the node's local `[timeline]` to the project board for any node that has `track` set
-4. **Fix individual issue dates on the board:** Use `gh api graphql` mutations directly (armitage `project sync` only covers node tracking issues, not arbitrary issues). Get the project item ID by paginating the project board, then call `updateProjectV2ItemFieldValue`.
+4. **Fix individual issue dates on the board:** `project set <owner/repo#N> --target-date YYYY-MM-DD` — sets start/target dates for any single issue without raw GraphQL.
 5. **Stage follow-up comments on overdue issues:** `triage overdue --comment "This issue's target date has passed. Please update the target date or leave a status comment." && triage apply`
 6. **Classify new unclassified issues:** `triage fetch --repo <r>` then `triage classify --repo <r> --limit N`, review, decide, apply
 
@@ -596,4 +597,4 @@ When creating new nodes for a project, consider:
 
 **Classify cross-cutting blockers to the dependent area, not the implementation area.** When an issue is a blocker for one initiative (e.g. Gemini Logical STAR injection) but the implementation work lives in another repo/area (e.g. bloqade-lanes / shuttle), classify it to the initiative that depends on it. That's where the person tracking the work will look for it. Low confidence from the LLM on such issues is expected and not a reason to reclassify — add a note on approval explaining the reasoning so the example doesn't mislead future classification runs.
 
-**`triage overdue` is the right tool after an OKR review.** When comparing a manually written OKR against the generated view and finding stale target dates, run `triage overdue` first to get a full picture of deadline drift across the org before editing individual issues. Then fix dates on the GitHub project board (via `project sync <node_path>` for nodes with `track`, or via `gh api graphql` mutations for individual issues that aren't node tracking issues).
+**`triage overdue` is the right tool after an OKR review.** When comparing a manually written OKR against the generated view and finding stale target dates, run `triage overdue` first to get a full picture of deadline drift across the org before editing individual issues. Then fix dates on the GitHub project board (via `project sync <node_path>` for nodes with `track`, or via `project set <owner/repo#N> --target-date YYYY-MM-DD` for individual issues).

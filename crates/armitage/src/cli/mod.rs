@@ -136,6 +136,20 @@ enum ProjectCommands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Set project board date fields for a single issue (e.g. owner/repo#123)
+    Set {
+        /// Issue reference, e.g. QuEraComputing/bloqade-internal#95
+        issue: String,
+        /// Start date (YYYY-MM-DD)
+        #[arg(long)]
+        start_date: Option<String>,
+        /// Target date (YYYY-MM-DD)
+        #[arg(long)]
+        target_date: Option<String>,
+        /// Show what would change without making any mutations
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Clear the cached project field IDs (forces re-fetch on next sync)
     ClearCache,
 }
@@ -1222,6 +1236,14 @@ pub fn run() -> Result<()> {
         Commands::Project { command } => match command {
             ProjectCommands::Sync { node_path, dry_run } => {
                 project::run_sync(dry_run, node_path)?;
+            }
+            ProjectCommands::Set {
+                issue,
+                start_date,
+                target_date,
+                dry_run,
+            } => {
+                project::run_set(issue, start_date, target_date, dry_run)?;
             }
             ProjectCommands::ClearCache => {
                 project::run_clear_cache()?;

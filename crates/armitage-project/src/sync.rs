@@ -302,6 +302,110 @@ fn end_of_quarter(date: NaiveDate) -> NaiveDate {
     next_month_first.pred_opt().unwrap()
 }
 
+/// Set project board date fields for a single issue ref (`owner/repo#N`).
+/// Adds the issue to the board if it is not already present.
+/// At least one of `start_date` or `target_date` must be `Some`.
+pub fn set_issue(
+    gh: &Gh,
+    org: &Org,
+    issue_str: &str,
+    start_date: Option<NaiveDate>,
+    target_date: Option<NaiveDate>,
+    dry_run: bool,
+) -> Result<()> {
+    let cfg = org.domain_config::<ProjectDomain>()?;
+
+    if cfg.org.is_empty() || cfg.number == 0 {
+        return Err(Error::Other(
+            "github_project.org and github_project.number must be set in armitage.toml".into(),
+        ));
+    }
+
+    let issue_ref = IssueRef::parse(issue_str)
+        .map_err(|e| Error::Other(format!("invalid issue ref '{issue_str}': {e}")))?;
+    let repo = strip_qualifier(&issue_ref.repo);
+    let canonical = format!("{}/{}#{}", issue_ref.owner, repo, issue_ref.number);
+
+    let cache = load_or_fetch_cache(gh, org, &cfg)?;
+
+    println!("Fetching current project items…");
+    let existing: HashMap<String, ProjectItem> = fetch_project_items(gh, &cfg.org, cfg.number)?;
+
+    let (item_id, needs_add) = if let Some(item) = existing.get(&canonical) {
+        (item.item_id.clone(), false)
+    } else {
+        (String::new(), true)
+    };
+
+    if dry_run {
+        if needs_add {
+            println!("  [dry]  would add {canonical} to project");
+        }
+        if let Some(d) = start_date {
+            println!(
+                "  [dry]  would set {} = {}",
+                cfg.start_date_field.as_deref().unwrap_or("Start date"),
+                d.format("%Y-%m-%d")
+            );
+        }
+        if let Some(d) = target_date {
+            println!(
+                "  [dry]  would set {} = {}",
+                cfg.target_date_field.as_deref().unwrap_or("Target date"),
+                d.format("%Y-%m-%d")
+            );
+        }
+        return Ok(());
+    }
+
+    let item_id = if needs_add {
+        println!("  add    {canonical}");
+        let content_id = fetch_issue_node_id(gh, &issue_ref.owner, &repo, issue_ref.number)?;
+        add_item_to_project(gh, &cache.project_id, &content_id)?
+    } else {
+        println!("  update {canonical}");
+        item_id
+    };
+
+    if let Some(d) = start_date
+        && let Some(ref field_name) = cfg.start_date_field
+    {
+        match cache.fields.get(field_name) {
+            Some(CachedField::Date { id }) => {
+                update_date_field(
+                    gh,
+                    &cache.project_id,
+                    &item_id,
+                    id,
+                    &d.format("%Y-%m-%d").to_string(),
+                )?;
+                println!("  set    {field_name} = {}", d.format("%Y-%m-%d"));
+            }
+            _ => warn!("start_date_field '{field_name}' not found on board, skipping"),
+        }
+    }
+
+    if let Some(d) = target_date
+        && let Some(ref field_name) = cfg.target_date_field
+    {
+        match cache.fields.get(field_name) {
+            Some(CachedField::Date { id }) => {
+                update_date_field(
+                    gh,
+                    &cache.project_id,
+                    &item_id,
+                    id,
+                    &d.format("%Y-%m-%d").to_string(),
+                )?;
+                println!("  set    {field_name} = {}", d.format("%Y-%m-%d"));
+            }
+            _ => warn!("target_date_field '{field_name}' not found on board, skipping"),
+        }
+    }
+
+    Ok(())
+}
+
 fn load_or_fetch_cache(gh: &Gh, org: &Org, cfg: &GitHubProjectConfig) -> Result<FieldCache> {
     if let Some(cache) = read_field_cache(org.root())? {
         // Re-use cached field IDs unless the project changed.
