@@ -234,11 +234,16 @@ armitage triage watch dismiss <issue-ref>...
 - **summary** — confidence distribution, per-node breakdown, and suggested new categories
 - **suggestions** — query and filter individual suggestions with flexible criteria. Use `--issues 247,276,32` to select specific issue numbers. The `--format summary` option groups results into **AUTO-APPROVE** (confidence >= 0.80 with a suggested node) and **NEEDS REVIEW** (low confidence or no node), with extra detail (stale flags, new categories, reasoning) for uncertain ones — ideal for agent-driven workflows that need to partition suggestions without post-processing. Use `--format refs` to output just issue refs one per line (e.g., for piping to `triage decide`)
 - **decisions** — query and filter review decisions
-- **watch add** — start watching one or more issues for new replies. Fetches the current comment count from GitHub as the baseline, so any subsequent comment triggers a `replied` status on the next `triage fetch`. Use this after posting follow-up comments on overdue or inquired issues: `triage watch add owner/repo#N ...`
-- **watch list** — show watched issues and their reply status (`watching` / `replied` / `dismissed`). Detects replies by comparing the current comment count against the baseline set at watch time. Use `--status all` to include dismissed items
+- **watch add** — start watching one or more issues for activity. Fetches the current comment count and project board state (target date, status) from GitHub as the baseline, so any subsequent change triggers detection on the next `triage fetch`. Use this after posting follow-up comments on overdue or inquired issues: `triage watch add owner/repo#N ...`
+- **watch list** — show watched issues and their status (`watching` / `replied` / `closed` / `project_updated` / `dismissed`). Use `--status all` to include dismissed items
 - **watch dismiss** — stop watching one or more issues: `triage watch dismiss owner/repo#N ...`
 
-Replies are detected automatically during `triage fetch` — it prints `[watch] owner/repo#N has a new reply!` when the comment count increases. Run `triage watch list` after a fetch to see the full status.
+Activity is detected automatically during `triage fetch` — which prints `[watch]` lines for:
+- `replied`: comment count increased since the watch was set
+- `closed`: issue state changed to closed
+- `project_updated`: project board target date or status changed since the watch was set
+
+Note: project board changes are only detected if the org has `[github_project]` configured in `armitage.toml`, since that data is fetched during `triage fetch`. Run `triage watch list` after a fetch to see the full status.
 
 ### Category Management
 
