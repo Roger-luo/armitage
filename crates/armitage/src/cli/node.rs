@@ -2032,10 +2032,10 @@ fn check_board_dates(
     for entry in all {
         let node = &entry.node;
         // Only check nodes that have both a tracking issue and a timeline.
-        if node.github_issue.is_none() || node.timeline.is_none() {
+        if node.track.is_none() || node.timeline.is_none() {
             continue;
         }
-        let issue_str = node.github_issue.as_deref().unwrap();
+        let issue_str = node.track.as_deref().unwrap();
 
         // Parse "owner/repo#number" into canonical form used by fetch_project_items.
         let issue_ref = match armitage_core::node::IssueRef::parse(issue_str) {
