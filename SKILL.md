@@ -546,7 +546,9 @@ When reviewing a person's OKR (e.g. comparing a manually written plan against th
 3. **Fix node tracking issue dates:** `project sync <node_path>` — pushes the node's local `[timeline]` to the project board for any node that has `track` set
 4. **Fix individual issue dates on the board:** `project set <owner/repo#N> --target-date YYYY-MM-DD` — sets start/target dates for any single issue without raw GraphQL.
 5. **Stage follow-up comments on overdue issues:** `triage overdue --comment "This issue's target date has passed. Please update the target date or leave a status comment." && triage apply`
-6. **Classify new unclassified issues:** `triage fetch --repo <r>` then `triage classify --repo <r> --limit N`, review, decide, apply
+6. **Watch for responses:** After `triage apply` posts the comments, run `triage watch add <issue-refs>...` to track each issue. Responses can be a new comment (`replied`), an issue closure (`closed`), or a project board update like a new target date (`project_updated`). Run `triage fetch` to detect activity, then `triage watch list` to see the full status.
+7. **Dismiss resolved watches:** Once a response is satisfactory, run `triage watch dismiss <issue-refs>...` to remove them from the active list.
+8. **Classify new unclassified issues:** `triage fetch --repo <r>` then `triage classify --repo <r> --limit N`, review, decide, apply
 
 ### Improving classification accuracy
 
@@ -611,3 +613,5 @@ When creating new nodes for a project, consider:
 **Classify cross-cutting blockers to the dependent area, not the implementation area.** When an issue is a blocker for one initiative (e.g. Gemini Logical STAR injection) but the implementation work lives in another repo/area (e.g. bloqade-lanes / shuttle), classify it to the initiative that depends on it. That's where the person tracking the work will look for it. Low confidence from the LLM on such issues is expected and not a reason to reclassify — add a note on approval explaining the reasoning so the example doesn't mislead future classification runs.
 
 **`triage overdue` is the right tool after an OKR review.** When comparing a manually written OKR against the generated view and finding stale target dates, run `triage overdue` first to get a full picture of deadline drift across the org before editing individual issues. Then fix dates on the GitHub project board (via `project sync <node_path>` for nodes with `track`, or via `project set <owner/repo#N> --target-date YYYY-MM-DD` for individual issues).
+
+**Moving an issue on the project board counts as a response.** When you ask a collaborator to update a timeline, they may respond by moving the issue to a new target date or status on the GitHub project board rather than posting a comment. The watch system fires `project_updated` for this — it won't show as `replied`. Always check `triage watch list` after a fetch (not just the `[watch]` stdout lines), and don't assume silence means no response if they're the kind of person who works through the project board.
