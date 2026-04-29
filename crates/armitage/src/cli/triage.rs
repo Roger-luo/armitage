@@ -3563,6 +3563,14 @@ fn parse_yes_no(input: &str, default: bool) -> bool {
     }
 }
 
+pub fn run_watch_list(_status: String, _format: String) -> Result<()> {
+    todo!("triage watch list: not yet implemented")
+}
+
+pub fn run_watch_dismiss(_issue_refs: Vec<String>) -> Result<()> {
+    todo!("triage watch dismiss: not yet implemented")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -659,6 +659,11 @@ enum TriageCommands {
         #[arg(long, default_value_t = 500)]
         body_max: usize,
     },
+    /// Watch issues for replies after posting inquire questions
+    Watch {
+        #[command(subcommand)]
+        command: WatchCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -731,6 +736,24 @@ enum TriageExampleCommands {
     Remove {
         /// Issue reference (e.g. "owner/repo#123")
         issue_ref: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum WatchCommands {
+    /// List watched issues and their reply status
+    List {
+        /// Status filter: active (default), watching, replied, dismissed, or all
+        #[arg(long, default_value = "active")]
+        status: String,
+        /// Output format: "table" (default) or "json"
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    /// Stop watching one or more issues
+    Dismiss {
+        /// Issue references (owner/repo#number), one or more
+        issue_refs: Vec<String>,
     },
 }
 
@@ -1232,6 +1255,10 @@ pub fn run() -> Result<()> {
                     body_max,
                 )?;
             }
+            TriageCommands::Watch { command } => match command {
+                WatchCommands::List { status, format } => triage::run_watch_list(status, format)?,
+                WatchCommands::Dismiss { issue_refs } => triage::run_watch_dismiss(issue_refs)?,
+            },
         },
         Commands::Project { command } => match command {
             ProjectCommands::Sync { node_path, dry_run } => {
