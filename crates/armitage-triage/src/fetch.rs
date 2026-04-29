@@ -224,12 +224,15 @@ pub fn fetch_all(
 
     // Check watched issues for new replies (comment count increased since we posted our question)
     match db::check_watches_for_replies(conn) {
-        Ok(replied) => {
-            for w in &replied {
-                println!(
-                    "  [watch] {}#{} has a new reply! ({} comments)",
-                    w.repo, w.number, w.comment_count
-                );
+        Ok(updated) => {
+            for w in &updated {
+                match w.status.as_str() {
+                    "closed" => println!("  [watch] {}#{} was closed!", w.repo, w.number),
+                    _ => println!(
+                        "  [watch] {}#{} has a new reply! ({} comments)",
+                        w.repo, w.number, w.comment_count
+                    ),
+                }
             }
         }
         Err(e) => eprintln!("  warning: watch check failed: {e}"),

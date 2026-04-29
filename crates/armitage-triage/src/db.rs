@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 // ---------------------------------------------------------------------------
 
 /// Current schema version. Bump this when adding migrations.
-const SCHEMA_VERSION: u32 = 11;
+const SCHEMA_VERSION: u32 = 12;
 
 /// Full schema for a fresh database (always represents the latest version).
 const SCHEMA_V6: &str = "
@@ -82,6 +82,18 @@ CREATE TABLE IF NOT EXISTS issue_project_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_items_issue ON issue_project_items(issue_id);
+
+CREATE TABLE IF NOT EXISTS watched_issues (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id               INTEGER NOT NULL UNIQUE REFERENCES issues(id) ON DELETE CASCADE,
+    watched_since          TEXT NOT NULL,
+    comment_count_at_watch INTEGER NOT NULL,
+    state_at_watch         TEXT NOT NULL DEFAULT 'open',
+    status                 TEXT NOT NULL DEFAULT 'watching',
+    replied_at             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_watched_issue ON watched_issues(issue_id);
 ";
 
 /// Migrations from version N to N+1. Index 0 = v0→v1, index 1 = v1→v2, etc.
@@ -140,6 +152,21 @@ const MIGRATIONS: &[Option<&str>] = &[
             replied_at             TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_watched_issue ON watched_issues(issue_id);",
+    ),
+    // v11 → v12: add state_at_watch to watched_issues for close-event detection;
+    // also recreate the table if missing (fixes fresh-DB bug where v11 skipped the v10→v11 migration)
+    Some(
+        "CREATE TABLE IF NOT EXISTS watched_issues (
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            issue_id               INTEGER NOT NULL UNIQUE REFERENCES issues(id) ON DELETE CASCADE,
+            watched_since          TEXT NOT NULL,
+            comment_count_at_watch INTEGER NOT NULL,
+            state_at_watch         TEXT NOT NULL DEFAULT 'open',
+            status                 TEXT NOT NULL DEFAULT 'watching',
+            replied_at             TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_watched_issue ON watched_issues(issue_id);
+        ALTER TABLE watched_issues ADD COLUMN state_at_watch TEXT NOT NULL DEFAULT 'open';",
     ),
 ];
 
@@ -208,8 +235,10 @@ pub struct WatchedIssue {
     pub number: i64,
     pub title: String,
     pub comment_count: i64,
+    pub current_state: String,
     pub watched_since: String,
     pub comment_count_at_watch: i64,
+    pub state_at_watch: String,
     pub status: String,
     pub replied_at: Option<String>,
 }
@@ -236,6 +265,7 @@ pub struct PipelineCounts {
     pub stale: usize,
     pub watching: usize,
     pub replied: usize,
+    pub closed: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -1089,6 +1119,11 @@ pub fn get_pipeline_counts(conn: &Connection) -> Result<PipelineCounts> {
         [],
         |r| r.get(0),
     )?;
+    let closed: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM watched_issues WHERE status = 'closed'",
+        [],
+        |r| r.get(0),
+    )?;
     Ok(PipelineCounts {
         total_fetched: total_fetched as usize,
         untriaged: untriaged as usize,
@@ -1098,6 +1133,7 @@ pub fn get_pipeline_counts(conn: &Connection) -> Result<PipelineCounts> {
         stale: stale as usize,
         watching: watching as usize,
         replied: replied as usize,
+        closed: closed as usize,
     })
 }
 
@@ -1687,19 +1723,26 @@ pub fn get_overdue_issues(
 // ---------------------------------------------------------------------------
 
 /// Insert or replace a watch entry for an issue.
-/// `comment_count_at_watch` should be the comment count AFTER our question was posted
-/// (i.e. `issue.comment_count + 1`), so only replies beyond our own comment trigger detection.
-pub fn add_watch(conn: &Connection, issue_id: i64, comment_count_at_watch: i64) -> Result<()> {
+/// `comment_count_at_watch` is the current comment count; any increase on the next fetch
+/// triggers `replied` detection. `state_at_watch` is the current issue state (typically
+/// "open"); a transition to "closed" triggers `closed` detection.
+pub fn add_watch(
+    conn: &Connection,
+    issue_id: i64,
+    comment_count_at_watch: i64,
+    state_at_watch: &str,
+) -> Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
-        "INSERT INTO watched_issues (issue_id, watched_since, comment_count_at_watch, status)
-         VALUES (?1, ?2, ?3, 'watching')
+        "INSERT INTO watched_issues (issue_id, watched_since, comment_count_at_watch, state_at_watch, status)
+         VALUES (?1, ?2, ?3, ?4, 'watching')
          ON CONFLICT(issue_id) DO UPDATE SET
              watched_since = excluded.watched_since,
              comment_count_at_watch = excluded.comment_count_at_watch,
+             state_at_watch = excluded.state_at_watch,
              status = 'watching',
              replied_at = NULL",
-        rusqlite::params![issue_id, now, comment_count_at_watch],
+        rusqlite::params![issue_id, now, comment_count_at_watch, state_at_watch],
     )?;
     Ok(())
 }
@@ -1717,22 +1760,25 @@ pub fn get_watches(conn: &Connection, status_filter: Option<&str>) -> Result<Vec
             number: row.get(3)?,
             title: row.get(4)?,
             comment_count: row.get(5)?,
-            watched_since: row.get(6)?,
-            comment_count_at_watch: row.get(7)?,
-            status: row.get(8)?,
-            replied_at: row.get(9)?,
+            current_state: row.get(6)?,
+            watched_since: row.get(7)?,
+            comment_count_at_watch: row.get(8)?,
+            state_at_watch: row.get(9)?,
+            status: row.get(10)?,
+            replied_at: row.get(11)?,
         })
     };
 
     let base_sql = "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
-                w.watched_since, w.comment_count_at_watch, w.status, w.replied_at
+                i.state, w.watched_since, w.comment_count_at_watch, w.state_at_watch,
+                w.status, w.replied_at
          FROM watched_issues w
          JOIN issues i ON i.id = w.issue_id";
 
     match status_filter {
         None | Some("active") => {
             let sql = format!(
-                "{base_sql} WHERE w.status IN ('watching', 'replied') ORDER BY w.watched_since DESC"
+                "{base_sql} WHERE w.status IN ('watching', 'replied', 'closed') ORDER BY w.watched_since DESC"
             );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map([], map_row)?;
@@ -1753,39 +1799,65 @@ pub fn get_watches(conn: &Connection, status_filter: Option<&str>) -> Result<Vec
     }
 }
 
-/// Compare current comment counts against watch baselines.
-/// Marks any 'watching' issue whose comment_count > comment_count_at_watch as 'replied'.
-/// Returns the list of issues newly marked as replied.
+/// Check watched issues for new replies (comment count increased) or closure.
+/// Marks 'watching' issues as 'replied' or 'closed' accordingly.
+/// Closure takes priority if both happen simultaneously.
+/// Returns the list of issues with updated status.
 pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>> {
     let now = chrono::Utc::now().to_rfc3339();
 
-    // First collect IDs of watches that now have more comments than the baseline
-    let candidate_ids: Vec<i64> = {
+    // Collect IDs that triggered on closure (higher priority)
+    let closed_ids: Vec<i64> = {
+        let mut stmt = conn.prepare(
+            "SELECT w.id FROM watched_issues w
+             JOIN issues i ON i.id = w.issue_id
+             WHERE w.status = 'watching'
+               AND i.state != w.state_at_watch",
+        )?;
+        stmt.query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<i64>>>()
+            .map_err(Error::Sqlite)?
+    };
+
+    // Collect IDs that got new comments (excluding those already caught by closed_ids)
+    let replied_ids: Vec<i64> = {
         let mut stmt = conn.prepare(
             "SELECT w.id FROM watched_issues w
              JOIN issues i ON i.id = w.issue_id
              WHERE w.status = 'watching'
                AND i.comment_count > w.comment_count_at_watch",
         )?;
-        let rows = stmt.query_map([], |row| row.get(0))?;
-        rows.collect::<rusqlite::Result<Vec<i64>>>()
+        stmt.query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<i64>>>()
             .map_err(Error::Sqlite)?
     };
 
-    if candidate_ids.is_empty() {
+    // Deduplicate: closed takes priority
+    let closed_set: std::collections::HashSet<i64> = closed_ids.iter().copied().collect();
+    let replied_ids: Vec<i64> = replied_ids
+        .into_iter()
+        .filter(|id| !closed_set.contains(id))
+        .collect();
+
+    if closed_ids.is_empty() && replied_ids.is_empty() {
         return Ok(vec![]);
     }
 
-    // Update exactly those rows
-    for id in &candidate_ids {
+    for id in &closed_ids {
+        conn.execute(
+            "UPDATE watched_issues SET status = 'closed', replied_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, id],
+        )?;
+    }
+    for id in &replied_ids {
         conn.execute(
             "UPDATE watched_issues SET status = 'replied', replied_at = ?1 WHERE id = ?2",
             rusqlite::params![now, id],
         )?;
     }
 
-    // Return the updated rows by ID
-    let placeholders: String = candidate_ids
+    let all_ids: Vec<i64> = closed_ids.into_iter().chain(replied_ids).collect();
+    let placeholders: String = all_ids
         .iter()
         .enumerate()
         .map(|(i, _)| format!("?{}", i + 1))
@@ -1793,13 +1865,14 @@ pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>>
         .join(", ");
     let sql = format!(
         "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
-                w.watched_since, w.comment_count_at_watch, w.status, w.replied_at
+                i.state, w.watched_since, w.comment_count_at_watch, w.state_at_watch,
+                w.status, w.replied_at
          FROM watched_issues w
          JOIN issues i ON i.id = w.issue_id
          WHERE w.id IN ({placeholders})"
     );
     let mut stmt = conn.prepare(&sql)?;
-    let params: Vec<&dyn rusqlite::types::ToSql> = candidate_ids
+    let params: Vec<&dyn rusqlite::types::ToSql> = all_ids
         .iter()
         .map(|id| id as &dyn rusqlite::types::ToSql)
         .collect();
@@ -1811,10 +1884,12 @@ pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>>
             number: row.get(3)?,
             title: row.get(4)?,
             comment_count: row.get(5)?,
-            watched_since: row.get(6)?,
-            comment_count_at_watch: row.get(7)?,
-            status: row.get(8)?,
-            replied_at: row.get(9)?,
+            current_state: row.get(6)?,
+            watched_since: row.get(7)?,
+            comment_count_at_watch: row.get(8)?,
+            state_at_watch: row.get(9)?,
+            status: row.get(10)?,
+            replied_at: row.get(11)?,
         })
     })?;
     rows.map(|r| r.map_err(Error::Sqlite)).collect()
@@ -2427,6 +2502,7 @@ mod tests {
             stale: 5,
             watching: 0,
             replied: 0,
+            closed: 0,
         };
         let json = serde_json::to_string(&counts).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();

@@ -3369,11 +3369,14 @@ pub fn run_status(format: String) -> Result<()> {
         if counts.stale > 0 {
             println!("  Stale:                {}", counts.stale);
         }
-        if counts.watching > 0 || counts.replied > 0 {
+        if counts.watching > 0 || counts.replied > 0 || counts.closed > 0 {
             println!("  Watching replies:     {}", counts.watching);
         }
         if counts.replied > 0 {
             println!("  Replies received:     {} ⬅", counts.replied);
+        }
+        if counts.closed > 0 {
+            println!("  Issues closed:        {} ⬅", counts.closed);
         }
     }
     Ok(())
@@ -3598,7 +3601,7 @@ pub fn run_watch_add(issue_refs: Vec<String>) -> Result<()> {
         // Use the current comment count as the baseline — any comment posted after
         // this point will be detected as a new reply on the next `triage fetch`.
         let issue = db::get_issue_by_id(&conn, issue_id)?;
-        db::add_watch(&conn, issue_id, issue.comment_count)?;
+        db::add_watch(&conn, issue_id, issue.comment_count, &issue.state)?;
         println!(
             "  {ref_str}: watching (baseline: {} comment{})",
             issue.comment_count,
@@ -3632,8 +3635,10 @@ pub fn run_watch_list(status: String, format: String) -> Result<()> {
                     "number": w.number,
                     "title": w.title,
                     "status": w.status,
+                    "current_state": w.current_state,
                     "watched_since": w.watched_since,
                     "comment_count_at_watch": w.comment_count_at_watch,
+                    "state_at_watch": w.state_at_watch,
                     "comment_count": w.comment_count,
                     "replied_at": w.replied_at,
                 })
@@ -3681,10 +3686,13 @@ pub fn run_watch_list(status: String, format: String) -> Result<()> {
             "?".to_string()
         };
         let new_comments = (w.comment_count - w.comment_count_at_watch).max(0);
-        let comments_str = if w.status == "replied" {
-            format!("{} (+{new_comments} new)", w.comment_count)
-        } else {
-            format!("{}", w.comment_count)
+        let comments_str = match w.status.as_str() {
+            "replied" => format!("{} (+{new_comments} new)", w.comment_count),
+            "closed" if new_comments > 0 => {
+                format!("closed (+{new_comments} new)",)
+            }
+            "closed" => "closed".to_string(),
+            _ => format!("{}", w.comment_count),
         };
         println!(
             "  {:<35}  {:<10}  {:<42}  {:<8}  {}",
