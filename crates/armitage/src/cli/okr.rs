@@ -211,10 +211,14 @@ pub fn run_show(
         {
             return false;
         }
-        if let Some(ref p) = person
-            && !e.node.owners.contains(p)
-        {
-            return false;
+        if let Some(ref p) = person {
+            let is_owner = e.node.owners.contains(p);
+            let has_assigned_issue = issues_for_subtree(&e.path)
+                .iter()
+                .any(|i| i.issue.assignees.contains(p));
+            if !is_owner && !has_assigned_issue {
+                return false;
+            }
         }
         true
     };
@@ -457,10 +461,18 @@ pub fn run_check(
             {
                 return false;
             }
-            if let Some(ref p) = person
-                && !e.node.owners.contains(p)
-            {
-                return false;
+            if let Some(ref p) = person {
+                let is_owner = e.node.owners.contains(p);
+                let has_assigned_issue = issues_by_node
+                    .iter()
+                    .filter(|(path, _)| {
+                        path.as_str() == e.path || path.starts_with(&format!("{}/", e.path))
+                    })
+                    .flat_map(|(_, idxs)| idxs.iter().map(|&i| &all_issues[i]))
+                    .any(|i| i.issue.assignees.contains(p));
+                if !is_owner && !has_assigned_issue {
+                    return false;
+                }
             }
             true
         })
