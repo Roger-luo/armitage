@@ -6,4 +6,4 @@ pub mod sync;
 
 pub use config::{GitHubProjectConfig, ProjectDomain, StatusValues};
 pub use error::{Error, Result};
-pub use sync::{SyncStats, set_issue, sync};
+pub use sync::{SyncStats, desired_status, set_issue, sync};

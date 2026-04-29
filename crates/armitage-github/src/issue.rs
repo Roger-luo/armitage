@@ -80,8 +80,14 @@ pub fn create_issue(
     title: &str,
     body: &str,
     labels: &[String],
+    assignees: &[String],
 ) -> Result<CreatedIssue> {
-    tracing::debug!(repo = repo, labels = labels.len(), "gh issue create");
+    tracing::debug!(
+        repo = repo,
+        labels = labels.len(),
+        assignees = assignees.len(),
+        "gh issue create"
+    );
     let mut args = vec![
         "issue".to_string(),
         "create".to_string(),
@@ -96,6 +102,11 @@ pub fn create_issue(
     for label in labels {
         args.push("--label".to_string());
         args.push(label.clone());
+    }
+
+    for assignee in assignees {
+        args.push("--assignee".to_string());
+        args.push(assignee.clone());
     }
 
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();

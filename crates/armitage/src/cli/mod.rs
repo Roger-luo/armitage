@@ -3,6 +3,7 @@ pub mod complete;
 pub mod config;
 pub mod goal;
 pub mod init;
+pub mod issue;
 pub mod milestone;
 pub mod node;
 pub mod okr;
@@ -108,6 +109,11 @@ enum Commands {
         #[arg(long)]
         no_serve: bool,
     },
+    /// Create and manage GitHub issues
+    Issue {
+        #[command(subcommand)]
+        command: IssueCommands,
+    },
     /// Sync node timelines to a GitHub Project board
     Project {
         #[command(subcommand)]
@@ -123,6 +129,43 @@ enum Commands {
     SelfCmd {
         #[command(subcommand)]
         command: SelfCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum IssueCommands {
+    /// Create a new GitHub issue and optionally add it to the project board
+    Create {
+        /// Issue title (required)
+        #[arg(long)]
+        title: String,
+        /// Issue body (default: empty)
+        #[arg(long, default_value = "")]
+        body: String,
+        /// Node path to pull defaults from (repo, labels, timeline)
+        #[arg(long)]
+        node: Option<String>,
+        /// Repository (owner/repo). Required if --node is not given.
+        #[arg(long)]
+        repo: Option<String>,
+        /// Comma-separated GitHub usernames to assign
+        #[arg(long, value_delimiter = ',')]
+        assignees: Vec<String>,
+        /// Extra labels (merged with node labels). Comma-separated.
+        #[arg(long, value_delimiter = ',')]
+        labels: Vec<String>,
+        /// Start date override (YYYY-MM-DD)
+        #[arg(long)]
+        start_date: Option<String>,
+        /// Target date override (YYYY-MM-DD)
+        #[arg(long)]
+        target_date: Option<String>,
+        /// Skip project board setup even if configured
+        #[arg(long)]
+        no_project: bool,
+        /// Show what would happen without making API calls
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -1265,6 +1308,33 @@ pub fn run() -> Result<()> {
                 WatchCommands::Add { issue_refs } => triage::run_watch_add(issue_refs)?,
                 WatchCommands::Dismiss { issue_refs } => triage::run_watch_dismiss(issue_refs)?,
             },
+        },
+        Commands::Issue { command } => match command {
+            IssueCommands::Create {
+                title,
+                body,
+                node,
+                repo,
+                assignees,
+                labels,
+                start_date,
+                target_date,
+                no_project,
+                dry_run,
+            } => {
+                issue::run_create(
+                    title,
+                    body,
+                    node,
+                    repo,
+                    assignees,
+                    labels,
+                    start_date,
+                    target_date,
+                    no_project,
+                    dry_run,
+                )?;
+            }
         },
         Commands::Project { command } => match command {
             ProjectCommands::Sync { node_path, dry_run } => {

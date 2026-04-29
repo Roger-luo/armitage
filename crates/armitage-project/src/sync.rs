@@ -271,7 +271,7 @@ fn sync_one(
 /// Return the option display name to auto-assign based on how soon `target` is.
 ///
 /// Never returns "in_progress" — that requires explicit user action.
-fn desired_status(target: NaiveDate, today: NaiveDate, values: &StatusValues) -> &str {
+pub fn desired_status(target: NaiveDate, today: NaiveDate, values: &StatusValues) -> &str {
     let two_weeks = today + chrono::Duration::weeks(2);
     let quarter_end = end_of_quarter(today);
     if target <= two_weeks {
@@ -354,6 +354,14 @@ pub fn set_issue(
                 cfg.target_date_field.as_deref().unwrap_or("Target date"),
                 d.format("%Y-%m-%d")
             );
+            if cfg.status_field.is_some() {
+                let today = chrono::Local::now().date_naive();
+                let status_value = desired_status(d, today, &cfg.status_values);
+                println!(
+                    "  [dry]  would set {} = {status_value}",
+                    cfg.status_field.as_deref().unwrap_or("Status"),
+                );
+            }
         }
         return Ok(());
     }
@@ -400,6 +408,30 @@ pub fn set_issue(
                 println!("  set    {field_name} = {}", d.format("%Y-%m-%d"));
             }
             _ => warn!("target_date_field '{field_name}' not found on board, skipping"),
+        }
+    }
+
+    // --- Set status based on target_date ---
+    if let Some(d) = target_date
+        && let Some(ref field_name) = cfg.status_field
+    {
+        let today = chrono::Local::now().date_naive();
+        let status_value = desired_status(d, today, &cfg.status_values);
+        match cache.fields.get(field_name) {
+            Some(CachedField::SingleSelect { id, options }) => match options.get(status_value) {
+                Some(option_id) => {
+                    update_single_select_field(gh, &cache.project_id, &item_id, id, option_id)?;
+                    println!("  set    {field_name} = {status_value}");
+                }
+                None => {
+                    warn!(
+                        "status option '{status_value}' not found on board field '{field_name}', skipping"
+                    );
+                }
+            },
+            _ => {
+                warn!("status_field '{field_name}' not found or wrong type, skipping");
+            }
         }
     }
 
