@@ -1666,7 +1666,7 @@ pub fn run_fmt(paths: Vec<String>) -> Result<()> {
 
 /// CLI entry point: armitage node check
 /// Scans the whole tree for timeline violations and other issues.
-pub fn run_check(check_repos: bool) -> Result<()> {
+pub fn run_check(check_repos: bool, check_dates: bool) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let org_root = find_org_root(&cwd)?;
     let all = walk_nodes(&org_root)?;
@@ -1927,6 +1927,20 @@ pub fn run_check(check_repos: bool) -> Result<()> {
         }
     }
 
+    // --- Project board date check (requires --check-dates) ---
+    if check_dates {
+        match check_board_dates(&org_root, &all, &mut warnings) {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!(
+                    "{}warning:{} could not check project board dates: {e}",
+                    color::YELLOW,
+                    color::RESET,
+                );
+            }
+        }
+    }
+
     if violations == 0 && warnings == 0 {
         println!("{}No issues found.{}", color::GREEN, color::RESET);
     } else if violations == 0 {
@@ -1942,6 +1956,161 @@ pub fn run_check(check_repos: bool) -> Result<()> {
             color::RESET,
         );
     }
+    Ok(())
+}
+
+/// Check that nodes with both `track` (github_issue) and `[timeline]` have non-empty
+/// start and target date fields on the project board.  Uses the locally-cached field data
+/// so no network request is made for the field definitions themselves; the project items
+/// are fetched live via GitHub CLI.
+fn check_board_dates(
+    org_root: &Path,
+    all: &[armitage_core::tree::NodeEntry],
+    warnings: &mut usize,
+) -> Result<()> {
+    use armitage_project::cache::read_field_cache;
+    use armitage_project::config::{GitHubProjectConfig, ProjectDomain};
+
+    let org = Org::open(org_root)?;
+    let cfg: GitHubProjectConfig = match org.domain_config::<ProjectDomain>() {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!(
+                "{}note:{} no [github_project] section in armitage.toml, skipping --check-dates",
+                color::DIM,
+                color::RESET,
+            );
+            return Ok(());
+        }
+    };
+
+    if cfg.org.is_empty() || cfg.number == 0 {
+        eprintln!(
+            "{}note:{} github_project.org or number not configured, skipping --check-dates",
+            color::DIM,
+            color::RESET,
+        );
+        return Ok(());
+    }
+
+    // Read the locally-cached field names (start_date_field, target_date_field).
+    let _cache = match read_field_cache(org_root)? {
+        Some(c) => c,
+        None => {
+            eprintln!(
+                "{}note:{} no project field cache found — run `armitage project sync` first to populate it",
+                color::DIM,
+                color::RESET,
+            );
+            return Ok(());
+        }
+    };
+
+    let gh = armitage_github::require_gh()?;
+
+    println!("Fetching project board items for date check…");
+    let existing = armitage_project::graphql::fetch_project_items(&gh, &cfg.org, cfg.number)
+        .map_err(|e| crate::error::Error::Other(e.to_string()))?;
+
+    let start_field = cfg.start_date_field.as_deref().unwrap_or("");
+    let end_field = cfg.target_date_field.as_deref().unwrap_or("");
+
+    for entry in all {
+        let node = &entry.node;
+        // Only check nodes that have both a tracking issue and a timeline.
+        if node.github_issue.is_none() || node.timeline.is_none() {
+            continue;
+        }
+        let issue_str = node.github_issue.as_deref().unwrap();
+
+        // Parse "owner/repo#number" into canonical form used by fetch_project_items.
+        let issue_ref = match armitage_core::node::IssueRef::parse(issue_str) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let bare_repo = issue_ref
+            .repo
+            .split_once('@')
+            .map(|(r, _)| r)
+            .unwrap_or(&issue_ref.repo);
+        let canonical = format!("{}/{}#{}", issue_ref.owner, bare_repo, issue_ref.number);
+
+        let Some(item) = existing.get(&canonical) else {
+            // Not on the board at all — warn.
+            *warnings += 1;
+            println!(
+                "{}warning:{} node {bold}{}{reset} track issue {dim}{canonical}{reset} is not on the project board",
+                color::YELLOW,
+                color::RESET,
+                entry.path,
+                bold = color::BOLD,
+                dim = color::DIM,
+                reset = color::RESET,
+            );
+            println!(
+                "  {dim}run: armitage project sync {}{reset}",
+                entry.path,
+                dim = color::DIM,
+                reset = color::RESET,
+            );
+            println!();
+            continue;
+        };
+
+        let missing_start = !start_field.is_empty()
+            && item
+                .field_values
+                .get(start_field)
+                .map(String::is_empty)
+                .unwrap_or(true)
+            && !item.field_values.contains_key(start_field);
+        let missing_end = !end_field.is_empty()
+            && item
+                .field_values
+                .get(end_field)
+                .map(String::is_empty)
+                .unwrap_or(true)
+            && !item.field_values.contains_key(end_field);
+
+        if missing_start || missing_end {
+            *warnings += 1;
+            println!(
+                "{}warning:{} node {bold}{}{reset} has empty date field(s) on the project board",
+                color::YELLOW,
+                color::RESET,
+                entry.path,
+                bold = color::BOLD,
+                reset = color::RESET,
+            );
+            println!(
+                "  {dim}{canonical}{reset}",
+                dim = color::DIM,
+                reset = color::RESET,
+            );
+            if missing_start {
+                println!(
+                    "  {yellow}'{start_field}' is not set{reset}",
+                    yellow = color::YELLOW,
+                    reset = color::RESET,
+                );
+            }
+            if missing_end {
+                println!(
+                    "  {yellow}'{end_field}' is not set{reset}",
+                    yellow = color::YELLOW,
+                    reset = color::RESET,
+                );
+            }
+            println!(
+                "  {dim}fix with: armitage project sync {}{reset}",
+                entry.path,
+                dim = color::DIM,
+                reset = color::RESET,
+            );
+            println!();
+        }
+    }
+
     Ok(())
 }
 

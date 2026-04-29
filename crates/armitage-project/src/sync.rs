@@ -21,7 +21,7 @@ pub struct SyncStats {
     pub errors: usize,
 }
 
-pub fn sync(gh: &Gh, org: &Org, dry_run: bool) -> Result<SyncStats> {
+pub fn sync(gh: &Gh, org: &Org, dry_run: bool, node_path: Option<&str>) -> Result<SyncStats> {
     let cfg = org.domain_config::<ProjectDomain>()?;
 
     if cfg.org.is_empty() || cfg.number == 0 {
@@ -37,7 +37,15 @@ pub fn sync(gh: &Gh, org: &Org, dry_run: bool) -> Result<SyncStats> {
     println!("Fetching current project items…");
     let existing: HashMap<String, ProjectItem> = fetch_project_items(gh, &cfg.org, cfg.number)?;
 
-    let nodes = org.walk_nodes()?;
+    let all_nodes = org.walk_nodes()?;
+    let nodes: Vec<_> = match node_path {
+        Some(path) => all_nodes
+            .into_iter()
+            .filter(|e| e.path == path || e.path.starts_with(&format!("{path}/")))
+            .collect(),
+        None => all_nodes,
+    };
+
     let mut stats = SyncStats {
         added: 0,
         updated: 0,

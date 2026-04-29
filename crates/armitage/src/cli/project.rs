@@ -2,11 +2,11 @@ use armitage_core::org::Org;
 
 use crate::error::Result;
 
-pub fn run_sync(dry_run: bool) -> Result<()> {
+pub fn run_sync(dry_run: bool, node_path: Option<String>) -> Result<()> {
     let org = Org::discover_from(&std::env::current_dir()?)?;
     let gh = armitage_github::require_gh()?;
 
-    let stats = armitage_project::sync(&gh, &org, dry_run)?;
+    let stats = armitage_project::sync(&gh, &org, dry_run, node_path.as_deref())?;
 
     println!();
     println!(

@@ -112,6 +112,8 @@ enum Commands {
 enum ProjectCommands {
     /// Add nodes with timelines to a GitHub Project board and set date/status fields
     Sync {
+        /// Sync only this node (and its children). Omit to sync all nodes.
+        node_path: Option<String>,
         /// Show what would change without making any mutations
         #[arg(long)]
         dry_run: bool,
@@ -213,6 +215,9 @@ enum NodeCommands {
         /// Query GitHub to detect archived or renamed repos in node.toml files
         #[arg(long)]
         check_repos: bool,
+        /// Warn when a node with track + timeline has empty date fields on the project board
+        #[arg(long)]
+        check_dates: bool,
     },
 }
 
@@ -783,8 +788,11 @@ pub fn run() -> Result<()> {
             NodeCommands::Fmt { paths } => {
                 node::run_fmt(paths)?;
             }
-            NodeCommands::Check { check_repos } => {
-                node::run_check(check_repos)?;
+            NodeCommands::Check {
+                check_repos,
+                check_dates,
+            } => {
+                node::run_check(check_repos, check_dates)?;
             }
         },
         Commands::Milestone { command } => match command {
@@ -1069,8 +1077,8 @@ pub fn run() -> Result<()> {
             }
         },
         Commands::Project { command } => match command {
-            ProjectCommands::Sync { dry_run } => {
-                project::run_sync(dry_run)?;
+            ProjectCommands::Sync { node_path, dry_run } => {
+                project::run_sync(dry_run, node_path)?;
             }
             ProjectCommands::ClearCache => {
                 project::run_clear_cache()?;
