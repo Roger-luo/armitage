@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 // ---------------------------------------------------------------------------
 
 /// Current schema version. Bump this when adding migrations.
-const SCHEMA_VERSION: u32 = 10;
+const SCHEMA_VERSION: u32 = 11;
 
 /// Full schema for a fresh database (always represents the latest version).
 const SCHEMA_V6: &str = "
@@ -129,6 +129,18 @@ const MIGRATIONS: &[Option<&str>] = &[
          ALTER TABLE triage_suggestions ADD COLUMN needs_followup INTEGER NOT NULL DEFAULT 0;
          ALTER TABLE triage_suggestions ADD COLUMN followup_reason TEXT NOT NULL DEFAULT '';",
     ),
+    // v10 → v11: add watched_issues table for reply detection
+    Some(
+        "CREATE TABLE IF NOT EXISTS watched_issues (
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            issue_id               INTEGER NOT NULL UNIQUE REFERENCES issues(id) ON DELETE CASCADE,
+            watched_since          TEXT NOT NULL,
+            comment_count_at_watch INTEGER NOT NULL,
+            status                 TEXT NOT NULL DEFAULT 'watching',
+            replied_at             TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_watched_issue ON watched_issues(issue_id);",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -188,6 +200,20 @@ pub struct ReviewDecision {
     pub question: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WatchedIssue {
+    pub id: i64,
+    pub issue_id: i64,
+    pub repo: String,
+    pub number: i64,
+    pub title: String,
+    pub comment_count: i64,
+    pub watched_since: String,
+    pub comment_count_at_watch: i64,
+    pub status: String,
+    pub replied_at: Option<String>,
+}
+
 /// A row from `issue_project_items` — GitHub Projects v2 metadata for an issue.
 #[derive(Debug, Clone, Serialize)]
 pub struct IssueProjectItem {
@@ -208,6 +234,8 @@ pub struct PipelineCounts {
     pub approved_unapplied: usize,
     pub applied: usize,
     pub stale: usize,
+    pub watching: usize,
+    pub replied: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -1041,6 +1069,16 @@ pub fn get_pipeline_counts(conn: &Connection) -> Result<PipelineCounts> {
         [],
         |r| r.get(0),
     )?;
+    let watching: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM watched_issues WHERE status = 'watching'",
+        [],
+        |r| r.get(0),
+    )?;
+    let replied: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM watched_issues WHERE status = 'replied'",
+        [],
+        |r| r.get(0),
+    )?;
     Ok(PipelineCounts {
         total_fetched: total_fetched as usize,
         untriaged: untriaged as usize,
@@ -1048,6 +1086,8 @@ pub fn get_pipeline_counts(conn: &Connection) -> Result<PipelineCounts> {
         approved_unapplied: approved_unapplied as usize,
         applied: applied as usize,
         stale: stale as usize,
+        watching: watching as usize,
+        replied: replied as usize,
     })
 }
 
@@ -1630,6 +1670,112 @@ pub fn get_overdue_issues(
             .collect::<std::result::Result<Vec<_>, _>>()?
     };
     Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
+// Watch
+// ---------------------------------------------------------------------------
+
+/// Insert or replace a watch entry for an issue.
+/// `comment_count_at_watch` should be the comment count AFTER our question was posted
+/// (i.e. `issue.comment_count + 1`), so only replies beyond our own comment trigger detection.
+pub fn add_watch(conn: &Connection, issue_id: i64, comment_count_at_watch: i64) -> Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO watched_issues (issue_id, watched_since, comment_count_at_watch, status)
+         VALUES (?1, ?2, ?3, 'watching')
+         ON CONFLICT(issue_id) DO UPDATE SET
+             watched_since = excluded.watched_since,
+             comment_count_at_watch = excluded.comment_count_at_watch,
+             status = 'watching',
+             replied_at = NULL",
+        rusqlite::params![issue_id, now, comment_count_at_watch],
+    )?;
+    Ok(())
+}
+
+/// Return watched issues, optionally filtered by status.
+/// `status_filter`: None = active (watching+replied), Some("all") = all,
+/// Some("watching"|"replied"|"dismissed") = exact match.
+pub fn get_watches(conn: &Connection, status_filter: Option<&str>) -> Result<Vec<WatchedIssue>> {
+    let where_clause = match status_filter {
+        None | Some("active") => "w.status IN ('watching', 'replied')".to_string(),
+        Some("all") => "1=1".to_string(),
+        Some(s) => format!("w.status = '{}'", s.replace('\'', "''")),
+    };
+    let sql = format!(
+        "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
+                w.watched_since, w.comment_count_at_watch, w.status, w.replied_at
+         FROM watched_issues w
+         JOIN issues i ON i.id = w.issue_id
+         WHERE {where_clause}
+         ORDER BY w.watched_since DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |row| {
+        Ok(WatchedIssue {
+            id: row.get(0)?,
+            issue_id: row.get(1)?,
+            repo: row.get(2)?,
+            number: row.get(3)?,
+            title: row.get(4)?,
+            comment_count: row.get(5)?,
+            watched_since: row.get(6)?,
+            comment_count_at_watch: row.get(7)?,
+            status: row.get(8)?,
+            replied_at: row.get(9)?,
+        })
+    })?;
+    rows.map(|r| r.map_err(Error::Sqlite)).collect()
+}
+
+/// Compare current comment counts against watch baselines.
+/// Marks any 'watching' issue whose comment_count > comment_count_at_watch as 'replied'.
+/// Returns the list of issues newly marked as replied.
+pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>> {
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE watched_issues SET status = 'replied', replied_at = ?1
+         WHERE status = 'watching'
+           AND issue_id IN (
+               SELECT i.id FROM issues i
+               JOIN watched_issues w2 ON w2.issue_id = i.id
+               WHERE w2.status = 'watching'
+                 AND i.comment_count > w2.comment_count_at_watch
+           )",
+        rusqlite::params![now],
+    )?;
+    let sql = "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
+                w.watched_since, w.comment_count_at_watch, w.status, w.replied_at
+         FROM watched_issues w
+         JOIN issues i ON i.id = w.issue_id
+         WHERE w.status = 'replied' AND w.replied_at = ?1";
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map(rusqlite::params![now], |row| {
+        Ok(WatchedIssue {
+            id: row.get(0)?,
+            issue_id: row.get(1)?,
+            repo: row.get(2)?,
+            number: row.get(3)?,
+            title: row.get(4)?,
+            comment_count: row.get(5)?,
+            watched_since: row.get(6)?,
+            comment_count_at_watch: row.get(7)?,
+            status: row.get(8)?,
+            replied_at: row.get(9)?,
+        })
+    })?;
+    rows.map(|r| r.map_err(Error::Sqlite)).collect()
+}
+
+/// Mark a watched issue as dismissed (stop watching).
+pub fn dismiss_watch_by_ref(conn: &Connection, repo: &str, number: i64) -> Result<bool> {
+    let changed = conn.execute(
+        "UPDATE watched_issues SET status = 'dismissed'
+         WHERE issue_id = (SELECT id FROM issues WHERE repo = ?1 AND number = ?2)",
+        rusqlite::params![repo, number],
+    )?;
+    Ok(changed > 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -2227,6 +2373,8 @@ mod tests {
             approved_unapplied: 10,
             applied: 40,
             stale: 5,
+            watching: 0,
+            replied: 0,
         };
         let json = serde_json::to_string(&counts).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
