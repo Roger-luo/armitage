@@ -169,7 +169,7 @@ export function renderMilestoneLines(
     const labelAnchorY = barsTop - axisHeight;  // top of axis zone = bottom of milestone zone
     const label = m.name.length > maxChars ? m.name.slice(0, maxChars - 1) + "…" : m.name;
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("transform", `rotate(-45, ${x}, ${labelAnchorY})`);
+    text.setAttribute("transform", `rotate(45, ${x}, ${labelAnchorY})`);
     text.setAttribute("x", `${x}`);
     text.setAttribute("y", `${labelAnchorY}`);
     text.setAttribute("text-anchor", "end");
