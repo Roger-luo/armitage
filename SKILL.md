@@ -200,6 +200,9 @@ armitage triage suggestions [--issues 247,276,32] [--node <prefix>] [--repo <r>]
 armitage triage inactive [--days N] [--since <date>] [--repo <r>] [--format table|json] [--inquire "message"]
 armitage triage overdue [--days N] [--repo <r>] [--format table|json] [--comment "message"]
 armitage triage decisions [--status <s>] [--unapplied] [--node <prefix>] [--repo <r>] [--limit N] [--format table|json]
+armitage triage watch add <issue-ref>...
+armitage triage watch list [--status active|watching|replied|dismissed|all] [--format table|json]
+armitage triage watch dismiss <issue-ref>...
 ```
 
 - **fetch** — pulls issues from GitHub repos into a local SQLite DB (`.armitage/triage.db`), then refreshes the issue cache
@@ -231,6 +234,11 @@ armitage triage decisions [--status <s>] [--unapplied] [--node <prefix>] [--repo
 - **summary** — confidence distribution, per-node breakdown, and suggested new categories
 - **suggestions** — query and filter individual suggestions with flexible criteria. Use `--issues 247,276,32` to select specific issue numbers. The `--format summary` option groups results into **AUTO-APPROVE** (confidence >= 0.80 with a suggested node) and **NEEDS REVIEW** (low confidence or no node), with extra detail (stale flags, new categories, reasoning) for uncertain ones — ideal for agent-driven workflows that need to partition suggestions without post-processing. Use `--format refs` to output just issue refs one per line (e.g., for piping to `triage decide`)
 - **decisions** — query and filter review decisions
+- **watch add** — start watching one or more issues for new replies. Fetches the current comment count from GitHub as the baseline, so any subsequent comment triggers a `replied` status on the next `triage fetch`. Use this after posting follow-up comments on overdue or inquired issues: `triage watch add owner/repo#N ...`
+- **watch list** — show watched issues and their reply status (`watching` / `replied` / `dismissed`). Detects replies by comparing the current comment count against the baseline set at watch time. Use `--status all` to include dismissed items
+- **watch dismiss** — stop watching one or more issues: `triage watch dismiss owner/repo#N ...`
+
+Replies are detected automatically during `triage fetch` — it prints `[watch] owner/repo#N has a new reply!` when the comment count increases. Run `triage watch list` after a fetch to see the full status.
 
 ### Category Management
 
