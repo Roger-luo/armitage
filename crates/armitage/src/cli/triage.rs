@@ -3626,7 +3626,9 @@ pub fn run_watch_list(status: String, format: String) -> Result<()> {
     for w in &watches {
         let ref_str = format!("{}#{}", w.repo, w.number);
         let title = if w.title.len() > 40 {
-            format!("{}…", &w.title[..39])
+            let mut t: String = w.title.chars().take(39).collect();
+            t.push('…');
+            t
         } else {
             w.title.clone()
         };

@@ -152,7 +152,9 @@ pub fn apply_all(
                     println!("  {issue_ref_str}: posted {label}");
                     // Auto-watch: detect replies after our question.
                     // Baseline is comment_count + 1 (our comment is now counted).
-                    let _ = db::add_watch(conn, issue.id, issue.comment_count + 1);
+                    if let Err(e) = db::add_watch(conn, issue.id, issue.comment_count + 1) {
+                        eprintln!("  {issue_ref_str}: warning: add_watch failed: {e}");
+                    }
                     stats.applied += 1;
                 }
                 Err(e) => {

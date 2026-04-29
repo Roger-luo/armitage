@@ -739,7 +739,7 @@ enum TriageExampleCommands {
     },
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand)]
 enum WatchCommands {
     /// List watched issues and their reply status
     List {
