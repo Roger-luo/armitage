@@ -129,6 +129,17 @@ armitage project sync [--dry-run]   # add nodes to board and set date/status fie
 armitage project clear-cache        # force re-fetch of project field metadata
 ```
 
+### Repo Visibility
+
+```
+armitage repo list [--format table|json]   # list all repos in the org with public/private visibility
+```
+
+Lists every unique repo referenced by `node.toml` files, queries GitHub once per repo, and outputs
+visibility (`public` / `private` / `unknown`) plus which nodes reference each repo. Sorted
+private-first. Use `--format json` for agent-readable output. Run this before creating issues or
+comments to confirm which repos are safe for internal details.
+
 Syncs every node that has both `track` and `[timeline]` to a configured GitHub Projects v2
 board: adds the issue if not already present, then sets the start date, target date, and status
 fields based on the node's timeline.
@@ -297,6 +308,7 @@ armitage okr check [--period <YYYY-Qn|YYYY|current>] [--goal <slug>] [--team <t>
 - **show** — list nodes whose timelines overlap the period as OKR objectives, with their open issues as key results. Open issues always appear regardless of their project-board target date (a project can span multiple OKR periods); closed issues appear only if their target date falls within the period.
 - **check** — flag nodes with no key results, unowned nodes, and issues whose target dates fall outside the node's timeline.
 - `--goal <slug>` — filter to nodes that belong to a named cross-cutting goal from `goals.toml`.
+- `--person <github-username>` — filter to nodes where that person is listed as an owner **or** has at least one assigned issue. A node with no `owners` set is still included when the person has assigned issues under it.
 
 **Node timeline is required.** A node must have a `[timeline]` section with a `start` and `end` that overlaps the OKR period to appear in `okr show`. Nodes without a timeline are silently excluded. If a node is missing from the OKR output, add a timeline: `armitage node set <path> --timeline-start YYYY-MM-DD --timeline-end YYYY-MM-DD`.
 
