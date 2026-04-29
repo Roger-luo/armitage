@@ -1493,6 +1493,54 @@ pub fn get_inactive_issues(
     Ok(rows)
 }
 
+/// Returns open issues whose project-board target date is set and is more than `grace_days` days
+/// in the past, ordered by target_date ascending (most overdue first).
+///
+/// Each row is `(StoredIssue, target_date_string, suggested_node)`.
+pub fn get_overdue_issues(
+    conn: &Connection,
+    grace_days: u32,
+    repo: Option<&str>,
+) -> Result<Vec<(StoredIssue, String, Option<String>)>> {
+    let threshold = format!("-{grace_days} days");
+    let sql_base = format!(
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state, i.labels_json,
+                i.updated_at, i.fetched_at, i.sub_issues_count, i.author, i.assignees_json,
+                i.is_pr, i.comment_count,
+                ipi.target_date,
+                ts.suggested_node
+         FROM issues i
+         JOIN issue_project_items ipi ON ipi.issue_id = i.id
+         LEFT JOIN triage_suggestions ts ON ts.issue_id = i.id
+         WHERE LOWER(i.state) = 'open' AND i.is_pr = 0
+           AND ipi.target_date IS NOT NULL
+           AND ipi.target_date < date('now', '{threshold}'){repo_filter}
+         ORDER BY ipi.target_date ASC",
+        repo_filter = if repo.is_some() {
+            " AND i.repo = ?1"
+        } else {
+            ""
+        },
+    );
+
+    let mut stmt = conn.prepare(&sql_base)?;
+    let row_mapper = |row: &rusqlite::Row| {
+        let issue = row_to_issue(row)?;
+        let target_date: String = row.get(14)?;
+        let suggested_node: Option<String> = row.get(15)?;
+        Ok((issue, target_date, suggested_node))
+    };
+
+    let rows = if let Some(repo) = repo {
+        stmt.query_map(params![repo], row_mapper)?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+    } else {
+        stmt.query_map([], row_mapper)?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    Ok(rows)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

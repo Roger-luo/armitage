@@ -2711,6 +2711,169 @@ pub fn run_inactive(
     Ok(())
 }
 
+pub fn run_overdue(
+    days: u32,
+    repo: Option<String>,
+    format: String,
+    comment: Option<String>,
+) -> Result<()> {
+    let fmt = format.parse::<OutputFormat>()?;
+    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let conn = db::open_db(&org_root)?;
+
+    let rows = db::get_overdue_issues(&conn, days, repo.as_deref())?;
+
+    if rows.is_empty() {
+        println!(
+            "No open issues with an overdue target date{}{}.",
+            if days > 0 {
+                format!(" (grace period: {days} days)")
+            } else {
+                String::new()
+            },
+            repo.as_ref()
+                .map(|r| format!(" in {r}"))
+                .unwrap_or_default()
+        );
+        return Ok(());
+    }
+
+    if fmt == OutputFormat::Json {
+        let items: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|(issue, target_date, node)| {
+                serde_json::json!({
+                    "ref": format!("{}#{}", issue.repo, issue.number),
+                    "repo": issue.repo,
+                    "number": issue.number,
+                    "title": issue.title,
+                    "target_date": target_date,
+                    "updated_at": issue.updated_at,
+                    "author": issue.author,
+                    "suggested_node": node,
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&items).map_err(|e| Error::Other(e.to_string()))?
+        );
+        return Ok(());
+    }
+
+    // Table output
+    println!(
+        "Open issues with overdue target date{}{} ({} found):",
+        if days > 0 {
+            format!(" (grace period: {days} days)")
+        } else {
+            String::new()
+        },
+        repo.as_ref()
+            .map(|r| format!(" in {r}"))
+            .unwrap_or_default(),
+        rows.len()
+    );
+    println!();
+    println!(
+        "  {:<25}  {:<45}  {:<12}  {:<25}",
+        "REF", "TITLE", "TARGET DATE", "SUGGESTED NODE"
+    );
+    println!("  {}", "-".repeat(115));
+    for (issue, target_date, node) in &rows {
+        let ref_str = format!("{}#{}", issue.repo, issue.number);
+        let title = if issue.title.len() > 43 {
+            format!("{}…", &issue.title[..42])
+        } else {
+            issue.title.clone()
+        };
+        let node_str = node.as_deref().unwrap_or("—");
+        println!(
+            "  {:<25}  {:<45}  {:<12}  {:<25}",
+            ref_str,
+            title,
+            &target_date[..10.min(target_date.len())],
+            node_str
+        );
+    }
+    println!();
+
+    // Batch comment action
+    if let Some(ref question) = comment {
+        let org = Org::open(&org_root)?;
+        let triage_config: TriageConfig = org.domain_config::<TriageDomain>()?;
+        let nodes = walk_nodes(&org_root)?;
+        let label_schema: LabelSchema = org.domain_config::<LabelsDomain>()?;
+        let curated_labels = armitage_labels::def::LabelsFile::read(&org_root)?;
+
+        let now = Utc::now().to_rfc3339();
+        let mut staged = 0usize;
+        let mut skipped = 0usize;
+
+        for (issue, _target_date, _node) in &rows {
+            match db::get_suggestion_by_issue(&conn, &issue.repo, issue.number)? {
+                Some((_, _, Some(_))) => {
+                    // Already has a decision — skip
+                    skipped += 1;
+                    continue;
+                }
+                Some((_, sug, None)) => {
+                    let decision = db::ReviewDecision {
+                        id: 0,
+                        suggestion_id: sug.id,
+                        decision: "inquired".to_string(),
+                        final_node: sug.suggested_node.clone(),
+                        final_labels: sug.suggested_labels.clone(),
+                        decided_at: now.clone(),
+                        applied_at: None,
+                        question: question.clone(),
+                    };
+                    db::insert_decision(&conn, &decision)?;
+                    staged += 1;
+                }
+                None => {
+                    let _ = (&nodes, &label_schema, &curated_labels, &triage_config);
+                    let backend_str = triage_config.backend.as_deref().unwrap_or("claude");
+                    let placeholder_sug = db::TriageSuggestion {
+                        id: 0,
+                        issue_id: issue.id,
+                        suggested_node: None,
+                        suggested_labels: vec![],
+                        confidence: None,
+                        reasoning: "Overdue issue — no LLM classification yet.".to_string(),
+                        llm_backend: backend_str.to_string(),
+                        created_at: now.clone(),
+                        is_tracking_issue: false,
+                        suggested_new_categories: vec![],
+                        is_stale: false,
+                        is_inactive: false,
+                        needs_followup: false,
+                        followup_reason: String::new(),
+                    };
+                    let sug_id = db::upsert_suggestion(&conn, &placeholder_sug)?;
+                    let decision = db::ReviewDecision {
+                        id: 0,
+                        suggestion_id: sug_id,
+                        decision: "inquired".to_string(),
+                        final_node: None,
+                        final_labels: vec![],
+                        decided_at: now.clone(),
+                        applied_at: None,
+                        question: question.clone(),
+                    };
+                    db::insert_decision(&conn, &decision)?;
+                    staged += 1;
+                }
+            }
+        }
+
+        println!("Staged {staged} comment decision(s) (skipped {skipped} already decided).");
+        println!("Run `armitage triage apply` to post the comments to GitHub.");
+    }
+
+    Ok(())
+}
+
 pub fn run_summary(repo: Option<String>, format: String) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
     let org_root = find_org_root(&std::env::current_dir()?)?;

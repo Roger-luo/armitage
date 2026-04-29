@@ -442,6 +442,21 @@ enum TriageCommands {
         #[arg(long)]
         inquire: Option<String>,
     },
+    /// Find open issues whose project-board target date has already passed
+    Overdue {
+        /// Grace period in days — only flag issues whose target date is more than N days in the past (default: 0)
+        #[arg(long, default_value_t = 0)]
+        days: u32,
+        /// Filter to a single repo (owner/repo)
+        #[arg(long)]
+        repo: Option<String>,
+        /// Output format: "table" (default) or "json"
+        #[arg(long, default_value = "table")]
+        format: String,
+        /// Stage this message as a follow-up comment on each matching issue (posted via `triage apply`)
+        #[arg(long)]
+        comment: Option<String>,
+    },
     /// List triage suggestions with filtering
     Suggestions {
         /// Filter by issue number(s), comma-separated (e.g. "247,276,32")
@@ -1009,6 +1024,14 @@ pub fn run() -> Result<()> {
                 inquire,
             } => {
                 triage::run_inactive(days, since, repo, format, inquire)?;
+            }
+            TriageCommands::Overdue {
+                days,
+                repo,
+                format,
+                comment,
+            } => {
+                triage::run_overdue(days, repo, format, comment)?;
             }
             TriageCommands::Summary { repo, format } => {
                 triage::run_summary(repo, format)?;
