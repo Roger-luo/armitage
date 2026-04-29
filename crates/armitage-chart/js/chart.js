@@ -702,6 +702,12 @@
       html += `<span class="label">No timeline</span>`;
     }
     html += `</div></div>`;
+    if (node.track) {
+      const trackUrl = `https://github.com/${node.track.replace("#", "/issues/")}`;
+      html += `<div class="panel-section"><h3>Tracking Issue</h3><div class="panel-meta">`;
+      html += `<a class="panel-issue-link" href="${trackUrl}" target="_blank" rel="noopener">${escapeHtml(node.track)}</a>`;
+      html += `</div></div>`;
+    }
     if (node.owners.length > 0 || node.team) {
       html += `<div class="panel-section"><h3>People</h3><div class="panel-meta">`;
       if (node.owners.length > 0) html += `<span class="label">Owners:</span> ${node.owners.map(escapeHtml).join(", ")}<br/>`;
