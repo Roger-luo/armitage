@@ -68,6 +68,27 @@ pub fn run_fetch(repo: Vec<String>, since: Option<String>) -> Result<()> {
         }
     }
 
+    // Check watched issues AFTER project board data is refreshed so that
+    // project board changes (target date, status) are detected correctly.
+    match db::check_watches_for_replies(&conn) {
+        Ok(updated) => {
+            for w in &updated {
+                match w.status.as_str() {
+                    "closed" => println!("  [watch] {}#{} was closed!", w.repo, w.number),
+                    "project_updated" => println!(
+                        "  [watch] {}#{} project board updated! (target: {:?}, status: {:?})",
+                        w.repo, w.number, w.current_target_date, w.current_project_status
+                    ),
+                    _ => println!(
+                        "  [watch] {}#{} has a new reply! ({} comments)",
+                        w.repo, w.number, w.comment_count
+                    ),
+                }
+            }
+        }
+        Err(e) => eprintln!("  warning: watch check failed: {e}"),
+    }
+
     let repos_cached = cache::refresh_all(&conn, &org_root)?;
     println!("Issue cache refreshed ({repos_cached} repos)");
     Ok(())
@@ -3598,15 +3619,36 @@ pub fn run_watch_add(issue_refs: Vec<String>) -> Result<()> {
             }
         };
 
-        // Use the current comment count as the baseline — any comment posted after
-        // this point will be detected as a new reply on the next `triage fetch`.
+        // Use the current comment count and project board state as the baseline.
+        // Any comment or project board change after this point will be detected on
+        // the next `triage fetch`.
         let issue = db::get_issue_by_id(&conn, issue_id)?;
-        db::add_watch(&conn, issue_id, issue.comment_count, &issue.state)?;
-        println!(
-            "  {ref_str}: watching (baseline: {} comment{})",
+        let project_items =
+            db::get_project_items_for_issue(&conn, &issue.repo, issue.number).unwrap_or_default();
+        let project_item = project_items.first();
+        db::add_watch(
+            &conn,
+            issue_id,
             issue.comment_count,
-            if issue.comment_count == 1 { "" } else { "s" }
-        );
+            &issue.state,
+            project_item.and_then(|p| p.target_date.as_deref()),
+            project_item.and_then(|p| p.status.as_deref()),
+        )?;
+        if let Some(item) = project_item {
+            println!(
+                "  {ref_str}: watching (baseline: {} comment{}, project target: {:?}, status: {:?})",
+                issue.comment_count,
+                if issue.comment_count == 1 { "" } else { "s" },
+                item.target_date,
+                item.status,
+            );
+        } else {
+            println!(
+                "  {ref_str}: watching (baseline: {} comment{})",
+                issue.comment_count,
+                if issue.comment_count == 1 { "" } else { "s" }
+            );
+        }
         added += 1;
     }
 
@@ -3639,7 +3681,11 @@ pub fn run_watch_list(status: String, format: String) -> Result<()> {
                     "watched_since": w.watched_since,
                     "comment_count_at_watch": w.comment_count_at_watch,
                     "state_at_watch": w.state_at_watch,
+                    "target_date_at_watch": w.target_date_at_watch,
+                    "project_status_at_watch": w.project_status_at_watch,
                     "comment_count": w.comment_count,
+                    "current_target_date": w.current_target_date,
+                    "current_project_status": w.current_project_status,
                     "replied_at": w.replied_at,
                 })
             })
@@ -3688,10 +3734,12 @@ pub fn run_watch_list(status: String, format: String) -> Result<()> {
         let new_comments = (w.comment_count - w.comment_count_at_watch).max(0);
         let comments_str = match w.status.as_str() {
             "replied" => format!("{} (+{new_comments} new)", w.comment_count),
-            "closed" if new_comments > 0 => {
-                format!("closed (+{new_comments} new)",)
-            }
+            "closed" if new_comments > 0 => format!("closed (+{new_comments} new)"),
             "closed" => "closed".to_string(),
+            "project_updated" => {
+                let target = w.current_target_date.as_deref().unwrap_or("?");
+                format!("board→{target}")
+            }
             _ => format!("{}", w.comment_count),
         };
         println!(

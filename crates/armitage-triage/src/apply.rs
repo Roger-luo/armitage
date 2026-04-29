@@ -152,9 +152,19 @@ pub fn apply_all(
                     println!("  {issue_ref_str}: posted {label}");
                     // Auto-watch: detect replies after our question.
                     // Baseline is comment_count + 1 (our comment is now counted).
-                    if let Err(e) =
-                        db::add_watch(conn, issue.id, issue.comment_count + 1, &issue.state)
-                    {
+                    // Also snapshot the current project board state so changes are detected.
+                    let project_items =
+                        db::get_project_items_for_issue(conn, &issue.repo, issue.number)
+                            .unwrap_or_default();
+                    let project_item = project_items.first();
+                    if let Err(e) = db::add_watch(
+                        conn,
+                        issue.id,
+                        issue.comment_count + 1,
+                        &issue.state,
+                        project_item.and_then(|p| p.target_date.as_deref()),
+                        project_item.and_then(|p| p.status.as_deref()),
+                    ) {
                         eprintln!("  {issue_ref_str}: warning: add_watch failed: {e}");
                     }
                     stats.applied += 1;

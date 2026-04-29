@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 // ---------------------------------------------------------------------------
 
 /// Current schema version. Bump this when adding migrations.
-const SCHEMA_VERSION: u32 = 12;
+const SCHEMA_VERSION: u32 = 13;
 
 /// Full schema for a fresh database (always represents the latest version).
 const SCHEMA_V6: &str = "
@@ -84,13 +84,15 @@ CREATE TABLE IF NOT EXISTS issue_project_items (
 CREATE INDEX IF NOT EXISTS idx_project_items_issue ON issue_project_items(issue_id);
 
 CREATE TABLE IF NOT EXISTS watched_issues (
-    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
-    issue_id               INTEGER NOT NULL UNIQUE REFERENCES issues(id) ON DELETE CASCADE,
-    watched_since          TEXT NOT NULL,
-    comment_count_at_watch INTEGER NOT NULL,
-    state_at_watch         TEXT NOT NULL DEFAULT 'open',
-    status                 TEXT NOT NULL DEFAULT 'watching',
-    replied_at             TEXT
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id                 INTEGER NOT NULL UNIQUE REFERENCES issues(id) ON DELETE CASCADE,
+    watched_since            TEXT NOT NULL,
+    comment_count_at_watch   INTEGER NOT NULL,
+    state_at_watch           TEXT NOT NULL DEFAULT 'open',
+    target_date_at_watch     TEXT,
+    project_status_at_watch  TEXT,
+    status                   TEXT NOT NULL DEFAULT 'watching',
+    replied_at               TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_watched_issue ON watched_issues(issue_id);
@@ -168,6 +170,11 @@ const MIGRATIONS: &[Option<&str>] = &[
         CREATE INDEX IF NOT EXISTS idx_watched_issue ON watched_issues(issue_id);
         ALTER TABLE watched_issues ADD COLUMN state_at_watch TEXT NOT NULL DEFAULT 'open';",
     ),
+    // v12 → v13: add project board baseline columns to watched_issues for project-update detection
+    Some(
+        "ALTER TABLE watched_issues ADD COLUMN target_date_at_watch TEXT;
+         ALTER TABLE watched_issues ADD COLUMN project_status_at_watch TEXT;",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -239,6 +246,10 @@ pub struct WatchedIssue {
     pub watched_since: String,
     pub comment_count_at_watch: i64,
     pub state_at_watch: String,
+    pub target_date_at_watch: Option<String>,
+    pub project_status_at_watch: Option<String>,
+    pub current_target_date: Option<String>,
+    pub current_project_status: Option<String>,
     pub status: String,
     pub replied_at: Option<String>,
 }
@@ -1731,18 +1742,30 @@ pub fn add_watch(
     issue_id: i64,
     comment_count_at_watch: i64,
     state_at_watch: &str,
+    target_date_at_watch: Option<&str>,
+    project_status_at_watch: Option<&str>,
 ) -> Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
     conn.execute(
-        "INSERT INTO watched_issues (issue_id, watched_since, comment_count_at_watch, state_at_watch, status)
-         VALUES (?1, ?2, ?3, ?4, 'watching')
+        "INSERT INTO watched_issues (issue_id, watched_since, comment_count_at_watch,
+             state_at_watch, target_date_at_watch, project_status_at_watch, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'watching')
          ON CONFLICT(issue_id) DO UPDATE SET
              watched_since = excluded.watched_since,
              comment_count_at_watch = excluded.comment_count_at_watch,
              state_at_watch = excluded.state_at_watch,
+             target_date_at_watch = excluded.target_date_at_watch,
+             project_status_at_watch = excluded.project_status_at_watch,
              status = 'watching',
              replied_at = NULL",
-        rusqlite::params![issue_id, now, comment_count_at_watch, state_at_watch],
+        rusqlite::params![
+            issue_id,
+            now,
+            comment_count_at_watch,
+            state_at_watch,
+            target_date_at_watch,
+            project_status_at_watch
+        ],
     )?;
     Ok(())
 }
@@ -1751,7 +1774,6 @@ pub fn add_watch(
 /// `status_filter`: None = active (watching+replied), Some("all") = all,
 /// Some("watching"|"replied"|"dismissed") = exact match.
 pub fn get_watches(conn: &Connection, status_filter: Option<&str>) -> Result<Vec<WatchedIssue>> {
-    // Build a mapper closure to avoid repeating row construction
     let map_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<WatchedIssue> {
         Ok(WatchedIssue {
             id: row.get(0)?,
@@ -1764,21 +1786,32 @@ pub fn get_watches(conn: &Connection, status_filter: Option<&str>) -> Result<Vec
             watched_since: row.get(7)?,
             comment_count_at_watch: row.get(8)?,
             state_at_watch: row.get(9)?,
-            status: row.get(10)?,
-            replied_at: row.get(11)?,
+            target_date_at_watch: row.get(10)?,
+            project_status_at_watch: row.get(11)?,
+            current_target_date: row.get(12)?,
+            current_project_status: row.get(13)?,
+            status: row.get(14)?,
+            replied_at: row.get(15)?,
         })
     };
 
+    // Pick the most-recently-fetched project item per issue (issues can be on multiple boards).
     let base_sql = "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
                 i.state, w.watched_since, w.comment_count_at_watch, w.state_at_watch,
+                w.target_date_at_watch, w.project_status_at_watch,
+                ipi.target_date, ipi.status,
                 w.status, w.replied_at
          FROM watched_issues w
-         JOIN issues i ON i.id = w.issue_id";
+         JOIN issues i ON i.id = w.issue_id
+         LEFT JOIN issue_project_items ipi ON ipi.issue_id = i.id
+             AND ipi.fetched_at = (
+                 SELECT MAX(fetched_at) FROM issue_project_items WHERE issue_id = i.id
+             )";
 
     match status_filter {
         None | Some("active") => {
             let sql = format!(
-                "{base_sql} WHERE w.status IN ('watching', 'replied', 'closed') ORDER BY w.watched_since DESC"
+                "{base_sql} WHERE w.status IN ('watching', 'replied', 'closed', 'project_updated') ORDER BY w.watched_since DESC"
             );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map([], map_row)?;
@@ -1799,14 +1832,13 @@ pub fn get_watches(conn: &Connection, status_filter: Option<&str>) -> Result<Vec
     }
 }
 
-/// Check watched issues for new replies (comment count increased) or closure.
-/// Marks 'watching' issues as 'replied' or 'closed' accordingly.
-/// Closure takes priority if both happen simultaneously.
+/// Check watched issues for new replies, closure, or project board updates.
+/// Priority: closed > replied/project_updated.
 /// Returns the list of issues with updated status.
 pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>> {
     let now = chrono::Utc::now().to_rfc3339();
 
-    // Collect IDs that triggered on closure (higher priority)
+    // Closed: state changed since we started watching
     let closed_ids: Vec<i64> = {
         let mut stmt = conn.prepare(
             "SELECT w.id FROM watched_issues w
@@ -1819,7 +1851,9 @@ pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>>
             .map_err(Error::Sqlite)?
     };
 
-    // Collect IDs that got new comments (excluding those already caught by closed_ids)
+    let closed_set: std::collections::HashSet<i64> = closed_ids.iter().copied().collect();
+
+    // Replied: new comments since we started watching
     let replied_ids: Vec<i64> = {
         let mut stmt = conn.prepare(
             "SELECT w.id FROM watched_issues w
@@ -1830,16 +1864,36 @@ pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>>
         stmt.query_map([], |row| row.get(0))?
             .collect::<rusqlite::Result<Vec<i64>>>()
             .map_err(Error::Sqlite)?
+            .into_iter()
+            .filter(|id| !closed_set.contains(id))
+            .collect()
     };
 
-    // Deduplicate: closed takes priority
-    let closed_set: std::collections::HashSet<i64> = closed_ids.iter().copied().collect();
-    let replied_ids: Vec<i64> = replied_ids
-        .into_iter()
-        .filter(|id| !closed_set.contains(id))
-        .collect();
+    // Project board updated: target_date or status changed on the project board.
+    // Uses COALESCE so NULL→value and value→NULL both count as changes.
+    let project_updated_ids: Vec<i64> = {
+        let mut stmt = conn.prepare(
+            "SELECT w.id FROM watched_issues w
+             JOIN issues i ON i.id = w.issue_id
+             LEFT JOIN issue_project_items ipi ON ipi.issue_id = i.id
+                 AND ipi.fetched_at = (
+                     SELECT MAX(fetched_at) FROM issue_project_items WHERE issue_id = i.id
+                 )
+             WHERE w.status = 'watching'
+               AND (
+                   COALESCE(ipi.target_date, '') != COALESCE(w.target_date_at_watch, '')
+                   OR COALESCE(ipi.status, '') != COALESCE(w.project_status_at_watch, '')
+               )",
+        )?;
+        stmt.query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<i64>>>()
+            .map_err(Error::Sqlite)?
+            .into_iter()
+            .filter(|id| !closed_set.contains(id))
+            .collect()
+    };
 
-    if closed_ids.is_empty() && replied_ids.is_empty() {
+    if closed_ids.is_empty() && replied_ids.is_empty() && project_updated_ids.is_empty() {
         return Ok(vec![]);
     }
 
@@ -1855,8 +1909,18 @@ pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>>
             rusqlite::params![now, id],
         )?;
     }
+    for id in &project_updated_ids {
+        conn.execute(
+            "UPDATE watched_issues SET status = 'project_updated', replied_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, id],
+        )?;
+    }
 
-    let all_ids: Vec<i64> = closed_ids.into_iter().chain(replied_ids).collect();
+    let all_ids: Vec<i64> = closed_ids
+        .into_iter()
+        .chain(replied_ids)
+        .chain(project_updated_ids)
+        .collect();
     let placeholders: String = all_ids
         .iter()
         .enumerate()
@@ -1866,9 +1930,15 @@ pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>>
     let sql = format!(
         "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
                 i.state, w.watched_since, w.comment_count_at_watch, w.state_at_watch,
+                w.target_date_at_watch, w.project_status_at_watch,
+                ipi.target_date, ipi.status,
                 w.status, w.replied_at
          FROM watched_issues w
          JOIN issues i ON i.id = w.issue_id
+         LEFT JOIN issue_project_items ipi ON ipi.issue_id = i.id
+             AND ipi.fetched_at = (
+                 SELECT MAX(fetched_at) FROM issue_project_items WHERE issue_id = i.id
+             )
          WHERE w.id IN ({placeholders})"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -1888,8 +1958,12 @@ pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>>
             watched_since: row.get(7)?,
             comment_count_at_watch: row.get(8)?,
             state_at_watch: row.get(9)?,
-            status: row.get(10)?,
-            replied_at: row.get(11)?,
+            target_date_at_watch: row.get(10)?,
+            project_status_at_watch: row.get(11)?,
+            current_target_date: row.get(12)?,
+            current_project_status: row.get(13)?,
+            status: row.get(14)?,
+            replied_at: row.get(15)?,
         })
     })?;
     rows.map(|r| r.map_err(Error::Sqlite)).collect()
@@ -2799,5 +2873,87 @@ mod tests {
             .unwrap();
         assert!(d.is_some());
         assert!(d.unwrap().applied_at.is_some());
+    }
+
+    /// Reproduces the bloqade-lanes#412 scenario: Phil responded by moving the issue on
+    /// the GitHub project board (new target date) rather than posting a comment.
+    /// The watch system should detect the project board change even with no new comments.
+    #[test]
+    fn watch_detects_project_board_update() {
+        let conn = memory_db();
+
+        // Issue starts open with 1 comment
+        let mut issue = sample_issue("owner/repo", 412);
+        issue.comment_count = 1;
+        issue.state = "open".to_string();
+        let issue_id = upsert_issue(&conn, &issue).unwrap();
+
+        // Initial project board state: target Apr 24, status "Todo"
+        upsert_project_item(
+            &conn,
+            &IssueProjectItem {
+                id: 0,
+                issue_id,
+                project_url: "https://github.com/orgs/Org/projects/1".to_string(),
+                target_date: Some("2026-04-24".to_string()),
+                start_date: None,
+                status: Some("Todo".to_string()),
+                fetched_at: "2026-04-24T00:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+
+        // Watch with initial project board baseline
+        add_watch(&conn, issue_id, 1, "open", Some("2026-04-24"), Some("Todo")).unwrap();
+
+        // No change yet — check returns empty
+        let updated = check_watches_for_replies(&conn).unwrap();
+        assert!(updated.is_empty());
+
+        // Phil moves issue on project board: target date → May 1, status → "In Progress"
+        upsert_project_item(
+            &conn,
+            &IssueProjectItem {
+                id: 0,
+                issue_id,
+                project_url: "https://github.com/orgs/Org/projects/1".to_string(),
+                target_date: Some("2026-05-01".to_string()),
+                start_date: None,
+                status: Some("In Progress".to_string()),
+                fetched_at: "2026-04-29T00:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+
+        // Now the watch should fire as project_updated
+        let updated = check_watches_for_replies(&conn).unwrap();
+        assert_eq!(updated.len(), 1);
+        assert_eq!(updated[0].status, "project_updated");
+        assert_eq!(
+            updated[0].current_target_date,
+            Some("2026-05-01".to_string())
+        );
+        assert_eq!(
+            updated[0].current_project_status,
+            Some("In Progress".to_string())
+        );
+    }
+
+    /// A newly-watched issue with no project board data should not trigger project_updated
+    /// just because the baseline is also NULL.
+    #[test]
+    fn watch_no_false_positive_when_no_project_data() {
+        let conn = memory_db();
+
+        let mut issue = sample_issue("owner/repo", 1);
+        issue.comment_count = 0;
+        issue.state = "open".to_string();
+        let issue_id = upsert_issue(&conn, &issue).unwrap();
+
+        // Watch with no project board baseline (issue not on any board yet)
+        add_watch(&conn, issue_id, 0, "open", None, None).unwrap();
+
+        let updated = check_watches_for_replies(&conn).unwrap();
+        assert!(updated.is_empty());
     }
 }

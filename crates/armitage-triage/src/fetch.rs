@@ -222,21 +222,9 @@ pub fn fetch_all(
         }
     }
 
-    // Check watched issues for new replies (comment count increased since we posted our question)
-    match db::check_watches_for_replies(conn) {
-        Ok(updated) => {
-            for w in &updated {
-                match w.status.as_str() {
-                    "closed" => println!("  [watch] {}#{} was closed!", w.repo, w.number),
-                    _ => println!(
-                        "  [watch] {}#{} has a new reply! ({} comments)",
-                        w.repo, w.number, w.comment_count
-                    ),
-                }
-            }
-        }
-        Err(e) => eprintln!("  warning: watch check failed: {e}"),
-    }
+    // NOTE: watch detection (check_watches_for_replies) is intentionally NOT called here.
+    // It must be called by the CLI after project board data has also been refreshed,
+    // so that project board changes (target date, status) are included in the detection.
 
     Ok(total)
 }
