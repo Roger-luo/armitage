@@ -9,6 +9,7 @@ pub mod okr;
 pub mod project;
 pub mod pull;
 pub mod push;
+pub mod repo;
 pub mod resolve;
 pub mod status;
 pub mod triage;
@@ -112,6 +113,11 @@ enum Commands {
         #[command(subcommand)]
         command: ProjectCommands,
     },
+    /// Query GitHub repo visibility for all repos referenced by the org
+    Repo {
+        #[command(subcommand)]
+        command: RepoCommands,
+    },
     /// Self-management commands
     #[command(name = "self")]
     SelfCmd {
@@ -130,6 +136,16 @@ enum ProjectCommands {
     },
     /// Clear the cached project field IDs (forces re-fetch on next sync)
     ClearCache,
+}
+
+#[derive(Subcommand)]
+enum RepoCommands {
+    /// List all repos referenced by the org with their GitHub visibility (public/private)
+    List {
+        /// Output format: table (default) or json
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1178,6 +1194,11 @@ pub fn run() -> Result<()> {
             }
             ProjectCommands::ClearCache => {
                 project::run_clear_cache()?;
+            }
+        },
+        Commands::Repo { command } => match command {
+            RepoCommands::List { format } => {
+                repo::run_list(format)?;
             }
         },
         Commands::Okr { command } => match command {
