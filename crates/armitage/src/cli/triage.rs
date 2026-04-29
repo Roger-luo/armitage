@@ -3369,6 +3369,12 @@ pub fn run_status(format: String) -> Result<()> {
         if counts.stale > 0 {
             println!("  Stale:                {}", counts.stale);
         }
+        if counts.watching > 0 || counts.replied > 0 {
+            println!("  Watching replies:     {}", counts.watching);
+        }
+        if counts.replied > 0 {
+            println!("  Replies received:     {} ⬅", counts.replied);
+        }
     }
     Ok(())
 }
@@ -3563,12 +3569,111 @@ fn parse_yes_no(input: &str, default: bool) -> bool {
     }
 }
 
-pub fn run_watch_list(_status: String, _format: String) -> Result<()> {
-    todo!("triage watch list: not yet implemented")
+pub fn run_watch_list(status: String, format: String) -> Result<()> {
+    let fmt = format.parse::<OutputFormat>()?;
+    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let conn = db::open_db(&org_root)?;
+
+    let filter_str = match status.as_str() {
+        "active" => None,
+        s => Some(s),
+    };
+    let watches = db::get_watches(&conn, filter_str)?;
+
+    if watches.is_empty() {
+        println!(
+            "No watched issues{}.",
+            if status == "active" {
+                " with pending replies"
+            } else {
+                ""
+            }
+        );
+        return Ok(());
+    }
+
+    if fmt == OutputFormat::Json {
+        let items: Vec<serde_json::Value> = watches
+            .iter()
+            .map(|w| {
+                serde_json::json!({
+                    "ref": format!("{}#{}", w.repo, w.number),
+                    "repo": w.repo,
+                    "number": w.number,
+                    "title": w.title,
+                    "status": w.status,
+                    "watched_since": w.watched_since,
+                    "comment_count_at_watch": w.comment_count_at_watch,
+                    "comment_count": w.comment_count,
+                    "replied_at": w.replied_at,
+                })
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&items).map_err(|e| Error::Other(e.to_string()))?
+        );
+        return Ok(());
+    }
+
+    // Table output
+    println!("{} watched issue(s):\n", watches.len());
+    println!(
+        "  {:<35}  {:<10}  {:<42}  {:<8}  COMMENTS",
+        "REF", "STATUS", "TITLE", "WATCHING"
+    );
+    println!("  {}", "-".repeat(103));
+    for w in &watches {
+        let ref_str = format!("{}#{}", w.repo, w.number);
+        let title = if w.title.len() > 40 {
+            format!("{}…", &w.title[..39])
+        } else {
+            w.title.clone()
+        };
+        let age_str = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&w.watched_since) {
+            let days = (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days();
+            format!("{days}d")
+        } else {
+            "?".to_string()
+        };
+        let new_comments = (w.comment_count - w.comment_count_at_watch).max(0);
+        let comments_str = if w.status == "replied" {
+            format!("{} (+{new_comments} new)", w.comment_count)
+        } else {
+            format!("{}", w.comment_count)
+        };
+        println!(
+            "  {:<35}  {:<10}  {:<42}  {:<8}  {}",
+            ref_str, w.status, title, age_str, comments_str
+        );
+    }
+    Ok(())
 }
 
-pub fn run_watch_dismiss(_issue_refs: Vec<String>) -> Result<()> {
-    todo!("triage watch dismiss: not yet implemented")
+pub fn run_watch_dismiss(issue_refs: Vec<String>) -> Result<()> {
+    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let conn = db::open_db(&org_root)?;
+
+    if issue_refs.is_empty() {
+        return Err(Error::Other(
+            "provide at least one issue ref (owner/repo#number)".to_string(),
+        ));
+    }
+
+    let mut dismissed = 0usize;
+    for ref_str in &issue_refs {
+        let issue_ref = IssueRef::parse(ref_str)?;
+        match db::dismiss_watch_by_ref(&conn, &issue_ref.repo_full(), issue_ref.number as i64) {
+            Ok(true) => {
+                println!("  {ref_str}: dismissed");
+                dismissed += 1;
+            }
+            Ok(false) => println!("  {ref_str}: not found in watch list"),
+            Err(e) => eprintln!("  {ref_str}: error: {e}"),
+        }
+    }
+    println!("Dismissed {dismissed} watch(es).");
+    Ok(())
 }
 
 #[cfg(test)]
