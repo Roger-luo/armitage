@@ -1698,21 +1698,8 @@ pub fn add_watch(conn: &Connection, issue_id: i64, comment_count_at_watch: i64) 
 /// `status_filter`: None = active (watching+replied), Some("all") = all,
 /// Some("watching"|"replied"|"dismissed") = exact match.
 pub fn get_watches(conn: &Connection, status_filter: Option<&str>) -> Result<Vec<WatchedIssue>> {
-    let where_clause = match status_filter {
-        None | Some("active") => "w.status IN ('watching', 'replied')".to_string(),
-        Some("all") => "1=1".to_string(),
-        Some(s) => format!("w.status = '{}'", s.replace('\'', "''")),
-    };
-    let sql = format!(
-        "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
-                w.watched_since, w.comment_count_at_watch, w.status, w.replied_at
-         FROM watched_issues w
-         JOIN issues i ON i.id = w.issue_id
-         WHERE {where_clause}
-         ORDER BY w.watched_since DESC"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], |row| {
+    // Build a mapper closure to avoid repeating row construction
+    let map_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<WatchedIssue> {
         Ok(WatchedIssue {
             id: row.get(0)?,
             issue_id: row.get(1)?,
@@ -1725,8 +1712,35 @@ pub fn get_watches(conn: &Connection, status_filter: Option<&str>) -> Result<Vec
             status: row.get(8)?,
             replied_at: row.get(9)?,
         })
-    })?;
-    rows.map(|r| r.map_err(Error::Sqlite)).collect()
+    };
+
+    let base_sql = "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
+                w.watched_since, w.comment_count_at_watch, w.status, w.replied_at
+         FROM watched_issues w
+         JOIN issues i ON i.id = w.issue_id";
+
+    match status_filter {
+        None | Some("active") => {
+            let sql = format!(
+                "{base_sql} WHERE w.status IN ('watching', 'replied') ORDER BY w.watched_since DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map([], map_row)?;
+            rows.map(|r| r.map_err(Error::Sqlite)).collect()
+        }
+        Some("all") => {
+            let sql = format!("{base_sql} ORDER BY w.watched_since DESC");
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map([], map_row)?;
+            rows.map(|r| r.map_err(Error::Sqlite)).collect()
+        }
+        Some(status) => {
+            let sql = format!("{base_sql} WHERE w.status = ?1 ORDER BY w.watched_since DESC");
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params![status], map_row)?;
+            rows.map(|r| r.map_err(Error::Sqlite)).collect()
+        }
+    }
 }
 
 /// Compare current comment counts against watch baselines.
@@ -1734,24 +1748,52 @@ pub fn get_watches(conn: &Connection, status_filter: Option<&str>) -> Result<Vec
 /// Returns the list of issues newly marked as replied.
 pub fn check_watches_for_replies(conn: &Connection) -> Result<Vec<WatchedIssue>> {
     let now = chrono::Utc::now().to_rfc3339();
-    conn.execute(
-        "UPDATE watched_issues SET status = 'replied', replied_at = ?1
-         WHERE status = 'watching'
-           AND issue_id IN (
-               SELECT i.id FROM issues i
-               JOIN watched_issues w2 ON w2.issue_id = i.id
-               WHERE w2.status = 'watching'
-                 AND i.comment_count > w2.comment_count_at_watch
-           )",
-        rusqlite::params![now],
-    )?;
-    let sql = "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
+
+    // First collect IDs of watches that now have more comments than the baseline
+    let candidate_ids: Vec<i64> = {
+        let mut stmt = conn.prepare(
+            "SELECT w.id FROM watched_issues w
+             JOIN issues i ON i.id = w.issue_id
+             WHERE w.status = 'watching'
+               AND i.comment_count > w.comment_count_at_watch",
+        )?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        rows.collect::<rusqlite::Result<Vec<i64>>>()
+            .map_err(Error::Sqlite)?
+    };
+
+    if candidate_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Update exactly those rows
+    for id in &candidate_ids {
+        conn.execute(
+            "UPDATE watched_issues SET status = 'replied', replied_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, id],
+        )?;
+    }
+
+    // Return the updated rows by ID
+    let placeholders: String = candidate_ids
+        .iter()
+        .enumerate()
+        .map(|(i, _)| format!("?{}", i + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT w.id, w.issue_id, i.repo, i.number, i.title, i.comment_count,
                 w.watched_since, w.comment_count_at_watch, w.status, w.replied_at
          FROM watched_issues w
          JOIN issues i ON i.id = w.issue_id
-         WHERE w.status = 'replied' AND w.replied_at = ?1";
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map(rusqlite::params![now], |row| {
+         WHERE w.id IN ({placeholders})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params: Vec<&dyn rusqlite::types::ToSql> = candidate_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
+    let rows = stmt.query_map(params.as_slice(), |row| {
         Ok(WatchedIssue {
             id: row.get(0)?,
             issue_id: row.get(1)?,
