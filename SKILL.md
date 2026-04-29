@@ -95,7 +95,7 @@ armitage node set <path> [--name ...] [--description ...] [--triage-hint ...] [-
 armitage node move <from> <to>
 armitage node merge <from> <to> [-y]   # merge source into target
 armitage node remove <path> [-y]
-armitage node check [--check-repos]    # timeline violations, issue date validation, owner/repo warnings
+armitage node check [--check-repos] [--check-dates]  # timeline violations, issue date validation, owner/repo warnings
 armitage node fmt [<path>...]          # re-serialize node.toml files
 ```
 
@@ -113,6 +113,11 @@ when an unrecognized username is entered.
 when a repo is archived or has been renamed (canonical name differs from what's stored). Gated
 behind a flag because it makes one `gh repo view` call per unique repo.
 
+`--check-dates` queries the GitHub project board (requires `[github_project]` in `armitage.toml`
+and a populated field cache) and warns for each node that has both `track` and `[timeline]` but
+shows empty start or target date fields on the board. Use this after creating new nodes to confirm
+the local timeline has been pushed to the project board.
+
 ### GitHub Sync
 
 ```
@@ -125,9 +130,14 @@ armitage status                      # show org overview
 ### GitHub Project Board Sync
 
 ```
-armitage project sync [--dry-run]   # add nodes to board and set date/status fields
-armitage project clear-cache        # force re-fetch of project field metadata
+armitage project sync [<node_path>] [--dry-run]   # add nodes to board and set date/status fields
+armitage project clear-cache                       # force re-fetch of project field metadata
 ```
+
+Syncs every node that has both `track` and `[timeline]` to a configured GitHub Projects v2
+board: adds the issue if not already present, then sets the start date, target date, and status
+fields based on the node's timeline. Pass an optional `<node_path>` to sync only that node and
+its descendants rather than the entire org.
 
 ### Repo Visibility
 
@@ -139,10 +149,6 @@ Lists every unique repo referenced by `node.toml` files, queries GitHub once per
 visibility (`public` / `private` / `unknown`) plus which nodes reference each repo. Sorted
 private-first. Use `--format json` for agent-readable output. Run this before creating issues or
 comments to confirm which repos are safe for internal details.
-
-Syncs every node that has both `track` and `[timeline]` to a configured GitHub Projects v2
-board: adds the issue if not already present, then sets the start date, target date, and status
-fields based on the node's timeline.
 
 **Setup:** Add a `[github_project]` section to `armitage.toml`:
 
@@ -191,12 +197,14 @@ armitage triage status [--format table|json]
 armitage triage summary [--repo <r>] [--format table|json]
 armitage triage suggestions [--issues 247,276,32] [--node <prefix>] [--repo <r>] [--min-confidence N] [--max-confidence N] [--status pending|approved|rejected|applied] [--tracking-only] [--unclassified] [--stale-only] [--sort confidence|node|repo] [--limit N] [--format table|json|summary|refs] [--body-max N]
 armitage triage inactive [--days N] [--since <date>] [--repo <r>] [--format table|json] [--inquire "message"]
+armitage triage overdue [--days N] [--repo <r>] [--format table|json] [--comment "message"]
 armitage triage decisions [--status <s>] [--unapplied] [--node <prefix>] [--repo <r>] [--limit N] [--format table|json]
 ```
 
 - **fetch** — pulls issues from GitHub repos into a local SQLite DB (`.armitage/triage.db`), then refreshes the issue cache
 - **classify** — sends untriaged issues to an LLM with the roadmap tree, label schema, curated labels, and any classification examples as context; stores suggestions in the DB (including `is_stale` for issues referencing removed/deprecated features, `is_inactive` for issues with 180+ days of no GitHub activity, and `needs_followup`/`followup_reason` when the discussion lacks concrete next steps), then refreshes the issue cache. **Labels are additive only:** the LLM is prompted to suggest only labels the issue does not already have, and any existing labels that slip through are filtered out before storage. `--limit N` classifies at most N issues per run (default: all) — useful for iterative batch workflows. `--batch-size` controls how many issues are sent per LLM call (prompt granularity), while `--limit` controls the total number of issues processed in the run
 - **inactive** — queries the local DB for open issues with no GitHub activity for at least N days (default 180). Scoped to repos in `node.toml` files only. Outputs a table with the issue ref, title, time since last update, and suggested node (if classified). `--days N` sets the inactivity threshold. `--since <date>` sets an absolute cutoff date (ISO 8601). `--repo <r>` scopes to one repo. `--inquire "message"` stages all matching unreviewed issues as `inquire` decisions with the given comment text (applied by `triage apply`)
+- **overdue** — queries the local DB for open issues whose project-board target date is more than N days in the past (default: 0, meaning any overdue issue). Orthogonal to `inactive`: an issue can be actively discussed but still past its deadline. `--comment "message"` stages a follow-up comment on each matching issue (posted via `triage apply`), analogous to `inactive --inquire`. Useful as a regular OKR review step to surface deadline drift before it compounds.
 - **review** — three modes:
   - `-i` / `--interactive` — step through each pending suggestion one at a time. For each:
     **[a]pprove** accepts as-is, **[r]eject** marks as wrong, **[m]odify** lets you correct the
@@ -515,6 +523,17 @@ partitioning.
 **Boundaries:** The agent does not run `triage apply` (pushing to GitHub), `triage fetch` (pulling
 issues), or modify the roadmap tree. Those are separate user-initiated actions.
 
+### OKR review and deadline maintenance
+
+When reviewing a person's OKR (e.g. comparing a manually written plan against the generated view):
+
+1. **Generate the view:** `okr show --period 2026-Q2 --person <username> --format markdown`
+2. **Surface deadline drift:** `triage overdue` — lists all open issues with past target dates org-wide; scope with `--repo` if needed
+3. **Fix node tracking issue dates:** `project sync <node_path>` — pushes the node's local `[timeline]` to the project board for any node that has `track` set
+4. **Fix individual issue dates on the board:** Use `gh api graphql` mutations directly (armitage `project sync` only covers node tracking issues, not arbitrary issues). Get the project item ID by paginating the project board, then call `updateProjectV2ItemFieldValue`.
+5. **Stage follow-up comments on overdue issues:** `triage overdue --comment "This issue's target date has passed. Please update the target date or leave a status comment." && triage apply`
+6. **Classify new unclassified issues:** `triage fetch --repo <r>` then `triage classify --repo <r> --limit N`, review, decide, apply
+
 ### Improving classification accuracy
 
 1. Review low-confidence issues with `triage review -i --max-confidence 0.7`
@@ -572,3 +591,9 @@ When creating new nodes for a project, consider:
 **`triage decide modify` on a previously-applied issue requires `triage apply` to take effect in OKR.** For issues whose prior decision was already applied to GitHub, `triage decide modify` records the new node but the effective node_path in the DB is only updated when `triage apply` runs. Check with `triage decisions --node <path> --unapplied` before running OKR to ensure nothing is stale.
 
 **Never query the SQLite DB directly.** Use `triage suggestions --issues N --format json`, `triage decisions`, and `triage status` instead of `sqlite3`. Direct SQL queries bypass armitage's abstractions and break when the schema changes.
+
+**A newly created node won't appear in `okr show --person` until it has issues.** A node where the person is an owner but has zero issues in the triage DB is silently excluded from the OKR view. The `track` field is the fastest fix: set it and run `triage fetch` — the tracking issue appears immediately via the shortcut without going through the classify/decide pipeline.
+
+**Classify cross-cutting blockers to the dependent area, not the implementation area.** When an issue is a blocker for one initiative (e.g. Gemini Logical STAR injection) but the implementation work lives in another repo/area (e.g. bloqade-lanes / shuttle), classify it to the initiative that depends on it. That's where the person tracking the work will look for it. Low confidence from the LLM on such issues is expected and not a reason to reclassify — add a note on approval explaining the reasoning so the example doesn't mislead future classification runs.
+
+**`triage overdue` is the right tool after an OKR review.** When comparing a manually written OKR against the generated view and finding stale target dates, run `triage overdue` first to get a full picture of deadline drift across the org before editing individual issues. Then fix dates on the GitHub project board (via `project sync <node_path>` for nodes with `track`, or via `gh api graphql` mutations for individual issues that aren't node tracking issues).
