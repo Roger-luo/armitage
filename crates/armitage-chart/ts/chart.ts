@@ -3,7 +3,7 @@
  */
 
 import type { ChartData, ChartNode, ChartMilestone, ChartIssue } from "./types";
-import { getLayoutElements, getTimelineWidth, syncSvgHeight, getAxisHeight, getRowHeight, type LayoutElements } from "./layout";
+import { getLayoutElements, getTimelineWidth, syncSvgHeight, getAxisHeight, getBarsTop, getRowHeight, type LayoutElements } from "./layout";
 import { createScale, setupZoom, resetZoom, updateScaleRange, parseDate, type ScaleState } from "./scale";
 import { renderAxis, renderGridLines, renderTodayLine, renderMilestoneLines } from "./render-axis";
 import { renderNodeRow, sortIssues, formatOverdue, type RenderedRow } from "./render-nodes";
@@ -45,33 +45,52 @@ function findNode(nodes: ChartNode[], path: string): ChartNode | null {
   return null;
 }
 
-function collectOkrs(nodes: ChartNode[]): ChartMilestone[] {
+/**
+ * Collect milestones relevant to the current view.
+ *
+ * Scoping rules:
+ * - Top-level (currentPath = ""): all milestones from the entire tree.
+ * - Drilled into node P: milestones from P's subtree (P itself + all descendants)
+ *   PLUS milestones from every ancestor of P (a milestone on a non-leaf node
+ *   propagates to all its children, so ancestors apply to the viewed children).
+ *   Milestones from sibling branches are excluded.
+ *
+ * `typeFilter`: "okr" | "checkpoint" | "all"
+ */
+function collectMilestonesForView(typeFilter: "okr" | "checkpoint" | "all"): ChartMilestone[] {
   const seen = new Set<string>();
   const result: ChartMilestone[] = [];
-  function walk(ns: ChartNode[]) {
-    for (const n of ns) {
-      for (const m of n.milestones) {
-        if (m.milestone_type === "okr") {
-          const key = `${m.name}|${m.date}`;
-          if (!seen.has(key)) { seen.add(key); result.push(m); }
-        }
-      }
-      walk(n.children);
-    }
-  }
-  walk(nodes);
-  return result;
-}
 
-function allCheckpoints(node: ChartNode): ChartMilestone[] {
-  const result: ChartMilestone[] = [];
-  function walk(n: ChartNode) {
-    for (const m of n.milestones) {
-      if (m.milestone_type !== "okr") result.push(m);
+  function add(m: ChartMilestone) {
+    const isOkr = m.milestone_type === "okr";
+    if (typeFilter === "all" || (typeFilter === "okr" && isOkr) || (typeFilter === "checkpoint" && !isOkr)) {
+      const key = `${m.name}|${m.date}`;
+      if (!seen.has(key)) { seen.add(key); result.push(m); }
     }
-    for (const c of n.children) walk(c);
   }
-  walk(node);
+
+  function walkSubtree(n: ChartNode) {
+    n.milestones.forEach(add);
+    n.children.forEach(walkSubtree);
+  }
+
+  if (currentPath === "") {
+    data.nodes.forEach(walkSubtree);
+  } else {
+    // Subtree rooted at currentPath
+    const node = findNode(data.nodes, currentPath);
+    if (node) walkSubtree(node);
+
+    // Ancestor milestones: a milestone on a non-leaf propagates to all descendants.
+    // The ancestors of "a/b/c" are "a" and "a/b".
+    const parts = currentPath.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const ancestorPath = parts.slice(0, i).join("/");
+      const ancestor = findNode(data.nodes, ancestorPath);
+      if (ancestor) ancestor.milestones.forEach(add);
+    }
+  }
+
   return result;
 }
 
@@ -191,6 +210,13 @@ function showNodePanel(node: ChartNode): void {
   }
   html += `</div></div>`;
 
+  if (node.track) {
+    const trackUrl = `https://github.com/${node.track.replace('#', '/issues/')}`;
+    html += `<div class="panel-section"><h3>Tracking Issue</h3><div class="panel-meta">`;
+    html += `<a class="panel-issue-link" href="${trackUrl}" target="_blank" rel="noopener">${escapeHtml(node.track)}</a>`;
+    html += `</div></div>`;
+  }
+
   if (node.owners.length > 0 || node.team) {
     html += `<div class="panel-section"><h3>People</h3><div class="panel-meta">`;
     if (node.owners.length > 0) html += `<span class="label">Owners:</span> ${node.owners.map(escapeHtml).join(", ")}<br/>`;
@@ -294,6 +320,20 @@ function closePanel(): void {
   panelEl.classList.remove("open");
 }
 
+function showMilestonePanel(m: ChartMilestone): void {
+  const typeLabel = m.milestone_type === "okr" ? "OKR" : "Checkpoint";
+  const color = m.milestone_type === "okr" ? "#a78bfa" : "#f59e0b";
+  let html = `<h2 style="color:${color}">${escapeHtml(m.name)}</h2>`;
+  html += `<span class="panel-status active" style="background:none;color:${color}">${typeLabel}</span>`;
+  html += `<div class="panel-section"><h3>Date</h3><div class="panel-meta">${escapeHtml(m.date)}</div></div>`;
+  if (m.description) {
+    html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${renderMarkdown(m.description)}</div></div>`;
+  }
+  panelContentEl.innerHTML = html;
+  panelEl.classList.add("open");
+}
+
+(window as any).__openMilestonePanel = showMilestonePanel;
 (window as any).__closePanel = closePanel;
 
 // ---------------------------------------------------------------------------
@@ -375,27 +415,20 @@ function renderChart(): void {
     }
   }
 
-  // Sync SVG height
-  syncSvgHeight(layout, yOffset);
+  // Milestone lines — scoped to the current view (see collectMilestonesForView).
+  const milestones = collectMilestonesForView("all");
+  const barsTop = getBarsTop(milestones.length > 0);
 
-  // Render axis, grid, markers
-  const totalHeight = yOffset + getAxisHeight();
-  renderAxis(scaleState, layout, totalHeight);
-  renderGridLines(scaleState, layout, totalHeight);
-  renderTodayLine(scaleState, layout, totalHeight);
+  // Sync SVG height and bar position (barsTop accounts for the milestone label zone).
+  syncSvgHeight(layout, yOffset, barsTop);
+  // Keep the label column aligned with the bar rows.
+  layout.labelsEl.style.paddingTop = `${barsTop}px`;
 
-  // Milestone lines
-  const okrs = collectOkrs(data.nodes);
-  renderMilestoneLines(scaleState, layout, totalHeight, okrs);
-
-  if (currentPath !== "") {
-    const parentNode = findNode(data.nodes, currentPath);
-    if (parentNode) {
-      const checkpoints = allCheckpoints(parentNode);
-      const filtered = checkpoints.filter((m) => !okrs.some((o) => o.name === m.name && o.date === m.date));
-      renderMilestoneLines(scaleState, layout, totalHeight, filtered);
-    }
-  }
+  const totalHeight = yOffset + barsTop;
+  renderAxis(scaleState, layout, totalHeight, barsTop);
+  renderGridLines(scaleState, layout, totalHeight, barsTop);
+  renderTodayLine(scaleState, layout, totalHeight, barsTop);
+  renderMilestoneLines(scaleState, layout, totalHeight, milestones, barsTop);
 }
 
 function onZoom(): void {
@@ -538,9 +571,13 @@ function findRowFromSvgY(e: MouseEvent): RenderedRow | undefined {
   const pt = svg.createSVGPoint();
   pt.x = e.clientX;
   pt.y = e.clientY;
-  const svgY = pt.matrixTransform(svg.getScreenCTM()!.inverse()).y - getAxisHeight();
+  const svgY = pt.matrixTransform(svg.getScreenCTM()!.inverse()).y;
+  const barsTop = getBarsTop(collectMilestonesForView("all").length > 0);
+  // Ignore clicks in the axis / milestone-label zone above the bars
+  if (svgY < barsTop) return undefined;
+  const barsRelY = svgY - barsTop;
   for (const row of renderedRows) {
-    if (svgY >= row.y && svgY < row.y + row.height) return row;
+    if (barsRelY >= row.y && barsRelY < row.y + row.height) return row;
   }
   return undefined;
 }

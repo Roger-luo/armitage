@@ -1,12 +1,15 @@
 pub mod chart;
 pub mod complete;
 pub mod config;
+pub mod goal;
 pub mod init;
 pub mod milestone;
 pub mod node;
+pub mod okr;
 pub mod project;
 pub mod pull;
 pub mod push;
+pub mod repo;
 pub mod resolve;
 pub mod status;
 pub mod triage;
@@ -80,6 +83,16 @@ enum Commands {
         #[command(subcommand)]
         command: TriageCommands,
     },
+    /// Derive OKR views from the roadmap (no manual authoring required)
+    Okr {
+        #[command(subcommand)]
+        command: OkrCommands,
+    },
+    /// Manage cross-cutting goals (external milestones spanning multiple initiatives)
+    Goal {
+        #[command(subcommand)]
+        command: GoalCommands,
+    },
     /// Generate an interactive HTML roadmap chart (serves on localhost by default)
     Chart {
         /// Output file path (default: .armitage/chart.html). Implies --no-serve.
@@ -99,6 +112,11 @@ enum Commands {
     Project {
         #[command(subcommand)]
         command: ProjectCommands,
+    },
+    /// Query GitHub repo visibility for all repos referenced by the org
+    Repo {
+        #[command(subcommand)]
+        command: RepoCommands,
     },
     /// Self-management commands
     #[command(name = "self")]
@@ -123,6 +141,16 @@ enum ProjectCommands {
 }
 
 #[derive(Subcommand)]
+enum RepoCommands {
+    /// List all repos referenced by the org with their GitHub visibility (public/private)
+    List {
+        /// Output format: table (default) or json
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum NodeCommands {
     /// Create a new node (interactive when no options given)
     New {
@@ -133,7 +161,7 @@ enum NodeCommands {
         #[arg(long)]
         description: Option<String>,
         #[arg(long)]
-        github_issue: Option<String>,
+        track: Option<String>,
         #[arg(long)]
         labels: Option<String>,
         #[arg(long)]
@@ -192,6 +220,9 @@ enum NodeCommands {
         labels: Option<String>,
         #[arg(long)]
         status: Option<String>,
+        /// Link a GitHub tracking issue (owner/repo#number)
+        #[arg(long)]
+        track: Option<String>,
         /// Set the timeline start date (YYYY-MM-DD)
         #[arg(long)]
         timeline_start: Option<String>,
@@ -237,7 +268,7 @@ enum MilestoneCommands {
         #[arg(long)]
         expected_progress: Option<f64>,
         #[arg(long)]
-        github_issue: Option<String>,
+        track: Option<String>,
     },
     /// List milestones
     List {
@@ -249,6 +280,116 @@ enum MilestoneCommands {
     },
     /// Remove a milestone
     Remove { node_path: String, name: String },
+}
+
+#[derive(Subcommand)]
+enum OkrCommands {
+    /// Derive OKR view from roadmap nodes and issues (no manual authoring)
+    Show {
+        /// Period: "2026-Q2", "2026-Q1", "2025", or "current" (default)
+        #[arg(long, default_value = "current")]
+        period: String,
+        /// Filter to a goal slug — shows only nodes listed in that goal, using the
+        /// goal deadline as the period end when no --period is given
+        #[arg(long)]
+        goal: Option<String>,
+        /// Filter to a specific person (GitHub username)
+        #[arg(long)]
+        person: Option<String>,
+        /// Filter to a team
+        #[arg(long)]
+        team: Option<String>,
+        /// Max depth of nodes to include (1 = top-level only, 4 = milestones, default: 4)
+        #[arg(long, default_value = "4")]
+        depth: usize,
+        /// Output format: table, json, markdown
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    /// Surface OKR gaps: missing owners, no key results scheduled, overdue issues
+    Check {
+        /// Period to check
+        #[arg(long, default_value = "current")]
+        period: String,
+        /// Filter to a goal slug
+        #[arg(long)]
+        goal: Option<String>,
+        /// Filter to a specific person
+        #[arg(long)]
+        person: Option<String>,
+        /// Filter to a team
+        #[arg(long)]
+        team: Option<String>,
+        /// Output format: table, json
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum GoalCommands {
+    /// List all goals
+    List {
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    /// Show details of a goal
+    Show {
+        slug: String,
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    /// Add a new goal
+    Add {
+        /// Short identifier, e.g. "google-q2"
+        slug: String,
+        /// Display name
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        description: Option<String>,
+        /// Hard deadline (YYYY-MM-DD). Omit if not yet fixed.
+        #[arg(long)]
+        deadline: Option<String>,
+        /// Comma-separated GitHub usernames
+        #[arg(long)]
+        owners: Option<String>,
+        /// Tracking issue in owner/repo#N format
+        #[arg(long)]
+        track: Option<String>,
+        /// Comma-separated roadmap node paths that contribute to this goal
+        #[arg(long)]
+        nodes: Option<String>,
+    },
+    /// Update fields on an existing goal
+    Set {
+        slug: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        deadline: Option<String>,
+        #[arg(long)]
+        owners: Option<String>,
+        #[arg(long)]
+        track: Option<String>,
+        /// Replace the full nodes list
+        #[arg(long)]
+        nodes: Option<String>,
+        /// Add nodes without replacing existing ones
+        #[arg(long)]
+        add_nodes: Option<String>,
+        /// Remove specific nodes
+        #[arg(long)]
+        remove_nodes: Option<String>,
+    },
+    /// Remove a goal
+    Remove {
+        slug: String,
+        #[arg(long, short)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -718,7 +859,7 @@ pub fn run() -> Result<()> {
                 path,
                 name,
                 description,
-                github_issue,
+                track,
                 labels,
                 repos,
                 owners,
@@ -729,7 +870,7 @@ pub fn run() -> Result<()> {
                     path,
                     name,
                     description,
-                    github_issue,
+                    track,
                     labels,
                     repos,
                     owners,
@@ -765,6 +906,7 @@ pub fn run() -> Result<()> {
                 repos,
                 labels,
                 status,
+                track,
                 timeline_start,
                 timeline_end,
             } => {
@@ -778,6 +920,7 @@ pub fn run() -> Result<()> {
                     repos,
                     labels,
                     status,
+                    track,
                     timeline_start,
                     timeline_end,
                 )?;
@@ -803,7 +946,7 @@ pub fn run() -> Result<()> {
                 description,
                 milestone_type,
                 expected_progress,
-                github_issue,
+                track,
             } => {
                 milestone::run_add(
                     node_path,
@@ -812,7 +955,7 @@ pub fn run() -> Result<()> {
                     description,
                     milestone_type,
                     expected_progress,
-                    github_issue,
+                    track,
                 )?;
             }
             MilestoneCommands::List {
@@ -1083,6 +1226,67 @@ pub fn run() -> Result<()> {
             ProjectCommands::ClearCache => {
                 project::run_clear_cache()?;
             }
+        },
+        Commands::Repo { command } => match command {
+            RepoCommands::List { format } => {
+                repo::run_list(format)?;
+            }
+        },
+        Commands::Okr { command } => match command {
+            OkrCommands::Show {
+                period,
+                goal,
+                person,
+                team,
+                depth,
+                format,
+            } => {
+                okr::run_show(period, goal, person, team, depth, format)?;
+            }
+            OkrCommands::Check {
+                period,
+                goal,
+                person,
+                team,
+                format,
+            } => {
+                okr::run_check(period, goal, person, team, format)?;
+            }
+        },
+        Commands::Goal { command } => match command {
+            GoalCommands::List { format } => goal::run_list(format)?,
+            GoalCommands::Show { slug, format } => goal::run_show(slug, format)?,
+            GoalCommands::Add {
+                slug,
+                name,
+                description,
+                deadline,
+                owners,
+                track,
+                nodes,
+            } => goal::run_add(slug, name, description, deadline, owners, track, nodes)?,
+            GoalCommands::Set {
+                slug,
+                name,
+                description,
+                deadline,
+                owners,
+                track,
+                nodes,
+                add_nodes,
+                remove_nodes,
+            } => goal::run_set(
+                slug,
+                name,
+                description,
+                deadline,
+                owners,
+                track,
+                nodes,
+                add_nodes,
+                remove_nodes,
+            )?,
+            GoalCommands::Remove { slug, yes } => goal::run_remove(slug, yes)?,
         },
         Commands::SelfCmd { command } => run_self(command),
     }

@@ -33,6 +33,7 @@ export interface ChartNode {
   has_timeline: boolean;
   owners: string[];
   team: string | null;
+  track: string | null;
   overflow_end: string | null;
   children: ChartNode[];
   milestones: ChartMilestone[];

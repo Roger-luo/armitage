@@ -525,6 +525,93 @@ pub fn get_project_items_for_issue(
 }
 
 // ---------------------------------------------------------------------------
+// OKR / project-data bulk query
+// ---------------------------------------------------------------------------
+
+/// An issue combined with its effective roadmap node and GitHub Projects v2 dates.
+/// Used by the `okr` command to derive OKR views from existing triage data.
+#[derive(Debug, Clone, Serialize)]
+pub struct IssueWithProjectData {
+    pub issue: StoredIssue,
+    /// Effective node path: `review_decisions.final_node` when a decision exists,
+    /// otherwise `triage_suggestions.suggested_node`.
+    pub node_path: Option<String>,
+    pub target_date: Option<String>,
+    pub start_date: Option<String>,
+    pub project_status: Option<String>,
+}
+
+/// Load every classified, non-PR issue together with its effective node path and
+/// GitHub Projects v2 dates in a single query.  Issues that have no triage
+/// suggestion are excluded (they have never been classified).
+pub fn get_all_issues_with_project_data(conn: &Connection) -> Result<Vec<IssueWithProjectData>> {
+    let mut stmt = conn.prepare(
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state,
+                i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count,
+                i.author, i.assignees_json, i.is_pr, i.comment_count,
+                COALESCE(rd.final_node, ts.suggested_node) AS effective_node,
+                ipi.target_date, ipi.start_date, ipi.status AS project_status
+         FROM issues i
+         JOIN triage_suggestions ts ON i.id = ts.issue_id
+         LEFT JOIN review_decisions rd ON rd.suggestion_id = ts.id
+         LEFT JOIN issue_project_items ipi ON ipi.issue_id = i.id
+         WHERE i.is_pr = 0
+         ORDER BY effective_node ASC NULLS LAST,
+                  ipi.target_date ASC NULLS LAST,
+                  i.number ASC",
+    )?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let issue = row_to_issue(row)?;
+            Ok(IssueWithProjectData {
+                issue,
+                node_path: row.get(14)?,
+                target_date: row.get(15)?,
+                start_date: row.get(16)?,
+                project_status: row.get(17)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Fetch a single issue by `(repo, number)` together with its project board
+/// dates.  Unlike `get_all_issues_with_project_data`, this works even if the
+/// issue has no triage suggestion — useful for tracking issues that are linked
+/// via a node's `track` field but have never been classified.
+pub fn get_issue_with_project_data_by_ref(
+    conn: &Connection,
+    repo: &str,
+    number: u64,
+) -> Result<Option<IssueWithProjectData>> {
+    let mut stmt = conn.prepare(
+        "SELECT i.id, i.repo, i.number, i.title, i.body, i.state,
+                i.labels_json, i.updated_at, i.fetched_at, i.sub_issues_count,
+                i.author, i.assignees_json, i.is_pr, i.comment_count,
+                ipi.target_date, ipi.start_date, ipi.status AS project_status
+         FROM issues i
+         LEFT JOIN issue_project_items ipi ON ipi.issue_id = i.id
+         WHERE i.repo = ?1 AND i.number = ?2 AND i.is_pr = 0
+         LIMIT 1",
+    )?;
+    let row = stmt
+        .query_map(rusqlite::params![repo, number as i64], |row| {
+            let issue = row_to_issue(row)?;
+            Ok(IssueWithProjectData {
+                issue,
+                node_path: None, // caller fills this in from node.track
+                target_date: row.get(14)?,
+                start_date: row.get(15)?,
+                project_status: row.get(16)?,
+            })
+        })?
+        .next()
+        .transpose()?;
+    Ok(row)
+}
+
+// ---------------------------------------------------------------------------
 // Triage Suggestion CRUD
 // ---------------------------------------------------------------------------
 
@@ -583,7 +670,7 @@ pub fn get_pending_suggestions_filtered(
          FROM triage_suggestions ts
          JOIN issues i ON i.id = ts.issue_id
          LEFT JOIN review_decisions rd ON rd.suggestion_id = ts.id
-         WHERE rd.id IS NULL",
+         WHERE rd.id IS NULL AND i.is_pr = 0",
     );
     if min_confidence.is_some() {
         sql.push_str(" AND COALESCE(ts.confidence, 0.0) >= ?1");
@@ -919,7 +1006,10 @@ pub fn mark_applied(conn: &Connection, decision_id: i64, applied_at: &str) -> Re
 // ---------------------------------------------------------------------------
 
 pub fn get_pipeline_counts(conn: &Connection) -> Result<PipelineCounts> {
-    let total_fetched: i64 = conn.query_row("SELECT COUNT(*) FROM issues", [], |r| r.get(0))?;
+    let total_fetched: i64 =
+        conn.query_row("SELECT COUNT(*) FROM issues WHERE is_pr = 0", [], |r| {
+            r.get(0)
+        })?;
     let untriaged: i64 = conn.query_row(
         "SELECT COUNT(*) FROM issues i
          LEFT JOIN triage_suggestions ts ON ts.issue_id = i.id
@@ -929,8 +1019,9 @@ pub fn get_pipeline_counts(conn: &Connection) -> Result<PipelineCounts> {
     )?;
     let pending_review: i64 = conn.query_row(
         "SELECT COUNT(*) FROM triage_suggestions ts
+         JOIN issues i ON i.id = ts.issue_id
          LEFT JOIN review_decisions rd ON rd.suggestion_id = ts.id
-         WHERE rd.id IS NULL",
+         WHERE rd.id IS NULL AND i.is_pr = 0",
         [],
         |r| r.get(0),
     )?;
@@ -1330,7 +1421,7 @@ pub fn get_suggestions_filtered(
          FROM triage_suggestions ts
          JOIN issues i ON i.id = ts.issue_id
          LEFT JOIN review_decisions rd ON rd.suggestion_id = ts.id
-         WHERE 1=1",
+         WHERE i.is_pr = 0",
     );
 
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();

@@ -14,7 +14,7 @@ pub struct SyncState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeSyncEntry {
-    pub github_issue: String,
+    pub track: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_pulled_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -68,7 +68,7 @@ mod tests {
         state.nodes.insert(
             "gemini/auth".to_string(),
             NodeSyncEntry {
-                github_issue: "owner/repo#42".to_string(),
+                track: "owner/repo#42".to_string(),
                 last_pulled_at: Some(
                     DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
                         .unwrap()
@@ -89,7 +89,7 @@ mod tests {
 
         assert_eq!(deserialized.nodes.len(), 1);
         let entry = deserialized.nodes.get("gemini/auth").unwrap();
-        assert_eq!(entry.github_issue, "owner/repo#42");
+        assert_eq!(entry.track, "owner/repo#42");
         assert!(entry.last_pulled_at.is_some());
         assert!(entry.last_pushed_at.is_none());
         assert_eq!(entry.local_hash.as_deref(), Some("abc123"));
@@ -104,7 +104,7 @@ mod tests {
         state.nodes.insert(
             "project/subnode".to_string(),
             NodeSyncEntry {
-                github_issue: "acme/things#7".to_string(),
+                track: "acme/things#7".to_string(),
                 last_pulled_at: None,
                 last_pushed_at: None,
                 remote_updated_at: None,
@@ -117,7 +117,7 @@ mod tests {
         let loaded = read_sync_state(&org).unwrap();
         assert_eq!(loaded.nodes.len(), 1);
         let entry = loaded.nodes.get("project/subnode").unwrap();
-        assert_eq!(entry.github_issue, "acme/things#7");
+        assert_eq!(entry.track, "acme/things#7");
         assert_eq!(entry.local_hash.as_deref(), Some("deadbeef"));
     }
 

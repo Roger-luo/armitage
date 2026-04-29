@@ -43,7 +43,7 @@ nesting). Each node represents an initiative, project, or task.
 - `labels` — labels to apply to issues classified under this node
 - `owners` — GitHub usernames responsible for this node (references `team.toml`)
 - `team` — functional team that owns this node (e.g. `circuit`, `flair`, `shuttle`, `kirin`)
-- `github_issue` — linked issue in `owner/repo#number` format
+- `track` — tracking issue in `owner/repo#number` format; also forces that issue to appear under this node in `okr show` without going through the full triage pipeline
 - `timeline` — `start` and `end` dates
 
 **Repo `@branch` convention** — nodes can declare which branch of a repo they cover:
@@ -129,7 +129,18 @@ armitage project sync [--dry-run]   # add nodes to board and set date/status fie
 armitage project clear-cache        # force re-fetch of project field metadata
 ```
 
-Syncs every node that has both `github_issue` and `[timeline]` to a configured GitHub Projects v2
+### Repo Visibility
+
+```
+armitage repo list [--format table|json]   # list all repos in the org with public/private visibility
+```
+
+Lists every unique repo referenced by `node.toml` files, queries GitHub once per repo, and outputs
+visibility (`public` / `private` / `unknown`) plus which nodes reference each repo. Sorted
+private-first. Use `--format json` for agent-readable output. Run this before creating issues or
+comments to confirm which repos are safe for internal details.
+
+Syncs every node that has both `track` and `[timeline]` to a configured GitHub Projects v2
 board: adds the issue if not already present, then sets the start date, target date, and status
 fields based on the node's timeline.
 
@@ -286,6 +297,49 @@ armitage milestone add <node_path> --name <name> --date <YYYY-MM-DD> [--descript
 armitage milestone list [<node_path>] [--milestone-type ...] [--quarter ...]
 armitage milestone remove <node_path> <name>
 ```
+
+### OKR View
+
+```
+armitage okr show [--period <YYYY-Qn|YYYY|current>] [--goal <slug>] [--team <t>] [--person <u>] [--depth N] [--format table|json|markdown]
+armitage okr check [--period <YYYY-Qn|YYYY|current>] [--goal <slug>] [--team <t>] [--depth N]
+```
+
+- **show** — list nodes whose timelines overlap the period as OKR objectives, with their open issues as key results. Open issues always appear regardless of their project-board target date (a project can span multiple OKR periods); closed issues appear only if their target date falls within the period.
+- **check** — flag nodes with no key results, unowned nodes, and issues whose target dates fall outside the node's timeline.
+- `--goal <slug>` — filter to nodes that belong to a named cross-cutting goal from `goals.toml`.
+- `--person <github-username>` — filter to nodes where that person is listed as an owner **or** has at least one assigned issue. A node with no `owners` set is still included when the person has assigned issues under it.
+
+**Node timeline is required.** A node must have a `[timeline]` section with a `start` and `end` that overlaps the OKR period to appear in `okr show`. Nodes without a timeline are silently excluded. If a node is missing from the OKR output, add a timeline: `armitage node set <path> --timeline-start YYYY-MM-DD --timeline-end YYYY-MM-DD`.
+
+**`track` field as OKR shortcut.** Setting `track = "owner/repo#N"` in a node's `node.toml` forces that issue to appear under the node in `okr show` immediately — without running `triage fetch`/`classify`/`decide`/`apply`. Useful for tracking issues that represent the node itself on a GitHub project board.
+
+**How issues appear in OKR:** The OKR reads exclusively from the triage DB — `issues.toml` files are NOT used. To make a newly-created or re-classified issue appear:
+1. `triage fetch --repo <owner/repo>` — pull the issue into the DB
+2. `triage classify --repo <owner/repo> --limit N` — get an LLM node assignment
+3. `triage decide <ref> --decision approve` (or `modify --node <path>`) — confirm the assignment
+4. `triage apply` — required when modifying an issue that already had a prior applied decision; updates the effective node_path in the DB
+
+**Diagnosing why an issue doesn't appear:**
+- `triage suggestions --issues N --format json` — check the effective node, confidence, and project-board target date
+- `triage decisions --node <path>` — see pending vs applied decisions for a node
+- `triage status` — overall triage state
+
+**Never query the SQLite DB directly** with `sqlite3`. All relevant state is accessible through the commands above.
+
+### Goals
+
+Cross-cutting external commitments that span multiple roadmap initiatives (e.g. a hardware milestone that requires work across circuit, FLAIR, and shuttle).
+
+```
+armitage goal list [--format table|json]
+armitage goal show <slug> [--format table|json]
+armitage goal add <slug> --name "..." [--description ...] [--deadline YYYY-MM-DD] [--owners u1,u2] [--track owner/repo#N] [--nodes path1,path2]
+armitage goal set <slug> [--name ...] [--description ...] [--deadline ...] [--owners ...] [--track ...] [--nodes ...] [--add-nodes ...] [--remove-nodes ...]
+armitage goal remove <slug> [-y]
+```
+
+Goals are stored in `goals.toml` at the org root. Each goal has a `nodes` list of roadmap paths (exact match or subtree prefix). Use `okr show --goal <slug>` to see only the nodes and issues that belong to that goal.
 
 ### Roadmap Chart
 
@@ -494,8 +548,10 @@ When creating new nodes for a project, consider:
 |------|-------------|
 | `armitage.toml` | Org config (name, github_orgs, label_schema, triage settings) |
 | `*/node.toml` | Node metadata |
+| `*/issues.toml` | Manual issue list for `push`/`pull` sync — **not read by `okr show`** |
 | `*/issue.md` | Issue body (synced with GitHub) |
 | `*/milestones.toml` | Node milestones |
+| `goals.toml` | Cross-cutting external commitments spanning multiple nodes |
 | `labels.toml` | Curated label definitions |
 | `triage-examples.toml` | Human-verified classification examples for few-shot LLM prompts |
 | `.armitage/triage.db` | SQLite DB for triage pipeline (gitignored) |
@@ -504,3 +560,15 @@ When creating new nodes for a project, consider:
 | `.armitage/secrets.toml` | Local secrets / API keys (gitignored) |
 | `.armitage/label-renames.toml` | Pending label rename ledger |
 | `.armitage/dismissed-categories.toml` | Categories dismissed from suggestions |
+
+## Common Pitfalls
+
+**`issues.toml` does not affect `okr show`.** Adding an issue to a node's `issues.toml` has no effect on the OKR view. OKR reads only from the triage DB. Use the `triage fetch` → `classify` → `decide` pipeline instead.
+
+**New GitHub issues need `triage fetch` before they appear anywhere.** After creating an issue with `gh issue create`, run `triage fetch --repo <owner/repo>` to pull it into the local DB, then classify it.
+
+**Set labels and assignees at creation time.** When opening a GitHub issue on behalf of the roadmap, pass `--label` and `--assignee` directly to `gh issue create`. Don't rely on a follow-up `gh issue edit` or `triage apply` to add labels the issue should have from the start.
+
+**`triage decide modify` on a previously-applied issue requires `triage apply` to take effect in OKR.** For issues whose prior decision was already applied to GitHub, `triage decide modify` records the new node but the effective node_path in the DB is only updated when `triage apply` runs. Check with `triage decisions --node <path> --unapplied` before running OKR to ensure nothing is stale.
+
+**Never query the SQLite DB directly.** Use `triage suggestions --issues N --format json`, `triage decisions`, and `triage status` instead of `sqlite3`. Direct SQL queries bypass armitage's abstractions and break when the schema changes.

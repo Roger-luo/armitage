@@ -14,9 +14,8 @@ export function renderAxis(
   state: ScaleState,
   layout: LayoutElements,
   totalHeight: number,
+  barsTop: number,
 ): void {
-  const axisHeight = getAxisHeight();
-
   // Clear previous axis
   layout.axisGroup.innerHTML = "";
 
@@ -26,9 +25,9 @@ export function renderAxis(
     .tickSizeOuter(0)
     .tickPadding(8);
 
-  // Render axis into the group
+  // Axis line sits at barsTop; axisTop ticks/labels render upward into the axis zone above it.
   const g = d3.select(layout.axisGroup)
-    .attr("transform", `translate(0, ${axisHeight})`)
+    .attr("transform", `translate(0, ${barsTop})`)
     .call(axis);
 
   // Style axis text
@@ -45,16 +44,16 @@ export function renderGridLines(
   state: ScaleState,
   layout: LayoutElements,
   totalHeight: number,
+  barsTop: number,
 ): void {
   layout.gridGroup.innerHTML = "";
   const ticks = state.currentScale.ticks();
-  const axisHeight = getAxisHeight();
 
   for (const tick of ticks) {
     const x = state.currentScale(tick);
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("x1", `${x}`);
-    line.setAttribute("y1", `${axisHeight}`);
+    line.setAttribute("y1", `${barsTop}`);
     line.setAttribute("x2", `${x}`);
     line.setAttribute("y2", `${totalHeight}`);
     line.setAttribute("stroke", "var(--chart-grid)");
@@ -68,6 +67,7 @@ export function renderTodayLine(
   state: ScaleState,
   layout: LayoutElements,
   totalHeight: number,
+  barsTop: number,
 ): void {
   // Remove all previous today line elements
   layout.markersGroup.querySelectorAll(".today-line").forEach((el) => el.remove());
@@ -80,18 +80,20 @@ export function renderTodayLine(
   const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
   line.classList.add("today-line");
   line.setAttribute("x1", `${x}`);
-  line.setAttribute("y1", `${axisHeight}`);
+  line.setAttribute("y1", `${barsTop}`);
   line.setAttribute("x2", `${x}`);
   line.setAttribute("y2", `${totalHeight}`);
   line.setAttribute("stroke", "rgba(239, 68, 68, 0.7)");
   line.setAttribute("stroke-width", "2");
   layout.markersGroup.appendChild(line);
 
-  // Today label
+  // "Today" label sits just above the axis line, within the axis tick zone.
   const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
   text.classList.add("today-line");
   text.setAttribute("x", `${x}`);
-  text.setAttribute("y", `${axisHeight - 4}`);
+  // When there's a milestone zone above, anchor the label at the top of the axis zone.
+  const textY = barsTop > axisHeight ? barsTop - axisHeight + 4 : barsTop - 4;
+  text.setAttribute("y", `${textY}`);
   text.setAttribute("text-anchor", "middle");
   text.setAttribute("fill", "#ef4444");
   text.setAttribute("font-size", "10px");
@@ -104,36 +106,128 @@ export function renderMilestoneLines(
   layout: LayoutElements,
   totalHeight: number,
   milestones: ChartMilestone[],
+  barsTop: number,
 ): void {
-  // Remove previous milestone lines
   layout.markersGroup.querySelectorAll(".milestone-line").forEach((el) => el.remove());
   const axisHeight = getAxisHeight();
+  const diamondSize = 6;
+  // The milestone label zone is the space above the axis (height = barsTop - axisHeight).
+  // At 45°, each character at ~10px font uses ~7px diagonally, so cap based on zone height.
+  const zoneHeight = barsTop - axisHeight;
+  const maxChars = Math.max(6, Math.floor(zoneHeight / 7) - 1);
+
+  const tooltip = document.getElementById("milestone-tooltip") as HTMLElement | null;
 
   for (const m of milestones) {
     const x = state.currentScale(parseDate(m.date));
     const isOkr = m.milestone_type === "okr";
-    const color = isOkr ? "rgba(167, 139, 250, 0.5)" : "rgba(245, 158, 11, 0.5)";
-    const labelColor = isOkr ? "#a78bfa" : "#f59e0b";
+    // CSS variable references — resolved at paint time, so they respond to theme changes.
+    const colorDimVar = isOkr ? "var(--milestone-okr-dim)" : "var(--milestone-cp-dim)";
+    const colorVar = isOkr ? "var(--milestone-okr)" : "var(--milestone-cp)";
+    const typeLabel = isOkr ? "OKR" : "Checkpoint";
 
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.classList.add("milestone-line");
+    g.style.cursor = "pointer";
+
+    // Dashed vertical line — bars area only, not the label zone above
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    line.classList.add("milestone-line");
     line.setAttribute("x1", `${x}`);
-    line.setAttribute("y1", `${axisHeight}`);
+    line.setAttribute("y1", `${barsTop}`);
     line.setAttribute("x2", `${x}`);
     line.setAttribute("y2", `${totalHeight}`);
-    line.setAttribute("stroke", color);
-    line.setAttribute("stroke-width", "1");
-    line.setAttribute("stroke-dasharray", "4,3");
-    layout.markersGroup.appendChild(line);
+    line.style.stroke = colorDimVar;
+    line.style.strokeWidth = "0.8";
+    line.style.strokeDasharray = "4,3";
+    g.appendChild(line);
 
+    // Diamond tick mark at the axis line (barsTop), marking the milestone date.
+    const d = diamondSize;
+    const diamond = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    diamond.setAttribute(
+      "points",
+      `${x},${barsTop - d} ${x + d},${barsTop} ${x},${barsTop + d} ${x - d},${barsTop}`,
+    );
+    diamond.style.fill = colorVar;
+    diamond.style.opacity = "0.7";
+    g.appendChild(diamond);
+
+    // Transparent hit-area rect — covers the milestone label zone (0..barsTop) for hover/click.
+    const hitZoneWidth = 32;
+    const hitRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    hitRect.setAttribute("x", `${x - hitZoneWidth / 2}`);
+    hitRect.setAttribute("y", `0`);
+    hitRect.setAttribute("width", `${hitZoneWidth}`);
+    hitRect.setAttribute("height", `${barsTop}`);
+    hitRect.setAttribute("fill", "transparent");
+    hitRect.setAttribute("pointer-events", "all");
+    g.appendChild(hitRect);
+
+    // 45° label anchored at (x, labelAnchorY) — the boundary between the milestone zone and
+    // the axis zone. Text reads left-to-right going upward-left into the milestone zone above.
+    // Stroke halo (paint-order: stroke fill) makes text crisp against any background.
+    const labelAnchorY = barsTop - axisHeight;  // top of axis zone = bottom of milestone zone
+    const label = m.name.length > maxChars ? m.name.slice(0, maxChars - 1) + "…" : m.name;
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.classList.add("milestone-line");
+    text.setAttribute("transform", `rotate(45, ${x}, ${labelAnchorY})`);
     text.setAttribute("x", `${x}`);
-    text.setAttribute("y", `${axisHeight - 4}`);
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("fill", labelColor);
-    text.setAttribute("font-size", "10px");
-    text.textContent = m.name;
-    layout.markersGroup.appendChild(text);
+    text.setAttribute("y", `${labelAnchorY}`);
+    text.setAttribute("text-anchor", "end");
+    text.setAttribute("dominant-baseline", "auto");
+    text.style.fill = colorVar;
+    text.style.stroke = "var(--bg)";
+    text.style.strokeWidth = "2.5";
+    text.style.paintOrder = "stroke fill";
+    text.style.fontSize = "10px";
+    text.style.letterSpacing = "0.01em";
+    text.textContent = label;
+    g.appendChild(text);
+
+    // Hover: strengthen line + diamond, show tooltip with colored left border
+    g.addEventListener("mouseover", (evt) => {
+      line.style.stroke = colorVar;
+      line.style.strokeWidth = "1.5";
+      diamond.style.opacity = "1";
+      text.style.fontWeight = "600";
+      if (tooltip) {
+        const typeBadgeColor = isOkr ? "var(--milestone-okr)" : "var(--milestone-cp)";
+        let html = `<strong style="color:var(--text)">${m.name}</strong>`
+          + `<span class="ms-type-badge" style="color:${typeBadgeColor}">${typeLabel}</span>`
+          + `<br><span style="color:var(--text-muted);font-size:11px">${m.date}</span>`;
+        if (m.description) {
+          html += `<div style="margin-top:5px;color:var(--text-secondary);font-size:11px;line-height:1.45">${m.description}</div>`;
+        }
+        tooltip.innerHTML = html;
+        tooltip.style.borderLeftColor = isOkr ? "var(--milestone-okr)" : "var(--milestone-cp)";
+        tooltip.style.display = "block";
+        const me = evt as MouseEvent;
+        tooltip.style.left = `${me.clientX + 14}px`;
+        tooltip.style.top = `${me.clientY - 8}px`;
+      }
+    });
+    g.addEventListener("mousemove", (evt) => {
+      if (tooltip) {
+        const me = evt as MouseEvent;
+        tooltip.style.left = `${me.clientX + 14}px`;
+        tooltip.style.top = `${me.clientY - 8}px`;
+      }
+    });
+    g.addEventListener("mouseout", () => {
+      line.style.stroke = colorDimVar;
+      line.style.strokeWidth = "0.8";
+      diamond.style.opacity = "0.7";
+      text.style.fontWeight = "";
+      if (tooltip) tooltip.style.display = "none";
+    });
+    // Click: open side panel (stop propagation to prevent bar-row selection)
+    g.addEventListener("click", (evt) => {
+      evt.stopPropagation();
+      if (tooltip) tooltip.style.display = "none";
+      if ((window as any).__openMilestonePanel) {
+        (window as any).__openMilestonePanel(m);
+      }
+    });
+
+    layout.markersGroup.appendChild(g);
   }
 }

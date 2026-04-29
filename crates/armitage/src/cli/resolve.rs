@@ -131,8 +131,8 @@ fn apply_field_to_node(node: &mut Node, field: &str, value: &str) {
     match field {
         "name" => node.name = value.to_string(),
         "description" => node.description = value.to_string(),
-        "github_issue" => {
-            node.github_issue = if value == "(none)" {
+        "track" => {
+            node.track = if value == "(none)" {
                 None
             } else {
                 Some(value.to_string())

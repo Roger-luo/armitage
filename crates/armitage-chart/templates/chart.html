@@ -37,6 +37,11 @@
       --overflow-border: rgba(239, 68, 68, 0.3);
       --row-hover: rgba(88, 166, 255, 0.08);
       --row-highlight: rgba(88, 166, 255, 0.12);
+      /* Milestone markers — muted periwinkle (OKR) and sage (checkpoint) */
+      --milestone-okr: #7aa2d4;
+      --milestone-okr-dim: rgba(122, 162, 212, 0.28);
+      --milestone-cp: #6ab499;
+      --milestone-cp-dim: rgba(106, 180, 153, 0.28);
     }
     [data-theme="light"] {
       --bg: #f6f8fa;
@@ -62,6 +67,11 @@
       --overflow-border: rgba(239, 68, 68, 0.25);
       --row-hover: rgba(9, 105, 218, 0.1);
       --row-highlight: rgba(9, 105, 218, 0.15);
+      /* Milestone markers — deeper tones for light background contrast */
+      --milestone-okr: #2c6aad;
+      --milestone-okr-dim: rgba(44, 106, 173, 0.22);
+      --milestone-cp: #2d8a66;
+      --milestone-cp-dim: rgba(45, 138, 102, 0.22);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -343,12 +353,15 @@
     .chart-label.issue-title.overdue { color: #f85149; }
     .chart-label.issue-title.overdue::before { content: "⚠ "; }
     .chart-label.issue-title.pr { color: #a371f7; }
+    .chart-label.issue-title.closed { color: var(--text-faint); opacity: 0.6; text-decoration: line-through; }
+    .chart-row.issue.closed { opacity: 0.55; }
 
     /* Badges */
     .chart-badge { flex-shrink: 0; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 3px; margin-left: 8px; background: var(--bg-elevated); }
     .chart-badge.children { color: var(--link); }
     .chart-badge.issues { color: var(--text-muted); }
     .chart-badge.issues.pr { color: #a371f7; }
+    .chart-badge.issues.closed { color: var(--text-faint); }
     .chart-badge .overdue-count { color: #f85149; }
 
     /* Drill arrow */
@@ -361,6 +374,7 @@
     /* Separator line */
     .chart-row.separator { position: relative; }
     .chart-row.separator::after { content: ""; position: absolute; left: 12px; right: 12px; top: 50%; border-top: 1px dashed var(--bg-active); }
+    .separator-label { font-size: 10px; color: var(--text-faint); padding: 0 8px; position: relative; z-index: 1; background: var(--bg); }
 
     /* Tooltip */
     .chart-tooltip { position: fixed; z-index: 100; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: var(--text-secondary); pointer-events: none; max-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); line-height: 1.5; }
@@ -392,6 +406,34 @@
     /* SVG axis styling */
     #axis-group text { fill: var(--chart-axis); font-size: 11px; }
     #axis-group line, #axis-group .domain { stroke: var(--chart-axis-line); }
+
+    /* Milestone tooltip */
+    #milestone-tooltip {
+      position: fixed;
+      z-index: 200;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid transparent;
+      border-radius: 6px;
+      padding: 7px 12px 7px 10px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      pointer-events: none;
+      max-width: 280px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.22);
+      line-height: 1.5;
+      display: none;
+    }
+    #milestone-tooltip .ms-type-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.7;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
   </style>
 </head>
 <body>
@@ -408,6 +450,7 @@
     </div>
   </div>
   <div class="chart-tooltip" id="tooltip" style="display:none"></div>
+  <div id="milestone-tooltip"></div>
   <div id="main">
     <div id="chart-area">
       <div id="chart-scroll">

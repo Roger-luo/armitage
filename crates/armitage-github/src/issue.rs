@@ -83,29 +83,37 @@ pub fn create_issue(
 ) -> Result<CreatedIssue> {
     tracing::debug!(repo = repo, labels = labels.len(), "gh issue create");
     let mut args = vec![
-        "issue",
-        "create",
-        "--repo",
-        repo,
-        "--title",
-        title,
-        "--body",
-        body,
-        "--json",
-        "number,url",
+        "issue".to_string(),
+        "create".to_string(),
+        "--repo".to_string(),
+        repo.to_string(),
+        "--title".to_string(),
+        title.to_string(),
+        "--body".to_string(),
+        body.to_string(),
     ];
 
-    // Build label args (we need owned strings alive for the duration)
-    let label_args: Vec<String> = labels
-        .iter()
-        .flat_map(|l| vec!["--label".to_string(), l.clone()])
-        .collect();
-    let label_refs: Vec<&str> = label_args.iter().map(std::string::String::as_str).collect();
-    args.extend_from_slice(&label_refs);
+    for label in labels {
+        args.push("--label".to_string());
+        args.push(label.clone());
+    }
 
-    let json = gh.run(&args)?;
-    let created: CreatedIssue = serde_json::from_str(&json)?;
-    Ok(created)
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    // gh issue create prints the issue URL on stdout (e.g.
+    // "https://github.com/owner/repo/issues/42").  Extract the number from it.
+    let output = gh.run(&arg_refs)?;
+    let url = output.trim();
+    let number = url
+        .rsplit('/')
+        .next()
+        .and_then(|s| s.parse::<u64>().ok())
+        .ok_or_else(|| {
+            crate::error::Error::Other(format!("could not parse issue number from URL: {url}"))
+        })?;
+    Ok(CreatedIssue {
+        number,
+        url: url.to_string(),
+    })
 }
 
 /// Update an existing GitHub issue (title, body, and/or labels).
@@ -263,6 +271,78 @@ pub fn delete_label(gh: &ionem::shell::gh::Gh, repo: &str, label_name: &str) -> 
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Sub-issues API
+// ---------------------------------------------------------------------------
+
+/// Fetch the integer database ID of a GitHub issue.
+///
+/// This is distinct from the issue number and is required by the sub-issues
+/// REST API (`POST /repos/.../issues/{n}/sub_issues`).
+pub fn fetch_issue_database_id(gh: &ionem::shell::gh::Gh, issue_ref: &IssueRef) -> Result<u64> {
+    tracing::debug!(
+        repo = %issue_ref.repo_full(),
+        number = issue_ref.number,
+        "fetch issue database id"
+    );
+    let path = format!(
+        "/repos/{}/{}/issues/{}",
+        issue_ref.owner, issue_ref.repo, issue_ref.number
+    );
+    let json = gh.run(&["api", &path, "--jq", ".id"])?;
+    let id: u64 = json
+        .trim()
+        .parse()
+        .map_err(|_| crate::error::Error::Other(format!("invalid database id: {json}")))?;
+    Ok(id)
+}
+
+/// Return the database IDs of existing sub-issues for a parent issue.
+pub fn list_sub_issue_ids(gh: &ionem::shell::gh::Gh, parent_ref: &IssueRef) -> Result<Vec<u64>> {
+    #[derive(serde::Deserialize)]
+    struct SubIssue {
+        id: u64,
+    }
+
+    tracing::debug!(
+        repo = %parent_ref.repo_full(),
+        number = parent_ref.number,
+        "list sub-issues"
+    );
+    let path = format!(
+        "/repos/{}/{}/issues/{}/sub_issues",
+        parent_ref.owner, parent_ref.repo, parent_ref.number
+    );
+    let json = gh.run(&["api", &path])?;
+    let items: Vec<SubIssue> = serde_json::from_str(&json)?;
+    Ok(items.into_iter().map(|s| s.id).collect())
+}
+
+/// Register `child_db_id` as a sub-issue of `parent_ref`.
+///
+/// `child_db_id` is the integer database ID returned by the REST API (the
+/// `id` field, not the `number`). Cross-repo sub-issues are supported as long
+/// as both repos belong to the same GitHub organisation.
+pub fn add_sub_issue(
+    gh: &ionem::shell::gh::Gh,
+    parent_ref: &IssueRef,
+    child_db_id: u64,
+) -> Result<()> {
+    tracing::debug!(
+        parent_repo = %parent_ref.repo_full(),
+        parent_number = parent_ref.number,
+        child_db_id = child_db_id,
+        "add sub-issue"
+    );
+    let path = format!(
+        "/repos/{}/{}/issues/{}/sub_issues",
+        parent_ref.owner, parent_ref.repo, parent_ref.number
+    );
+    let field = format!("sub_issue_id={child_db_id}");
+    gh.run(&["api", "-X", "POST", &path, "--field", &field])?;
+    Ok(())
+}
+
 /// Add a comment to a GitHub issue.
 pub fn add_comment(gh: &ionem::shell::gh::Gh, issue_ref: &IssueRef, body: &str) -> Result<()> {
     tracing::debug!(
@@ -335,9 +415,10 @@ pub struct RepoMetadata {
     /// Canonical `owner/repo` name as reported by GitHub.
     pub name_with_owner: String,
     pub is_archived: bool,
+    pub is_private: bool,
 }
 
-/// Fetch archived status and canonical name for a single repo.
+/// Fetch visibility, archived status, and canonical name for a single repo.
 ///
 /// Returns `None` when the repo does not exist or the `gh` call fails (e.g.
 /// network unavailable), so callers can skip rather than hard-error.
@@ -348,16 +429,25 @@ pub fn fetch_repo_metadata(gh: &ionem::shell::gh::Gh, repo: &str) -> Option<Repo
         name_with_owner: String,
         #[serde(rename = "isArchived")]
         is_archived: bool,
+        #[serde(rename = "isPrivate")]
+        is_private: bool,
     }
 
     tracing::debug!(repo = repo, "gh repo view metadata");
     let json = gh
-        .run(&["repo", "view", repo, "--json", "isArchived,nameWithOwner"])
+        .run(&[
+            "repo",
+            "view",
+            repo,
+            "--json",
+            "isArchived,nameWithOwner,isPrivate",
+        ])
         .ok()?;
     let raw: Raw = serde_json::from_str(&json).ok()?;
     Some(RepoMetadata {
         name_with_owner: raw.name_with_owner,
         is_archived: raw.is_archived,
+        is_private: raw.is_private,
     })
 }
 

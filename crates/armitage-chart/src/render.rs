@@ -64,6 +64,7 @@ mod tests {
                 has_timeline: true,
                 owners: vec!["alice".to_string()],
                 team: Some("core".to_string()),
+                track: None,
                 children: vec![],
                 milestones: vec![],
                 issues: vec![],

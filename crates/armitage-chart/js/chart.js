@@ -1,10 +1,11 @@
 "use strict";
 (() => {
-  // ts/layout.ts
+  // crates/armitage-chart/ts/layout.ts
   var NODE_ROW_HEIGHT = 48;
   var ISSUE_ROW_HEIGHT = 28;
   var SEPARATOR_HEIGHT = 12;
   var AXIS_HEIGHT = 40;
+  var MILESTONE_ZONE_HEIGHT = 90;
   function getLayoutElements() {
     return {
       labelsEl: document.getElementById("chart-labels"),
@@ -28,13 +29,16 @@
   function getAxisHeight() {
     return AXIS_HEIGHT;
   }
-  function syncSvgHeight(layout2, totalRowHeight) {
-    const totalHeight = totalRowHeight + AXIS_HEIGHT;
+  function getBarsTop(hasMilestones) {
+    return AXIS_HEIGHT + (hasMilestones ? MILESTONE_ZONE_HEIGHT : 0);
+  }
+  function syncSvgHeight(layout2, totalRowHeight, barsTop) {
+    const totalHeight = totalRowHeight + barsTop;
     layout2.timelineSvg.setAttribute("height", `${totalHeight}`);
-    layout2.barsGroup.setAttribute("transform", `translate(0, ${AXIS_HEIGHT})`);
+    layout2.barsGroup.setAttribute("transform", `translate(0, ${barsTop})`);
   }
 
-  // ts/scale.ts
+  // crates/armitage-chart/ts/scale.ts
   function createScale(domain, rangeWidth) {
     const baseScale = d3.scaleTime().domain(domain).range([0, rangeWidth]);
     return {
@@ -80,25 +84,23 @@
     return state.currentScale(parseDate(dateStr));
   }
 
-  // ts/render-axis.ts
-  function renderAxis(state, layout2, totalHeight) {
-    const axisHeight = getAxisHeight();
+  // crates/armitage-chart/ts/render-axis.ts
+  function renderAxis(state, layout2, totalHeight, barsTop) {
     layout2.axisGroup.innerHTML = "";
     const axis = d3.axisTop(state.currentScale).tickSizeOuter(0).tickPadding(8);
-    const g = d3.select(layout2.axisGroup).attr("transform", `translate(0, ${axisHeight})`).call(axis);
+    const g = d3.select(layout2.axisGroup).attr("transform", `translate(0, ${barsTop})`).call(axis);
     g.selectAll("text").attr("fill", "var(--chart-axis)").attr("font-size", "11px");
     g.selectAll("line").attr("stroke", "var(--chart-axis-line)");
     g.select(".domain").attr("stroke", "var(--chart-axis-line)");
   }
-  function renderGridLines(state, layout2, totalHeight) {
+  function renderGridLines(state, layout2, totalHeight, barsTop) {
     layout2.gridGroup.innerHTML = "";
     const ticks = state.currentScale.ticks();
-    const axisHeight = getAxisHeight();
     for (const tick of ticks) {
       const x = state.currentScale(tick);
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("x1", `${x}`);
-      line.setAttribute("y1", `${axisHeight}`);
+      line.setAttribute("y1", `${barsTop}`);
       line.setAttribute("x2", `${x}`);
       line.setAttribute("y2", `${totalHeight}`);
       line.setAttribute("stroke", "var(--chart-grid)");
@@ -107,7 +109,7 @@
       layout2.gridGroup.appendChild(line);
     }
   }
-  function renderTodayLine(state, layout2, totalHeight) {
+  function renderTodayLine(state, layout2, totalHeight, barsTop) {
     layout2.markersGroup.querySelectorAll(".today-line").forEach((el) => el.remove());
     const today = /* @__PURE__ */ new Date();
     today.setHours(0, 0, 0, 0);
@@ -116,7 +118,7 @@
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.classList.add("today-line");
     line.setAttribute("x1", `${x}`);
-    line.setAttribute("y1", `${axisHeight}`);
+    line.setAttribute("y1", `${barsTop}`);
     line.setAttribute("x2", `${x}`);
     line.setAttribute("y2", `${totalHeight}`);
     line.setAttribute("stroke", "rgba(239, 68, 68, 0.7)");
@@ -125,44 +127,118 @@
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
     text.classList.add("today-line");
     text.setAttribute("x", `${x}`);
-    text.setAttribute("y", `${axisHeight - 4}`);
+    const textY = barsTop > axisHeight ? barsTop - axisHeight + 4 : barsTop - 4;
+    text.setAttribute("y", `${textY}`);
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("fill", "#ef4444");
     text.setAttribute("font-size", "10px");
     text.textContent = "Today";
     layout2.markersGroup.appendChild(text);
   }
-  function renderMilestoneLines(state, layout2, totalHeight, milestones) {
+  function renderMilestoneLines(state, layout2, totalHeight, milestones, barsTop) {
     layout2.markersGroup.querySelectorAll(".milestone-line").forEach((el) => el.remove());
     const axisHeight = getAxisHeight();
+    const diamondSize = 6;
+    const zoneHeight = barsTop - axisHeight;
+    const maxChars = Math.max(6, Math.floor(zoneHeight / 7) - 1);
+    const tooltip = document.getElementById("milestone-tooltip");
     for (const m of milestones) {
       const x = state.currentScale(parseDate(m.date));
       const isOkr = m.milestone_type === "okr";
-      const color = isOkr ? "rgba(167, 139, 250, 0.5)" : "rgba(245, 158, 11, 0.5)";
-      const labelColor = isOkr ? "#a78bfa" : "#f59e0b";
+      const colorDimVar = isOkr ? "var(--milestone-okr-dim)" : "var(--milestone-cp-dim)";
+      const colorVar = isOkr ? "var(--milestone-okr)" : "var(--milestone-cp)";
+      const typeLabel = isOkr ? "OKR" : "Checkpoint";
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.classList.add("milestone-line");
+      g.style.cursor = "pointer";
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.classList.add("milestone-line");
       line.setAttribute("x1", `${x}`);
-      line.setAttribute("y1", `${axisHeight}`);
+      line.setAttribute("y1", `${barsTop}`);
       line.setAttribute("x2", `${x}`);
       line.setAttribute("y2", `${totalHeight}`);
-      line.setAttribute("stroke", color);
-      line.setAttribute("stroke-width", "1");
-      line.setAttribute("stroke-dasharray", "4,3");
-      layout2.markersGroup.appendChild(line);
+      line.style.stroke = colorDimVar;
+      line.style.strokeWidth = "0.8";
+      line.style.strokeDasharray = "4,3";
+      g.appendChild(line);
+      const d = diamondSize;
+      const diamond = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      diamond.setAttribute(
+        "points",
+        `${x},${barsTop - d} ${x + d},${barsTop} ${x},${barsTop + d} ${x - d},${barsTop}`
+      );
+      diamond.style.fill = colorVar;
+      diamond.style.opacity = "0.7";
+      g.appendChild(diamond);
+      const hitZoneWidth = 32;
+      const hitRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      hitRect.setAttribute("x", `${x - hitZoneWidth / 2}`);
+      hitRect.setAttribute("y", `0`);
+      hitRect.setAttribute("width", `${hitZoneWidth}`);
+      hitRect.setAttribute("height", `${barsTop}`);
+      hitRect.setAttribute("fill", "transparent");
+      hitRect.setAttribute("pointer-events", "all");
+      g.appendChild(hitRect);
+      const labelAnchorY = barsTop - axisHeight;
+      const label = m.name.length > maxChars ? m.name.slice(0, maxChars - 1) + "\u2026" : m.name;
       const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      text.classList.add("milestone-line");
+      text.setAttribute("transform", `rotate(45, ${x}, ${labelAnchorY})`);
       text.setAttribute("x", `${x}`);
-      text.setAttribute("y", `${axisHeight - 4}`);
-      text.setAttribute("text-anchor", "middle");
-      text.setAttribute("fill", labelColor);
-      text.setAttribute("font-size", "10px");
-      text.textContent = m.name;
-      layout2.markersGroup.appendChild(text);
+      text.setAttribute("y", `${labelAnchorY}`);
+      text.setAttribute("text-anchor", "end");
+      text.setAttribute("dominant-baseline", "auto");
+      text.style.fill = colorVar;
+      text.style.stroke = "var(--bg)";
+      text.style.strokeWidth = "2.5";
+      text.style.paintOrder = "stroke fill";
+      text.style.fontSize = "10px";
+      text.style.letterSpacing = "0.01em";
+      text.textContent = label;
+      g.appendChild(text);
+      g.addEventListener("mouseover", (evt) => {
+        line.style.stroke = colorVar;
+        line.style.strokeWidth = "1.5";
+        diamond.style.opacity = "1";
+        text.style.fontWeight = "600";
+        if (tooltip) {
+          const typeBadgeColor = isOkr ? "var(--milestone-okr)" : "var(--milestone-cp)";
+          let html = `<strong style="color:var(--text)">${m.name}</strong><span class="ms-type-badge" style="color:${typeBadgeColor}">${typeLabel}</span><br><span style="color:var(--text-muted);font-size:11px">${m.date}</span>`;
+          if (m.description) {
+            html += `<div style="margin-top:5px;color:var(--text-secondary);font-size:11px;line-height:1.45">${m.description}</div>`;
+          }
+          tooltip.innerHTML = html;
+          tooltip.style.borderLeftColor = isOkr ? "var(--milestone-okr)" : "var(--milestone-cp)";
+          tooltip.style.display = "block";
+          const me = evt;
+          tooltip.style.left = `${me.clientX + 14}px`;
+          tooltip.style.top = `${me.clientY - 8}px`;
+        }
+      });
+      g.addEventListener("mousemove", (evt) => {
+        if (tooltip) {
+          const me = evt;
+          tooltip.style.left = `${me.clientX + 14}px`;
+          tooltip.style.top = `${me.clientY - 8}px`;
+        }
+      });
+      g.addEventListener("mouseout", () => {
+        line.style.stroke = colorDimVar;
+        line.style.strokeWidth = "0.8";
+        diamond.style.opacity = "0.7";
+        text.style.fontWeight = "";
+        if (tooltip) tooltip.style.display = "none";
+      });
+      g.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        if (tooltip) tooltip.style.display = "none";
+        if (window.__openMilestonePanel) {
+          window.__openMilestonePanel(m);
+        }
+      });
+      layout2.markersGroup.appendChild(g);
     }
   }
 
-  // ts/render-nodes.ts
+  // crates/armitage-chart/ts/render-nodes.ts
   function resolveTimeline(node, ancestors) {
     if (node.start && node.end) return { start: node.start, end: node.end };
     if (node.eff_start && node.eff_end) return { start: node.eff_start, end: node.eff_end };
@@ -319,7 +395,7 @@
     return `+${diffWeeks} wks`;
   }
 
-  // ts/render-issues.ts
+  // crates/armitage-chart/ts/render-issues.ts
   var INITIAL_ISSUE_LIMIT = 7;
   function issueUrl(ref, isPr) {
     const match = ref.match(/^(.+?)\/(.+?)#(\d+)$/);
@@ -485,7 +561,7 @@
     };
   }
 
-  // ts/chart.ts
+  // crates/armitage-chart/ts/chart.ts
   var data = window.__CHART_DATA__;
   var currentPath = "";
   var useGlobalRange = false;
@@ -508,35 +584,35 @@
     }
     return null;
   }
-  function collectOkrs(nodes) {
+  function collectMilestonesForView(typeFilter) {
     const seen = /* @__PURE__ */ new Set();
     const result = [];
-    function walk(ns) {
-      for (const n of ns) {
-        for (const m of n.milestones) {
-          if (m.milestone_type === "okr") {
-            const key = `${m.name}|${m.date}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              result.push(m);
-            }
-          }
+    function add(m) {
+      const isOkr = m.milestone_type === "okr";
+      if (typeFilter === "all" || typeFilter === "okr" && isOkr || typeFilter === "checkpoint" && !isOkr) {
+        const key = `${m.name}|${m.date}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push(m);
         }
-        walk(n.children);
       }
     }
-    walk(nodes);
-    return result;
-  }
-  function allCheckpoints(node) {
-    const result = [];
-    function walk(n) {
-      for (const m of n.milestones) {
-        if (m.milestone_type !== "okr") result.push(m);
-      }
-      for (const c of n.children) walk(c);
+    function walkSubtree(n) {
+      n.milestones.forEach(add);
+      n.children.forEach(walkSubtree);
     }
-    walk(node);
+    if (currentPath === "") {
+      data.nodes.forEach(walkSubtree);
+    } else {
+      const node = findNode(data.nodes, currentPath);
+      if (node) walkSubtree(node);
+      const parts = currentPath.split("/");
+      for (let i = 1; i < parts.length; i++) {
+        const ancestorPath = parts.slice(0, i).join("/");
+        const ancestor = findNode(data.nodes, ancestorPath);
+        if (ancestor) ancestor.milestones.forEach(add);
+      }
+    }
     return result;
   }
   function computeTimeRange(nodes) {
@@ -626,6 +702,12 @@
       html += `<span class="label">No timeline</span>`;
     }
     html += `</div></div>`;
+    if (node.track) {
+      const trackUrl = `https://github.com/${node.track.replace("#", "/issues/")}`;
+      html += `<div class="panel-section"><h3>Tracking Issue</h3><div class="panel-meta">`;
+      html += `<a class="panel-issue-link" href="${trackUrl}" target="_blank" rel="noopener">${escapeHtml(node.track)}</a>`;
+      html += `</div></div>`;
+    }
     if (node.owners.length > 0 || node.team) {
       html += `<div class="panel-section"><h3>People</h3><div class="panel-meta">`;
       if (node.owners.length > 0) html += `<span class="label">Owners:</span> ${node.owners.map(escapeHtml).join(", ")}<br/>`;
@@ -713,6 +795,19 @@
     selectedNode = null;
     panelEl.classList.remove("open");
   }
+  function showMilestonePanel(m) {
+    const typeLabel = m.milestone_type === "okr" ? "OKR" : "Checkpoint";
+    const color = m.milestone_type === "okr" ? "#a78bfa" : "#f59e0b";
+    let html = `<h2 style="color:${color}">${escapeHtml(m.name)}</h2>`;
+    html += `<span class="panel-status active" style="background:none;color:${color}">${typeLabel}</span>`;
+    html += `<div class="panel-section"><h3>Date</h3><div class="panel-meta">${escapeHtml(m.date)}</div></div>`;
+    if (m.description) {
+      html += `<div class="panel-section"><h3>Description</h3><div class="panel-desc">${renderMarkdown(m.description)}</div></div>`;
+    }
+    panelContentEl.innerHTML = html;
+    panelEl.classList.add("open");
+  }
+  window.__openMilestonePanel = showMilestonePanel;
   window.__closePanel = closePanel;
   var breadcrumbEl = document.getElementById("breadcrumb");
   function updateBreadcrumb() {
@@ -768,21 +863,15 @@
         yOffset += issueRows.reduce((sum, r) => sum + r.height, 0);
       }
     }
-    syncSvgHeight(layout, yOffset);
-    const totalHeight = yOffset + getAxisHeight();
-    renderAxis(scaleState, layout, totalHeight);
-    renderGridLines(scaleState, layout, totalHeight);
-    renderTodayLine(scaleState, layout, totalHeight);
-    const okrs = collectOkrs(data.nodes);
-    renderMilestoneLines(scaleState, layout, totalHeight, okrs);
-    if (currentPath !== "") {
-      const parentNode = findNode(data.nodes, currentPath);
-      if (parentNode) {
-        const checkpoints = allCheckpoints(parentNode);
-        const filtered = checkpoints.filter((m) => !okrs.some((o) => o.name === m.name && o.date === m.date));
-        renderMilestoneLines(scaleState, layout, totalHeight, filtered);
-      }
-    }
+    const milestones = collectMilestonesForView("all");
+    const barsTop = getBarsTop(milestones.length > 0);
+    syncSvgHeight(layout, yOffset, barsTop);
+    layout.labelsEl.style.paddingTop = `${barsTop}px`;
+    const totalHeight = yOffset + barsTop;
+    renderAxis(scaleState, layout, totalHeight, barsTop);
+    renderGridLines(scaleState, layout, totalHeight, barsTop);
+    renderTodayLine(scaleState, layout, totalHeight, barsTop);
+    renderMilestoneLines(scaleState, layout, totalHeight, milestones, barsTop);
   }
   function onZoom() {
     renderChart();
@@ -887,9 +976,12 @@
     const pt = svg.createSVGPoint();
     pt.x = e.clientX;
     pt.y = e.clientY;
-    const svgY = pt.matrixTransform(svg.getScreenCTM().inverse()).y - getAxisHeight();
+    const svgY = pt.matrixTransform(svg.getScreenCTM().inverse()).y;
+    const barsTop = getBarsTop(collectMilestonesForView("all").length > 0);
+    if (svgY < barsTop) return void 0;
+    const barsRelY = svgY - barsTop;
     for (const row of renderedRows) {
-      if (svgY >= row.y && svgY < row.y + row.height) return row;
+      if (barsRelY >= row.y && barsRelY < row.y + row.height) return row;
     }
     return void 0;
   }
