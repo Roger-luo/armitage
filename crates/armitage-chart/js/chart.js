@@ -649,7 +649,7 @@
       }
     }
     function walkSubtree(n) {
-      n.milestones.forEach(add);
+      (n.milestones || []).forEach(add);
       n.children.forEach(walkSubtree);
     }
     if (currentPath === "") {
@@ -661,7 +661,7 @@
       for (let i = 1; i < parts.length; i++) {
         const ancestorPath = parts.slice(0, i).join("/");
         const ancestor = findNode(data.nodes, ancestorPath);
-        if (ancestor) ancestor.milestones.forEach(add);
+        if (ancestor) (ancestor.milestones || []).forEach(add);
       }
     }
     return result;

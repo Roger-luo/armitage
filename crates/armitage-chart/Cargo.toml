@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 armitage-core = { workspace = true }
-armitage-milestones = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }

@@ -13,58 +13,42 @@ fn full_local_workflow() {
     // Create nodes
     armitage::cli::node::create_node(
         &org,
-        "gemini",
-        Some("Gemini"),
-        Some("AI platform"),
+        "acme",
+        Some("Acme"),
+        Some("Acme platform"),
         None,
         None,
         "active",
     )
     .unwrap();
-    armitage::cli::node::create_node(&org, "gemini/auth", None, None, None, None, "active")
+    armitage::cli::node::create_node(&org, "acme/auth", None, None, None, None, "active").unwrap();
+    armitage::cli::node::create_node(&org, "widget", Some("Widget"), None, None, None, "active")
         .unwrap();
-    armitage::cli::node::create_node(&org, "m4", Some("M4"), None, None, None, "active").unwrap();
 
     // Walk tree — use armitage_core
     let nodes = armitage_core::tree::walk_nodes(&org).unwrap();
     assert_eq!(nodes.len(), 3);
 
     // List children — use armitage_core
-    let children = armitage_core::tree::list_children(&org, "gemini").unwrap();
+    let children = armitage_core::tree::list_children(&org, "acme").unwrap();
     assert_eq!(children.len(), 1);
-    assert_eq!(children[0].path, "gemini/auth");
-
-    // Add milestone
-    armitage::cli::milestone::add_milestone(
-        &org,
-        "gemini",
-        "Alpha",
-        "2026-03-15",
-        "Core ready",
-        "checkpoint",
-        None,
-        None,
-    )
-    .unwrap();
-
-    let ms = armitage::cli::milestone::read_milestones(&org, "gemini").unwrap();
-    assert_eq!(ms.milestones.len(), 1);
+    assert_eq!(children[0].path, "acme/auth");
 
     // Read node — use armitage_core
-    let entry = armitage_core::tree::read_node(&org, "gemini").unwrap();
-    assert_eq!(entry.node.name, "Gemini");
+    let entry = armitage_core::tree::read_node(&org, "acme").unwrap();
+    assert_eq!(entry.node.name, "Acme");
 
     // Move node
-    armitage::cli::node::move_node(&org, "m4", "gemini/m4").unwrap();
+    armitage::cli::node::move_node(&org, "widget", "acme/widget").unwrap();
 
     // Verify move
     let nodes_after = armitage_core::tree::walk_nodes(&org).unwrap();
     assert_eq!(nodes_after.len(), 3);
-    assert!(nodes_after.iter().any(|e| e.path == "gemini/m4"));
-    assert!(!nodes_after.iter().any(|e| e.path == "m4"));
+    assert!(nodes_after.iter().any(|e| e.path == "acme/widget"));
+    assert!(!nodes_after.iter().any(|e| e.path == "widget"));
 
     // Remove node
-    std::fs::remove_dir_all(org.join("gemini/m4")).unwrap();
+    std::fs::remove_dir_all(org.join("acme/widget")).unwrap();
 
     let nodes_final = armitage_core::tree::walk_nodes(&org).unwrap();
     assert_eq!(nodes_final.len(), 2);

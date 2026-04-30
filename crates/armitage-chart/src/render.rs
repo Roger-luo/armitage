@@ -66,7 +66,6 @@ mod tests {
                 team: Some("core".to_string()),
                 track: None,
                 children: vec![],
-                milestones: vec![],
                 issues: vec![],
                 overflow_start: None,
                 overflow_end: None,

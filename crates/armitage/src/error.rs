@@ -5,8 +5,6 @@ pub enum Error {
     #[error(transparent)]
     Labels(#[from] armitage_labels::error::Error),
     #[error(transparent)]
-    Milestones(#[from] armitage_milestones::error::Error),
-    #[error(transparent)]
     Github(#[from] armitage_github::error::Error),
     #[error(transparent)]
     Sync(#[from] armitage_sync::error::Error),

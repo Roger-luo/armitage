@@ -4,7 +4,6 @@ pub mod config;
 pub mod goal;
 pub mod init;
 pub mod issue;
-pub mod milestone;
 pub mod node;
 pub mod okr;
 pub mod project;
@@ -48,11 +47,6 @@ enum Commands {
     Node {
         #[command(subcommand)]
         command: NodeCommands,
-    },
-    /// Manage milestones
-    Milestone {
-        #[command(subcommand)]
-        command: MilestoneCommands,
     },
     /// Pull changes from GitHub
     Pull {
@@ -310,36 +304,6 @@ enum NodeCommands {
 }
 
 #[derive(Subcommand)]
-enum MilestoneCommands {
-    /// Add a milestone to a node
-    Add {
-        node_path: String,
-        #[arg(long)]
-        name: String,
-        #[arg(long)]
-        date: String,
-        #[arg(long, default_value = "")]
-        description: String,
-        #[arg(long, default_value = "checkpoint")]
-        milestone_type: String,
-        #[arg(long)]
-        expected_progress: Option<f64>,
-        #[arg(long)]
-        track: Option<String>,
-    },
-    /// List milestones
-    List {
-        node_path: Option<String>,
-        #[arg(long)]
-        milestone_type: Option<String>,
-        #[arg(long)]
-        quarter: Option<String>,
-    },
-    /// Remove a milestone
-    Remove { node_path: String, name: String },
-}
-
-#[derive(Subcommand)]
 enum OkrCommands {
     /// Derive OKR view from roadmap nodes and issues (no manual authoring)
     Show {
@@ -356,7 +320,7 @@ enum OkrCommands {
         /// Filter to a team
         #[arg(long)]
         team: Option<String>,
-        /// Max depth of nodes to include (1 = top-level only, 4 = milestones, default: 4)
+        /// Max depth of nodes to include (1 = top-level only, 4 = leaf tasks, default: 4)
         #[arg(long, default_value = "4")]
         depth: usize,
         /// Output format: table, json, markdown
@@ -1039,37 +1003,6 @@ pub fn run() -> Result<()> {
                 check_dates,
             } => {
                 node::run_check(check_repos, check_dates)?;
-            }
-        },
-        Commands::Milestone { command } => match command {
-            MilestoneCommands::Add {
-                node_path,
-                name,
-                date,
-                description,
-                milestone_type,
-                expected_progress,
-                track,
-            } => {
-                milestone::run_add(
-                    node_path,
-                    name,
-                    date,
-                    description,
-                    milestone_type,
-                    expected_progress,
-                    track,
-                )?;
-            }
-            MilestoneCommands::List {
-                node_path,
-                milestone_type,
-                quarter,
-            } => {
-                milestone::run_list(node_path, milestone_type, quarter)?;
-            }
-            MilestoneCommands::Remove { node_path, name } => {
-                milestone::run_remove(node_path, name)?;
             }
         },
         Commands::Pull { path, dry_run } => pull::run(path, dry_run)?,
