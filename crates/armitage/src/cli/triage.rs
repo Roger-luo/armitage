@@ -1100,60 +1100,15 @@ fn resolve_classify_config(
     })
 }
 
-pub fn run_review(
-    interactive: bool,
-    list: bool,
-    auto_approve: Option<f64>,
-    min_confidence: Option<f64>,
-    max_confidence: Option<f64>,
-    format: String,
-) -> Result<()> {
-    let fmt = format.parse::<OutputFormat>()?;
+pub fn run_review(min_confidence: Option<f64>, max_confidence: Option<f64>) -> Result<()> {
     let org_root = find_org_root(&std::env::current_dir()?)?;
     let conn = db::open_db(&org_root)?;
 
-    if list || (!interactive && auto_approve.is_none()) {
-        if fmt == OutputFormat::Json {
-            let suggestions =
-                db::get_pending_suggestions_filtered(&conn, min_confidence, max_confidence)?;
-            let json_rows: Vec<serde_json::Value> = suggestions
-                .iter()
-                .map(|(issue, sug)| {
-                    serde_json::json!({
-                        "issue_ref": format!("{}#{}", issue.repo, issue.number),
-                        "title": issue.title,
-                        "suggested_node": sug.suggested_node,
-                        "suggested_labels": sug.suggested_labels,
-                        "confidence": sug.confidence,
-                        "reasoning": sug.reasoning,
-                        "is_tracking_issue": sug.is_tracking_issue,
-                        "suggested_new_categories": sug.suggested_new_categories,
-                    })
-                })
-                .collect();
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json_rows)
-                    .map_err(|e| Error::Other(e.to_string()))?
-            );
-        } else {
-            review_list(&conn, min_confidence, max_confidence)?;
-        }
-    } else if let Some(threshold) = auto_approve {
-        let stats = review::review_auto_approve(&conn, threshold)?;
-        println!("Approved: {}, Skipped: {}", stats.approved, stats.skipped);
-    } else if interactive {
-        let stats = review_interactive(&conn, &org_root, min_confidence, max_confidence)?;
-        println!(
-            "Approved: {}, Rejected: {}, Modified: {}, Stale: {}, Inquired: {}, Skipped: {}",
-            stats.approved,
-            stats.rejected,
-            stats.modified,
-            stats.stale,
-            stats.inquired,
-            stats.skipped
-        );
-    }
+    let stats = review_interactive(&conn, &org_root, min_confidence, max_confidence)?;
+    println!(
+        "Approved: {}, Rejected: {}, Modified: {}, Stale: {}, Inquired: {}, Skipped: {}",
+        stats.approved, stats.rejected, stats.modified, stats.stale, stats.inquired, stats.skipped
+    );
     Ok(())
 }
 
@@ -1443,25 +1398,6 @@ fn undo_action(
             stats.skipped = stats.skipped.saturating_sub(1);
             eprintln!("  -> Going back to previous item");
         }
-    }
-    Ok(())
-}
-
-fn review_list(
-    conn: &rusqlite::Connection,
-    min_confidence: Option<f64>,
-    max_confidence: Option<f64>,
-) -> Result<()> {
-    let pending = db::get_pending_suggestions_filtered(conn, min_confidence, max_confidence)?;
-    if pending.is_empty() {
-        println!("No pending suggestions to review.");
-        return Ok(());
-    }
-
-    println!("{} pending suggestions:\n", pending.len());
-    for (i, (issue_row, suggestion)) in pending.iter().enumerate() {
-        print_suggestion(i + 1, pending.len(), issue_row, suggestion);
-        println!();
     }
     Ok(())
 }
