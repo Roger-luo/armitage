@@ -192,9 +192,9 @@ ion run armitage triage labels merge --all-new --update-drifted --yes
 ### 3. Review suggestions
 
 ```bash
-ion run armitage triage review --list                # see all pending suggestions
-ion run armitage triage review --interactive         # walk through each (approve/reject/modify)
-ion run armitage triage review --auto-approve 0.8    # auto-approve suggestions with >=80% confidence
+ion run armitage triage suggestions --status pending                                  # see all pending suggestions
+ion run armitage triage review                                                        # walk through each (approve/reject/modify)
+ion run armitage triage decide --all-pending --decision approve --min-confidence 0.8  # bulk-approve suggestions with >=80% confidence
 ```
 
 ### 4. Apply to GitHub
