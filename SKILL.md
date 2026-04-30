@@ -193,6 +193,7 @@ armitage triage review --auto-approve <threshold>
 armitage triage decide <issue-ref>... --decision <approve|reject|modify|stale|inquire> [--node <path>] [--labels <l,...>] [--note <text>] [--question <text>]
 armitage triage decide --all-pending --decision <approve|reject|stale> [--min-confidence N] [--max-confidence N] [--note <text>]
 armitage triage apply [--dry-run]
+armitage triage label <issue-ref>... --add <labels> [--remove <labels>] [--dry-run]
 armitage triage reset [--below <threshold> | --node <path> | --issue <owner/repo#N> | --all | --unreviewed]
 armitage triage status [--format table|json]
 armitage triage summary [--repo <r>] [--format table|json]
@@ -229,6 +230,7 @@ armitage triage watch dismiss <issue-ref>...
   shows the full merged label set so the reviewer can edit freely — including removing existing
   labels when appropriate. This is the only way to remove labels through the triage pipeline.
 - **apply** — pushes approved label changes to GitHub. Computes a diff between the decision's final labels and the issue's current labels, adding new ones and removing only those explicitly removed by a modify decision. For **inquired** and **stale-with-question** decisions, posts the stored question as a comment on the GitHub issue instead of changing labels. Stale decisions without a question are marked as applied with no GitHub action
+- **label** — queue label additions/removals for one or more issues without going through LLM classification. Use `--add "label1,label2"` and/or `--remove "label3"` (comma-separated). Creates a synthetic suggestion record if the issue has never been triaged, so the changes slot into the existing pipeline and are pushed via `triage apply`. Unlike `triage decide`, re-labels issues that already have an applied decision (useful for bulk backfills like adding `priority:` labels). Use `--dry-run` to preview without writing to the DB.
 - **decide** — submit review decisions non-interactively for one or more issues. Accepts multiple issue refs in a single command (e.g., `triage decide ref1 ref2 ref3 --decision stale`). Use `--all-pending` to decide on all pending suggestions at once (e.g., `triage decide --all-pending --decision approve`), optionally filtered with `--min-confidence`/`--max-confidence`. Used by agents and scripts. Supports `approve`, `reject`, `modify` (with optional `--node`/`--labels` overrides), `stale` (with optional `--question` for staleness inquiry), and `inquire` (with required `--question`). Auto-saves examples on reject/modify/stale (same as interactive mode). Errors on individual issues are reported but don't stop the batch; a summary error is returned at the end if any failed. Errors if a decision has already been applied to GitHub
 - **reset** — clears suggestions so issues can be re-classified, then refreshes the issue cache. Modes: `--below <threshold>` (confidence), `--node <path>` (subtree), `--issue <owner/repo#N>` (single issue), `--all`, or `--unreviewed` (deletes unreviewed and rejected suggestions while preserving approved/modified ones — useful for reclassifying with improved examples after a partial review)
 - **summary** — confidence distribution, per-node breakdown, and suggested new categories
@@ -324,11 +326,11 @@ armitage milestone remove <node_path> <name>
 
 ```
 armitage okr show [--period <YYYY-Qn|YYYY|current>] [--goal <slug>] [--team <t>] [--person <u>] [--depth N] [--format table|json|markdown]
-armitage okr check [--period <YYYY-Qn|YYYY|current>] [--goal <slug>] [--team <t>] [--depth N]
+armitage okr check [--period <YYYY-Qn|YYYY|current>] [--goal <slug>] [--team <t>] [--depth N] [--require-label-prefix <prefix>]...
 ```
 
 - **show** — list nodes whose timelines overlap the period as OKR objectives, with their open issues as key results. Open issues always appear regardless of their project-board target date (a project can span multiple OKR periods); closed issues appear only if their target date falls within the period. Issues that have sub-issues (tracked in the DB after `triage fetch`) show them as nested `↳` rows in the markdown output and as `sub_issues` arrays in JSON output.
-- **check** — flag nodes with no key results, unowned nodes, and issues whose target dates fall outside the node's timeline.
+- **check** — flag nodes with no key results, unowned nodes, and issues whose target dates fall outside the node's timeline. `--require-label-prefix <prefix>` (repeatable) additionally flags open OKR issues that have no label matching that prefix — e.g. `--require-label-prefix "priority:"` surfaces every issue missing a priority label. Reports as kind `missing-label` in JSON and with a 🏷 icon in table output.
 - `--goal <slug>` — filter to nodes that belong to a named cross-cutting goal from `goals.toml`.
 - `--person <github-username>` — filter to nodes where that person is listed as an owner **or** has at least one assigned issue. A node with no `owners` set is still included when the person has assigned issues under it.
 
