@@ -310,17 +310,19 @@ are covered for obvious prefix-match duplicates.
 
 ### Milestones
 
-Milestones are modeled as **child nodes** with their own timeline and issues. For example,
-`gemini/logical/mvp` is a milestone node under `gemini/logical` with a tight deadline and
-MVP-critical issues. This is the recommended approach for bounded deliverables.
-
-For lightweight date markers on the chart (OKR targets, checkpoints), use `milestones.toml`:
+Model a milestone as a **child node** with its own `[timeline]`. For example, a milestone for
+`backend/auth` would be a sub-node `backend/auth/mvp` with a tight `[timeline]` (and optionally
+its own `track` issue and `owners`). This is the canonical way to express bounded deliverables —
+there is no separate `milestones.toml` file or `armitage milestone` subcommand.
 
 ```
-armitage milestone add <node_path> --name <name> --date <YYYY-MM-DD> [--description ...] [--milestone-type checkpoint|okr]
-armitage milestone list [<node_path>] [--milestone-type ...] [--quarter ...]
-armitage milestone remove <node_path> <name>
+armitage node new backend/auth/mvp \
+  --name "Auth MVP" \
+  --description "Core auth flows working end-to-end" \
+  --timeline "2026-01-01 to 2026-06-30"
 ```
+
+The child node will appear under its parent on the chart and in `okr show`.
 
 ### OKR View
 
@@ -373,8 +375,8 @@ armitage chart [--output PATH] [--no-open] [--offline] [--watch|-w]
 
 - Default: generates `.armitage/chart.html` and opens it
 - `--watch` / `-w`: starts a live-reload dev server on `http://127.0.0.1:<port>`, watches for
-  changes to node.toml, issues.toml, milestones.toml, armitage.toml, labels.toml, team.toml,
-  and triage.db, and auto-rebuilds with browser refresh
+  changes to node.toml, issues.toml, armitage.toml, labels.toml, team.toml, and triage.db,
+  and auto-rebuilds with browser refresh
 - `--offline`: embeds ECharts JS inline for offline/GitHub Pages deployment
 - Light/dark/auto theme toggle in the nav bar (persisted in localStorage)
 - Fitted/global range toggle for the x-axis time range
@@ -389,10 +391,10 @@ armitage chart [--output PATH] [--no-open] [--offline] [--watch|-w]
   - Closed issues are excluded
 - Sub-issue bars: issues that have sub-issues (from `triage fetch`) render their children as indented `↳` rows with thinner bars directly below the parent — blue if open, red if overdue, green if closed
 - Red overflow on outer bars: only shown when overflow exceeds the node's own timeline.
-  If a child milestone overflows but the product line accommodates it, only the child
+  If a child node overflows but the parent's timeline accommodates it, only the child
   sub-bar shows red — the outer bar stays clean
 - Double-click a bar to drill in; click to show details in the side panel
-- The panel shows: description, timeline, people, milestones, children, and all descendant
+- The panel shows: description, timeline, people, children, and all descendant
   issues with clickable GitHub links and target dates
 
 ### Configuration
@@ -588,7 +590,6 @@ When creating new nodes for a project, consider:
 | `*/node.toml` | Node metadata |
 | `*/issues.toml` | Manual issue list for `push`/`pull` sync — **not read by `okr show`** |
 | `*/issue.md` | Issue body (synced with GitHub) |
-| `*/milestones.toml` | Node milestones |
 | `goals.toml` | Cross-cutting external commitments spanning multiple nodes |
 | `labels.toml` | Curated label definitions |
 | `triage-examples.toml` | Human-verified classification examples for few-shot LLM prompts |

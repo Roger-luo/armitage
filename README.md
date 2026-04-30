@@ -92,21 +92,17 @@ ion run armitage resolve           # resolve interactively
 
 ### Milestones
 
+Model a milestone as a child node with its own `[timeline]`:
+
 ```bash
-ion run armitage milestone add backend/auth \
+ion run armitage node new backend/auth/mvp \
   --name "Auth MVP" \
-  --date 2026-06-01 \
-  --description "Core auth flows working"
-
-ion run armitage milestone add backend/auth \
-  --name "Q2 Auth Coverage" \
-  --date 2026-06-30 \
-  --milestone-type okr \
-  --expected-progress 0.7
-
-ion run armitage milestone list
-ion run armitage milestone list --quarter 2026-Q2
+  --description "Core auth flows working" \
+  --timeline "2026-01-01 to 2026-06-01"
 ```
+
+There is no separate `milestones.toml` file or `armitage milestone` subcommand — sub-nodes
+are the canonical way to express bounded deliverables.
 
 ### Check status
 
@@ -242,8 +238,8 @@ The LLM classifies issues based on your existing node hierarchy. To get started:
 
 ## Data Model
 
-- **Node**: A directory containing `node.toml` (metadata) and optionally `issue.md` (body) and `milestones.toml`. Hierarchy is defined by directory nesting — parent is never stored in the TOML.
-- **Milestone**: A dated checkpoint or OKR attached to a node. OKR milestones include an `expected_progress` (0.0-1.0).
+- **Node**: A directory containing `node.toml` (metadata) and optionally `issue.md` (body). Hierarchy is defined by directory nesting — parent is never stored in the TOML.
+- **Milestone**: A child node with its own `[timeline]` representing a bounded deliverable.
 - **Sync state**: Stored in `.armitage/sync/state.toml` (gitignored). Tracks per-node hashes and timestamps for change detection.
 - **Triage database**: SQLite at `.armitage/triage/triage.db` (gitignored). Stores fetched issues, LLM suggestions, and review decisions.
 
@@ -267,7 +263,6 @@ my-org/
   backend/
     node.toml
     issue.md
-    milestones.toml
     auth/
       node.toml
       issue.md
