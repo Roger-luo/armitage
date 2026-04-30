@@ -449,6 +449,7 @@ pub fn run_check(
     goal_slug: Option<String>,
     person: Option<String>,
     team: Option<String>,
+    require_label_prefixes: Vec<String>,
     format: String,
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
@@ -647,6 +648,30 @@ pub fn run_check(
                 });
             }
         }
+
+        // Required label prefix checks: flag open issues missing any required prefix.
+        for prefix in &require_label_prefixes {
+            for i in &subtree_issues {
+                if !i.issue.state.eq_ignore_ascii_case("open") {
+                    continue;
+                }
+                let has_match = i
+                    .issue
+                    .labels
+                    .iter()
+                    .any(|l| l.starts_with(prefix.as_str()));
+                if !has_match {
+                    problems.push(CheckProblem {
+                        kind: "missing-label".to_string(),
+                        node_path: e.path.clone(),
+                        detail: format!(
+                            "{}#{} '{}' has no label with prefix \"{}\"",
+                            i.issue.repo, i.issue.number, i.issue.title, prefix
+                        ),
+                    });
+                }
+            }
+        }
     }
 
     if format == "json" {
@@ -672,6 +697,7 @@ pub fn run_check(
             "overdue" => "⚠",
             "unowned" => "👤",
             "unassigned" => "—",
+            "missing-label" => "🏷",
             _ => "?",
         };
         println!(

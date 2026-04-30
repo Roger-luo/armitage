@@ -377,6 +377,10 @@ enum OkrCommands {
         /// Filter to a team
         #[arg(long)]
         team: Option<String>,
+        /// Flag open issues that have no label matching this prefix, e.g. "priority:"
+        /// Can be specified multiple times.
+        #[arg(long = "require-label-prefix")]
+        require_label_prefix: Vec<String>,
         /// Output format: table, json
         #[arg(long, default_value = "table")]
         format: String,
@@ -1395,9 +1399,10 @@ pub fn run() -> Result<()> {
                 goal,
                 person,
                 team,
+                require_label_prefix,
                 format,
             } => {
-                okr::run_check(period, goal, person, team, format)?;
+                okr::run_check(period, goal, person, team, require_label_prefix, format)?;
             }
         },
         Commands::Goal { command } => match command {
