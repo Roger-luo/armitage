@@ -425,6 +425,13 @@
       const issueRow = renderSingleIssueRow(issue, node, state, layout2, y, isOverdue, ancestors);
       rows.push(issueRow);
       y += issueRow.height;
+      if (issue.sub_issues && issue.sub_issues.length > 0) {
+        for (const subIssue of issue.sub_issues) {
+          const subRow = renderSubIssueRow(subIssue, node, state, layout2, y, ancestors);
+          rows.push(subRow);
+          y += subRow.height;
+        }
+      }
     }
     if (!showAll && allSorted.length > INITIAL_ISSUE_LIMIT) {
       const remaining = allSorted.length - INITIAL_ISSUE_LIMIT;
@@ -433,6 +440,50 @@
       y += showMoreRow.height;
     }
     return rows;
+  }
+  function renderSubIssueRow(issue, parentNode, state, layout2, yOffset, ancestors = []) {
+    const height = getRowHeight("issue");
+    const isPr = issue.is_pr;
+    const isClosed = issue.state && issue.state.toLowerCase() === "closed";
+    const isOverdue = !isClosed && issue.target_date && parentNode.end && issue.target_date > parentNode.end;
+    const row = document.createElement("div");
+    row.className = `chart-row issue sub-issue${isPr ? " pr" : ""}`;
+    row.style.height = `${height}px`;
+    row.dataset.issueRef = issue.issue_ref;
+    const label = document.createElement("span");
+    label.className = `chart-label issue-title sub-issue-title${isOverdue ? " overdue" : ""}${isClosed ? " closed" : ""}`;
+    label.textContent = `↳ ${issue.title || issue.issue_ref}`;
+    label.title = `${issue.title || ""} (${issue.issue_ref})`;
+    row.appendChild(label);
+    const meta = document.createElement("span");
+    meta.className = `chart-badge issues${isPr ? " pr" : ""}`;
+    const refMatch = issue.issue_ref.match(/#(\d+)$/);
+    const num = refMatch ? refMatch[1] : issue.issue_ref;
+    meta.textContent = isPr ? `⤴ #${num}` : `#${num}`;
+    if (isOverdue) meta.style.color = "#f85149";
+    row.appendChild(meta);
+    layout2.labelsEl.appendChild(row);
+    const inherited = resolveTimeline(parentNode, ancestors);
+    const barStart = issue.start_date || inherited?.start;
+    const barEnd = issue.target_date || inherited?.end;
+    if (barStart && barEnd) {
+      const x1 = dateToX(state, barStart);
+      const x2 = dateToX(state, barEnd);
+      const barW = Math.max(x2 - x1, 2);
+      const barY = yOffset + (height - 4) / 2;
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.dataset.issueRef = issue.issue_ref;
+      rect.classList.add("issue-bar", "sub-issue-bar");
+      rect.setAttribute("x", `${x1}`);
+      rect.setAttribute("y", `${barY}`);
+      rect.setAttribute("width", `${barW}`);
+      rect.setAttribute("height", "4");
+      rect.setAttribute("rx", "2");
+      rect.setAttribute("fill", isClosed ? "#3fb950" : isOverdue ? "#f85149" : "#58a6ff");
+      rect.setAttribute("opacity", isClosed ? "0.4" : "0.5");
+      layout2.barsGroup.appendChild(rect);
+    }
+    return { type: "sub-issue", issue, y: yOffset, height };
   }
   function renderSingleIssueRow(issue, parentNode, state, layout2, yOffset, isOverdue, ancestors = []) {
     const height = getRowHeight("issue");

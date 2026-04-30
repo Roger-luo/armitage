@@ -205,7 +205,7 @@ armitage triage watch list [--status active|watching|replied|dismissed|all] [--f
 armitage triage watch dismiss <issue-ref>...
 ```
 
-- **fetch** — pulls issues from GitHub repos into a local SQLite DB (`.armitage/triage.db`), then refreshes the issue cache
+- **fetch** — pulls issues from GitHub repos into a local SQLite DB (`.armitage/triage.db`), then refreshes the issue cache. For any issue with sub-issues, also fetches the full sub-issue list and stores the parent→child relationships in the DB — no raw GraphQL query needed to discover sub-issues after a fetch
 - **classify** — sends untriaged issues to an LLM with the roadmap tree, label schema, curated labels, and any classification examples as context; stores suggestions in the DB (including `is_stale` for issues referencing removed/deprecated features, `is_inactive` for issues with 180+ days of no GitHub activity, and `needs_followup`/`followup_reason` when the discussion lacks concrete next steps), then refreshes the issue cache. **Labels are additive only:** the LLM is prompted to suggest only labels the issue does not already have, and any existing labels that slip through are filtered out before storage. `--limit N` classifies at most N issues per run (default: all) — useful for iterative batch workflows. `--batch-size` controls how many issues are sent per LLM call (prompt granularity), while `--limit` controls the total number of issues processed in the run
 - **inactive** — queries the local DB for open issues with no GitHub activity for at least N days (default 180). Scoped to repos in `node.toml` files only. Outputs a table with the issue ref, title, time since last update, and suggested node (if classified). `--days N` sets the inactivity threshold. `--since <date>` sets an absolute cutoff date (ISO 8601). `--repo <r>` scopes to one repo. `--inquire "message"` stages all matching unreviewed issues as `inquire` decisions with the given comment text (applied by `triage apply`)
 - **overdue** — queries the local DB for open issues whose project-board target date is more than N days in the past (default: 0, meaning any overdue issue). Orthogonal to `inactive`: an issue can be actively discussed but still past its deadline. `--comment "message"` stages a follow-up comment on each matching issue (posted via `triage apply`), analogous to `inactive --inquire`. Useful as a regular OKR review step to surface deadline drift before it compounds.
@@ -327,7 +327,7 @@ armitage okr show [--period <YYYY-Qn|YYYY|current>] [--goal <slug>] [--team <t>]
 armitage okr check [--period <YYYY-Qn|YYYY|current>] [--goal <slug>] [--team <t>] [--depth N]
 ```
 
-- **show** — list nodes whose timelines overlap the period as OKR objectives, with their open issues as key results. Open issues always appear regardless of their project-board target date (a project can span multiple OKR periods); closed issues appear only if their target date falls within the period.
+- **show** — list nodes whose timelines overlap the period as OKR objectives, with their open issues as key results. Open issues always appear regardless of their project-board target date (a project can span multiple OKR periods); closed issues appear only if their target date falls within the period. Issues that have sub-issues (tracked in the DB after `triage fetch`) show them as nested `↳` rows in the markdown output and as `sub_issues` arrays in JSON output.
 - **check** — flag nodes with no key results, unowned nodes, and issues whose target dates fall outside the node's timeline.
 - `--goal <slug>` — filter to nodes that belong to a named cross-cutting goal from `goals.toml`.
 - `--person <github-username>` — filter to nodes where that person is listed as an owner **or** has at least one assigned issue. A node with no `owners` set is still included when the person has assigned issues under it.
@@ -385,6 +385,7 @@ armitage chart [--output PATH] [--no-open] [--offline] [--watch|-w]
   - **Green→purple split pills**: overflowing (transitions at the violated deadline)
   - **Gray dashed pills**: no project board dates assigned (spans full width)
   - Closed issues are excluded
+- Sub-issue bars: issues that have sub-issues (from `triage fetch`) render their children as indented `↳` rows with thinner bars directly below the parent — blue if open, red if overdue, green if closed
 - Red overflow on outer bars: only shown when overflow exceeds the node's own timeline.
   If a child milestone overflows but the product line accommodates it, only the child
   sub-bar shows red — the outer bar stays clean

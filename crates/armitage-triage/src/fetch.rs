@@ -17,6 +17,17 @@ struct SubIssuesSummary {
 }
 
 #[derive(Debug, serde::Deserialize)]
+struct ApiSubIssueEntry {
+    number: u64,
+    repository: Option<ApiRepository>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ApiRepository {
+    full_name: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
 struct ApiUser {
     login: String,
 }
@@ -106,6 +117,9 @@ pub fn fetch_repo_issues(
             comment_count: api_issue.comments as i64,
         };
         db::upsert_issue(conn, &stored)?;
+        if sub_issues_count > 0 {
+            fetch_sub_issues_for_issue(gh, conn, repo, api_issue.number);
+        }
         count += 1;
     }
 
@@ -250,6 +264,40 @@ pub fn strip_repo_qualifier(repo: &str) -> String {
     repo.split_once('@')
         .map_or(repo, |(base, _)| base)
         .to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Sub-issue fetching
+// ---------------------------------------------------------------------------
+
+/// Fetch the sub-issues for a single issue and store them in the DB.
+/// Silently ignores errors (e.g. repos without sub-issues API access).
+fn fetch_sub_issues_for_issue(
+    gh: &armitage_github::Gh,
+    conn: &Connection,
+    repo: &str,
+    number: u64,
+) {
+    let endpoint = format!("repos/{repo}/issues/{number}/sub_issues?per_page=100");
+    let json = match gh.run(&["api", &endpoint]) {
+        Ok(j) => j,
+        Err(_) => return,
+    };
+    let entries: Vec<ApiSubIssueEntry> = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let children: Vec<(String, u64)> = entries
+        .into_iter()
+        .map(|e| {
+            let child_repo = e
+                .repository
+                .map(|r| r.full_name)
+                .unwrap_or_else(|| repo.to_string());
+            (child_repo, e.number)
+        })
+        .collect();
+    let _ = db::upsert_sub_issue_relationships(conn, repo, number, &children);
 }
 
 // ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 // ---------------------------------------------------------------------------
 
 /// Current schema version. Bump this when adding migrations.
-const SCHEMA_VERSION: u32 = 13;
+const SCHEMA_VERSION: u32 = 14;
 
 /// Full schema for a fresh database (always represents the latest version).
 const SCHEMA_V6: &str = "
@@ -96,6 +96,18 @@ CREATE TABLE IF NOT EXISTS watched_issues (
 );
 
 CREATE INDEX IF NOT EXISTS idx_watched_issue ON watched_issues(issue_id);
+
+CREATE TABLE IF NOT EXISTS sub_issue_relationships (
+    id             INTEGER PRIMARY KEY,
+    parent_repo    TEXT NOT NULL,
+    parent_number  INTEGER NOT NULL,
+    child_repo     TEXT NOT NULL,
+    child_number   INTEGER NOT NULL,
+    UNIQUE(parent_repo, parent_number, child_repo, child_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sir_parent ON sub_issue_relationships(parent_repo, parent_number);
+CREATE INDEX IF NOT EXISTS idx_sir_child ON sub_issue_relationships(child_repo, child_number);
 ";
 
 /// Migrations from version N to N+1. Index 0 = v0→v1, index 1 = v1→v2, etc.
@@ -174,6 +186,19 @@ const MIGRATIONS: &[Option<&str>] = &[
     Some(
         "ALTER TABLE watched_issues ADD COLUMN target_date_at_watch TEXT;
          ALTER TABLE watched_issues ADD COLUMN project_status_at_watch TEXT;",
+    ),
+    // v13 → v14: add sub_issue_relationships table
+    Some(
+        "CREATE TABLE IF NOT EXISTS sub_issue_relationships (
+            id             INTEGER PRIMARY KEY,
+            parent_repo    TEXT NOT NULL,
+            parent_number  INTEGER NOT NULL,
+            child_repo     TEXT NOT NULL,
+            child_number   INTEGER NOT NULL,
+            UNIQUE(parent_repo, parent_number, child_repo, child_number)
+        );
+        CREATE INDEX IF NOT EXISTS idx_sir_parent ON sub_issue_relationships(parent_repo, parent_number);
+        CREATE INDEX IF NOT EXISTS idx_sir_child ON sub_issue_relationships(child_repo, child_number);",
     ),
 ];
 
@@ -513,6 +538,96 @@ pub fn get_latest_updated_at(conn: &Connection, repo: &str) -> Result<Option<Str
     let mut stmt = conn.prepare("SELECT MAX(updated_at) FROM issues WHERE repo = ?1")?;
     let result: Option<String> = stmt.query_row(params![repo], |row| row.get(0))?;
     Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// Sub-issue relationships
+// ---------------------------------------------------------------------------
+
+/// Replace the recorded sub-issues for a given parent with the provided list.
+pub fn upsert_sub_issue_relationships(
+    conn: &Connection,
+    parent_repo: &str,
+    parent_number: u64,
+    children: &[(String, u64)],
+) -> Result<()> {
+    conn.execute(
+        "DELETE FROM sub_issue_relationships WHERE parent_repo = ?1 AND parent_number = ?2",
+        params![parent_repo, parent_number as i64],
+    )?;
+    for (child_repo, child_number) in children {
+        conn.execute(
+            "INSERT OR IGNORE INTO sub_issue_relationships
+             (parent_repo, parent_number, child_repo, child_number)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                parent_repo,
+                parent_number as i64,
+                child_repo,
+                *child_number as i64
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+/// Return all child issue refs for a given parent, as (repo, number) pairs.
+pub fn get_sub_issues(
+    conn: &Connection,
+    parent_repo: &str,
+    parent_number: u64,
+) -> Result<Vec<(String, u64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT child_repo, child_number FROM sub_issue_relationships
+         WHERE parent_repo = ?1 AND parent_number = ?2",
+    )?;
+    let rows = stmt.query_map(params![parent_repo, parent_number as i64], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u64))
+    })?;
+    Ok(rows.flatten().collect())
+}
+
+/// Return the parent of an issue, if any, as (repo, number).
+pub fn get_parent_issue(
+    conn: &Connection,
+    child_repo: &str,
+    child_number: u64,
+) -> Result<Option<(String, u64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT parent_repo, parent_number FROM sub_issue_relationships
+         WHERE child_repo = ?1 AND child_number = ?2 LIMIT 1",
+    )?;
+    let result = stmt
+        .query_row(params![child_repo, child_number as i64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u64))
+        })
+        .optional()?;
+    Ok(result)
+}
+
+/// Return a map of parent_ref -> Vec<child_ref> for all known sub-issue relationships.
+/// Keys and values are formatted as "owner/repo#number".
+pub fn get_all_sub_issue_relationships(
+    conn: &Connection,
+) -> Result<std::collections::HashMap<String, Vec<String>>> {
+    let mut stmt = conn.prepare(
+        "SELECT parent_repo, parent_number, child_repo, child_number FROM sub_issue_relationships",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let parent_repo: String = row.get(0)?;
+        let parent_number: i64 = row.get(1)?;
+        let child_repo: String = row.get(2)?;
+        let child_number: i64 = row.get(3)?;
+        Ok((
+            format!("{parent_repo}#{parent_number}"),
+            format!("{child_repo}#{child_number}"),
+        ))
+    })?;
+    let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for row in rows.flatten() {
+        map.entry(row.0).or_default().push(row.1);
+    }
+    Ok(map)
 }
 
 fn row_to_issue(row: &rusqlite::Row) -> rusqlite::Result<StoredIssue> {

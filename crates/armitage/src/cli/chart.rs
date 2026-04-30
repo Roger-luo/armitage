@@ -69,7 +69,13 @@ fn generate_chart(org_root: &Path, offline: bool) -> Result<String> {
     let org = Org::open(org_root)?;
     let entries = walk_nodes(org_root)?;
     let issue_dates = build_issue_dates_map(org_root);
-    let chart_data = armitage_chart::build_chart_data(&entries, &org.info().name, &issue_dates)?;
+    let sub_issues_map = build_sub_issues_map(org_root);
+    let chart_data = armitage_chart::build_chart_data(
+        &entries,
+        &org.info().name,
+        &issue_dates,
+        &sub_issues_map,
+    )?;
     armitage_chart::render_chart(&chart_data, offline).map_err(Into::into)
 }
 
@@ -295,6 +301,14 @@ fn build_issue_dates_map(org_root: &Path) -> HashMap<String, IssueDates> {
         );
     }
     map
+}
+
+/// Build a map of parent_ref -> Vec<child_ref> from the triage DB's sub-issue relationships.
+fn build_sub_issues_map(org_root: &Path) -> HashMap<String, Vec<String>> {
+    armitage_triage::db::open_db(org_root)
+        .ok()
+        .and_then(|c| armitage_triage::db::get_all_sub_issue_relationships(&c).ok())
+        .unwrap_or_default()
 }
 
 fn open_url(url: &str) {

@@ -101,8 +101,8 @@ fn generate_test_html() {
     let issue_dates = build_issue_dates(&db_path);
 
     // Build chart data
-    let chart_data =
-        build_chart_data(&entries, "nexus", &issue_dates).expect("failed to build chart data");
+    let chart_data = build_chart_data(&entries, "nexus", &issue_dates, &HashMap::new())
+        .expect("failed to build chart data");
 
     // Verify basic structure
     assert!(

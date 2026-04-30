@@ -23,6 +23,19 @@ pub struct KeyResult {
     pub target_date: Option<String>,
     /// True when target_date has passed and the issue is still open.
     pub overdue: bool,
+    /// Sub-issues of this issue, if any.
+    pub sub_issues: Vec<SubKeyResult>,
+}
+
+/// A sub-issue nested under a key result.
+#[derive(Debug, Serialize)]
+pub struct SubKeyResult {
+    pub issue_ref: String,
+    pub title: String,
+    pub state: String,
+    pub assignees: Vec<String>,
+    pub target_date: Option<String>,
+    pub overdue: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -174,6 +187,13 @@ pub fn run_show(
 
     // Load all classified issues, with track-field overrides applied.
     let all_issues = load_issues_with_track_overrides(&org_root, &all_nodes);
+
+    // Load sub-issue relationships for nesting in key results.
+    let sub_issue_map: std::collections::HashMap<String, Vec<String>> =
+        armitage_triage::db::open_db(&org_root)
+            .ok()
+            .and_then(|c| armitage_triage::db::get_all_sub_issue_relationships(&c).ok())
+            .unwrap_or_default();
 
     // Group issues by their effective node path.
     let mut issues_by_node: HashMap<String, Vec<usize>> = HashMap::new();
@@ -334,13 +354,47 @@ pub fn run_show(
                             .as_deref()
                             .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
                             .is_some_and(|d| d < today);
+                    let issue_ref = format!("{}#{}", i.issue.repo, i.issue.number);
+                    let sub_issues = sub_issue_map
+                        .get(&issue_ref)
+                        .map(|children| {
+                            children
+                                .iter()
+                                .filter_map(|child_ref| {
+                                    all_issues.iter().find(|ci| {
+                                        &format!("{}#{}", ci.issue.repo, ci.issue.number)
+                                            == child_ref
+                                    })
+                                })
+                                .map(|ci| {
+                                    let sub_overdue = ci.issue.state.eq_ignore_ascii_case("open")
+                                        && ci
+                                            .target_date
+                                            .as_deref()
+                                            .and_then(|d| {
+                                                NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()
+                                            })
+                                            .is_some_and(|d| d < today);
+                                    SubKeyResult {
+                                        issue_ref: format!("{}#{}", ci.issue.repo, ci.issue.number),
+                                        title: ci.issue.title.clone(),
+                                        state: ci.issue.state.clone(),
+                                        assignees: ci.issue.assignees.clone(),
+                                        target_date: ci.target_date.clone(),
+                                        overdue: sub_overdue,
+                                    }
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     KeyResult {
-                        issue_ref: format!("{}#{}", i.issue.repo, i.issue.number),
+                        issue_ref,
                         title: i.issue.title.clone(),
                         state: i.issue.state.clone(),
                         assignees: i.issue.assignees.clone(),
                         target_date: i.target_date.clone(),
                         overdue,
+                        sub_issues,
                     }
                 })
                 .collect();
@@ -748,6 +802,29 @@ fn print_markdown(period: &Period, objectives: &[OkrObjective], team_file: &Team
                 "| {} | {} | {} | {} | {} |",
                 kr.issue_ref, kr.title, status, target, assignees
             );
+            for sub in &kr.sub_issues {
+                let sub_status = if sub.state.eq_ignore_ascii_case("closed") {
+                    "✅ CLOSED"
+                } else if sub.overdue {
+                    "⚠️ OVERDUE"
+                } else {
+                    "🔄 OPEN"
+                };
+                let sub_target = sub.target_date.as_deref().unwrap_or("—");
+                let sub_assignees = if sub.assignees.is_empty() {
+                    "—".to_string()
+                } else {
+                    sub.assignees
+                        .iter()
+                        .map(|a| format!("@{a}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                println!(
+                    "| ↳ {} | {} | {} | {} | {} |",
+                    sub.issue_ref, sub.title, sub_status, sub_target, sub_assignees
+                );
+            }
         }
         println!();
     }
