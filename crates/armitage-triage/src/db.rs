@@ -534,6 +534,43 @@ pub fn get_issue_by_id(conn: &Connection, id: i64) -> Result<StoredIssue> {
     .map_err(Into::into)
 }
 
+pub fn get_issue_by_ref(conn: &Connection, repo: &str, number: u64) -> Result<Option<StoredIssue>> {
+    let number = number as i64;
+    let mut stmt = conn.prepare(
+        "SELECT id, repo, number, title, body, state, labels_json, updated_at, fetched_at, sub_issues_count, author, assignees_json, is_pr, comment_count
+         FROM issues WHERE repo = ?1 AND number = ?2",
+    )?;
+    let mut rows = stmt.query_map(params![repo, number], row_to_issue)?;
+    match rows.next() {
+        Some(Ok(issue)) => Ok(Some(issue)),
+        Some(Err(e)) => Err(e.into()),
+        None => Ok(None),
+    }
+}
+
+/// Return the suggestion id for an issue, inserting a minimal human-authored synthetic
+/// suggestion if none exists yet. Does not overwrite an existing LLM suggestion.
+pub fn get_or_create_suggestion(conn: &Connection, issue_id: i64, now: &str) -> Result<i64> {
+    let existing: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM triage_suggestions WHERE issue_id = ?1",
+            params![issue_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(id) = existing {
+        return Ok(id);
+    }
+    conn.execute(
+        "INSERT INTO triage_suggestions
+         (issue_id, suggested_node, suggested_labels, confidence, reasoning, llm_backend, created_at,
+          is_tracking_issue, suggested_new_categories, is_stale, is_inactive, needs_followup, followup_reason)
+         VALUES (?1, NULL, '[]', NULL, '', 'human', ?2, 0, '[]', 0, 0, 0, '')",
+        params![issue_id, now],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
 pub fn get_latest_updated_at(conn: &Connection, repo: &str) -> Result<Option<String>> {
     let mut stmt = conn.prepare("SELECT MAX(updated_at) FROM issues WHERE repo = ?1")?;
     let result: Option<String> = stmt.query_row(params![repo], |row| row.get(0))?;
@@ -1163,7 +1200,7 @@ pub fn get_unapplied_decisions(conn: &Connection) -> Result<Vec<(StoredIssue, Re
          FROM review_decisions rd
          JOIN triage_suggestions ts ON ts.id = rd.suggestion_id
          JOIN issues i ON i.id = ts.issue_id
-         WHERE rd.applied_at IS NULL AND rd.decision IN ('approved', 'modified', 'inquired', 'stale')
+         WHERE rd.applied_at IS NULL AND rd.decision IN ('approved', 'modified', 'inquired', 'stale', 'labelled')
          ORDER BY i.repo, i.number",
     )?;
     let rows = stmt.query_map([], |row| {

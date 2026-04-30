@@ -542,6 +542,20 @@ enum TriageCommands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Queue label additions/removals for issues without going through LLM classification
+    Label {
+        /// Issue references (owner/repo#number), one or more
+        issue_refs: Vec<String>,
+        /// Labels to add, comma-separated (e.g. "priority: high,area: circuit")
+        #[arg(long)]
+        add: Option<String>,
+        /// Labels to remove, comma-separated
+        #[arg(long)]
+        remove: Option<String>,
+        /// Preview changes without writing to the database
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Submit a review decision for one or more issues (non-interactive)
     Decide {
         /// Issue references (owner/repo#number), one or more
@@ -1162,6 +1176,14 @@ pub fn run() -> Result<()> {
             }
             TriageCommands::Apply { dry_run } => {
                 triage::run_apply(dry_run)?;
+            }
+            TriageCommands::Label {
+                issue_refs,
+                add,
+                remove,
+                dry_run,
+            } => {
+                triage::run_label(issue_refs, add, remove, dry_run)?;
             }
             TriageCommands::Decide {
                 issue_refs,

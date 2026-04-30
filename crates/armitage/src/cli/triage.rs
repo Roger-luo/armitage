@@ -2183,6 +2183,155 @@ fn save_decide_example(
     }
 }
 
+pub fn run_label(
+    issue_ref_strs: Vec<String>,
+    add: Option<String>,
+    remove: Option<String>,
+    dry_run: bool,
+) -> Result<()> {
+    if add.is_none() && remove.is_none() {
+        return Err(Error::Other("--add or --remove is required".to_string()));
+    }
+    if issue_ref_strs.is_empty() {
+        return Err(Error::Other(
+            "provide at least one issue reference".to_string(),
+        ));
+    }
+
+    let add_labels: Vec<String> = add
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    let remove_labels: Vec<String> = remove
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+
+    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let conn = db::open_db(&org_root)?;
+    let now = Utc::now().to_rfc3339();
+    let mut errors: Vec<String> = Vec::new();
+
+    for issue_ref_str in &issue_ref_strs {
+        if let Err(e) = label_one(
+            &conn,
+            issue_ref_str,
+            &add_labels,
+            &remove_labels,
+            &now,
+            dry_run,
+        ) {
+            eprintln!("Error on {issue_ref_str}: {e}");
+            errors.push(format!("{issue_ref_str}: {e}"));
+        }
+    }
+
+    let ok = issue_ref_strs.len() - errors.len();
+    if dry_run {
+        println!("\nDry run: {ok} issue(s) would be queued");
+    } else if ok > 0 {
+        println!("\nQueued {ok} issue(s) — run `triage apply` to push to GitHub");
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::Other(format!(
+            "Failed on {} of {} issues:\n  {}",
+            errors.len(),
+            issue_ref_strs.len(),
+            errors.join("\n  ")
+        )))
+    }
+}
+
+fn label_one(
+    conn: &rusqlite::Connection,
+    issue_ref_str: &str,
+    add_labels: &[String],
+    remove_labels: &[String],
+    now: &str,
+    dry_run: bool,
+) -> Result<()> {
+    let issue_ref = armitage_core::node::IssueRef::parse(issue_ref_str)?;
+    let repo = issue_ref.repo_full();
+
+    let issue = db::get_issue_by_ref(conn, &repo, issue_ref.number)?.ok_or_else(|| {
+        Error::Other(format!(
+            "{issue_ref_str}: not found in DB — run `triage fetch` first"
+        ))
+    })?;
+
+    // Compute desired label set: existing + add - remove
+    let mut desired: std::collections::BTreeSet<String> = issue.labels.iter().cloned().collect();
+    for l in add_labels {
+        desired.insert(l.clone());
+    }
+    for l in remove_labels {
+        desired.remove(l);
+    }
+    let final_labels: Vec<String> = desired.into_iter().collect();
+
+    let effective_add: Vec<&str> = add_labels
+        .iter()
+        .filter(|l| !issue.labels.contains(l))
+        .map(String::as_str)
+        .collect();
+    let effective_remove: Vec<&str> = remove_labels
+        .iter()
+        .filter(|l| issue.labels.contains(l))
+        .map(String::as_str)
+        .collect();
+
+    if effective_add.is_empty() && effective_remove.is_empty() {
+        println!("  {issue_ref_str}: no changes needed");
+        return Ok(());
+    }
+
+    if dry_run {
+        println!("  {issue_ref_str}:");
+        if !effective_add.is_empty() {
+            println!("    + {}", effective_add.join(", "));
+        }
+        if !effective_remove.is_empty() {
+            println!("    - {}", effective_remove.join(", "));
+        }
+        return Ok(());
+    }
+
+    let suggestion_id = db::get_or_create_suggestion(conn, issue.id, now)?;
+    db::insert_decision(
+        conn,
+        &db::ReviewDecision {
+            id: 0,
+            suggestion_id,
+            decision: "labelled".to_string(),
+            final_node: None,
+            final_labels,
+            decided_at: now.to_string(),
+            applied_at: None,
+            question: String::new(),
+        },
+    )?;
+
+    println!("  {issue_ref_str}:");
+    if !effective_add.is_empty() {
+        println!("    + {}", effective_add.join(", "));
+    }
+    if !effective_remove.is_empty() {
+        println!("    - {}", effective_remove.join(", "));
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run_suggestions(
     issues: Vec<i64>,
