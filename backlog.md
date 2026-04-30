@@ -7,11 +7,6 @@
 - During pull: download referenced images to `assets/`, rewrite GitHub URLs back to relative paths
 - Requires GitHub file attachment API or repo-based image hosting
 
-### OKR Issue Body Format Generation
-- Auto-generate the Objective / Key Results / Status markdown template in `issue.md` for OKR-type milestones during push
-- Parse OKR format from GitHub issue body during pull and update `milestones.toml`
-- Template defined in spec: `## Objective`, `## Key Results` (checkboxes), `## Status` (progress %, date)
-
 ### GitHub Sub-Issue Sync
 - GitHub issues support sub-issues — map these to the recursive node hierarchy
 - During pull: discover sub-issues and create child nodes automatically

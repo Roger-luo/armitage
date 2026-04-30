@@ -6,7 +6,6 @@ use serde::Serialize;
 
 use armitage_core::issues::IssuesFile;
 use armitage_core::tree::NodeEntry;
-use armitage_milestones::milestone::MilestoneFile;
 
 use crate::error::Result;
 
@@ -28,7 +27,6 @@ pub struct ChartNode {
     pub team: Option<String>,
     pub track: Option<String>,
     pub children: Vec<Self>,
-    pub milestones: Vec<ChartMilestone>,
     pub issues: Vec<ChartIssue>,
     pub overflow_start: Option<String>,
     pub overflow_end: Option<String>,
@@ -52,15 +50,6 @@ pub struct ChartIssue {
     pub is_pr: bool,
     /// Sub-issues of this issue, if any (from sub_issue_relationships DB).
     pub sub_issues: Vec<Self>,
-}
-
-/// A milestone or OKR marker on the timeline.
-#[derive(Debug, Clone, Serialize)]
-pub struct ChartMilestone {
-    pub name: String,
-    pub date: String,
-    pub description: String,
-    pub milestone_type: String,
 }
 
 /// Top-level chart data embedded in the HTML page.
@@ -144,25 +133,6 @@ fn read_issues(
     issues
 }
 
-fn read_milestones(node_dir: &Path) -> Vec<ChartMilestone> {
-    let path = node_dir.join("milestones.toml");
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return vec![];
-    };
-    let Ok(mf) = toml::from_str::<MilestoneFile>(&content) else {
-        return vec![];
-    };
-    mf.milestones
-        .into_iter()
-        .map(|m| ChartMilestone {
-            name: m.name,
-            date: date_to_str(&m.date),
-            description: m.description,
-            milestone_type: m.milestone_type.to_string(),
-        })
-        .collect()
-}
-
 /// Build a `ChartNode` tree recursively from a parent-to-children map.
 fn build_node(
     entry: &NodeEntry,
@@ -199,7 +169,6 @@ fn build_node(
         (eff_s, eff_e)
     };
 
-    let milestones = read_milestones(&entry.dir);
     let issues = read_issues(&entry.dir, dates_map, sub_map);
 
     // Date range and overflow use open issues only — closed ones are done.
@@ -281,7 +250,6 @@ fn build_node(
         team: entry.node.team.clone(),
         track: entry.node.track.clone(),
         children,
-        milestones,
         issues,
         overflow_start,
         overflow_end,
@@ -292,9 +260,9 @@ fn build_node(
 
 /// Build chart data from the org's node entries.
 ///
-/// Walks the flat `NodeEntry` list, reconstructs the tree hierarchy, reads
-/// milestones, computes effective timelines, and returns the full `ChartData`
-/// for embedding in the HTML template.
+/// Walks the flat `NodeEntry` list, reconstructs the tree hierarchy, computes
+/// effective timelines, and returns the full `ChartData` for embedding in the
+/// HTML template.
 ///
 /// `sub_issues_map` maps parent issue_ref ("owner/repo#N") to a list of child
 /// issue_refs. Pass an empty map if sub-issue data is unavailable.
@@ -466,48 +434,6 @@ mod tests {
 
         assert_eq!(data.global_start.as_deref(), Some("2026-01-01"));
         assert_eq!(data.global_end.as_deref(), Some("2026-12-31"));
-    }
-
-    #[test]
-    fn reads_milestones() {
-        let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
-
-        fs::write(
-            root.join("armitage.toml"),
-            "[org]\nname = \"test\"\ngithub_orgs = []\n",
-        )
-        .unwrap();
-
-        let node = make_node("Proj", Some((d(2026, 1, 1), d(2026, 12, 31))));
-        write_node(&root.join("proj"), &node);
-
-        fs::write(
-            root.join("proj/milestones.toml"),
-            r#"[[milestone]]
-name = "Alpha"
-date = "2026-03-31"
-description = "Alpha release"
-type = "checkpoint"
-
-[[milestone]]
-name = "OKR Q2"
-date = "2026-06-30"
-description = "Q2 target"
-type = "okr"
-"#,
-        )
-        .unwrap();
-
-        let entries = armitage_core::tree::walk_nodes(root).unwrap();
-        let data = build_chart_data(&entries, "test", &HashMap::new(), &HashMap::new()).unwrap();
-
-        let proj = &data.nodes[0];
-        assert_eq!(proj.milestones.len(), 2);
-        assert_eq!(proj.milestones[0].name, "Alpha");
-        assert_eq!(proj.milestones[0].milestone_type, "checkpoint");
-        assert_eq!(proj.milestones[1].name, "OKR Q2");
-        assert_eq!(proj.milestones[1].milestone_type, "okr");
     }
 
     #[test]

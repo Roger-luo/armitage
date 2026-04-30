@@ -7,7 +7,6 @@ description = "CLI for project management across GitHub repositories"
 [dependencies]
 armitage-core = { workspace = true }
 armitage-labels = { workspace = true }
-armitage-milestones = { workspace = true }
 armitage-github = { workspace = true }
 armitage-sync = { workspace = true }
 armitage-triage = { workspace = true }

@@ -131,7 +131,7 @@ fn run_watch_server(org_root: &Path, offline: bool) -> Result<()> {
         .watch(org_root, RecursiveMode::NonRecursive)
         .map_err(|e| crate::error::Error::Other(format!("watch error: {e}")))?;
 
-    // Watch each node directory (contains node.toml, milestones.toml, etc.)
+    // Watch each node directory (contains node.toml, issues.toml, etc.)
     for entry in walk_nodes(org_root)? {
         let _ = watcher.watch(&entry.dir, RecursiveMode::NonRecursive);
     }
@@ -223,7 +223,6 @@ fn is_relevant_change(event: &notify::Event) -> bool {
         let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
         name == "node.toml"
             || name == "issues.toml"
-            || name == "milestones.toml"
             || name == "armitage.toml"
             || name == "labels.toml"
             || name == "triage.db"

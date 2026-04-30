@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/armitage-core",
     "crates/armitage-labels",
-    "crates/armitage-milestones",
     "crates/armitage-github",
     "crates/armitage-sync",
     "crates/armitage-triage",
@@ -19,7 +18,6 @@ edition = "2024"
 # Internal crates
 armitage-core = { path = "crates/armitage-core" }
 armitage-labels = { path = "crates/armitage-labels" }
-armitage-milestones = { path = "crates/armitage-milestones" }
 armitage-github = { path = "crates/armitage-github" }
 armitage-sync = { path = "crates/armitage-sync" }
 armitage-triage = { path = "crates/armitage-triage" }

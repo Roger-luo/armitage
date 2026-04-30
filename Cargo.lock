@@ -90,7 +90,6 @@ dependencies = [
  "armitage-core",
  "armitage-github",
  "armitage-labels",
- "armitage-milestones",
  "armitage-project",
  "armitage-sync",
  "armitage-triage",
@@ -118,7 +117,6 @@ name = "armitage-chart"
 version = "0.1.0"
 dependencies = [
  "armitage-core",
- "armitage-milestones",
  "askama",
  "chrono",
  "rusqlite",
@@ -155,18 +153,6 @@ dependencies = [
 
 [[package]]
 name = "armitage-labels"
-version = "0.1.0"
-dependencies = [
- "armitage-core",
- "chrono",
- "serde",
- "tempfile",
- "thiserror 2.0.18",
- "toml",
-]
-
-[[package]]
-name = "armitage-milestones"
 version = "0.1.0"
 dependencies = [
  "armitage-core",

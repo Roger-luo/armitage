@@ -933,23 +933,6 @@ pub fn run_show(path: String) -> Result<()> {
         }
     }
 
-    // Show milestones if present
-    let milestone_path = org_root.join(&path).join("milestones.toml");
-    if milestone_path.exists() {
-        let content = std::fs::read_to_string(&milestone_path)?;
-        let mf: armitage_milestones::milestone::MilestoneFile =
-            toml::from_str(&content).map_err(|source| armitage_core::error::Error::TomlParse {
-                path: milestone_path,
-                source,
-            })?;
-        if !mf.milestones.is_empty() {
-            println!("\nmilestones:");
-            for m in &mf.milestones {
-                println!("  {} ({}) — {}", m.name, m.date, m.description);
-            }
-        }
-    }
-
     Ok(())
 }
 

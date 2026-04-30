@@ -42,17 +42,16 @@ test — the change is not complete without it.
 |---|---|
 | `armitage-core` | Shared types (`Node`, `OrgConfig`, `IssueRef`), filesystem tree ops (`find_org_root`, `walk_nodes`, `read_node`), secrets |
 | `armitage-labels` | Label schema (`LabelSchema`, `LabelStyle`), rename ledger, prefix-duplicate detection |
-| `armitage-milestones` | `Milestone` / `MilestoneFile` types and TOML I/O |
 | `armitage-github` | GitHub operations via `gh` CLI (`ionem::shell::gh::Gh`): fetch, create, update, state changes |
 | `armitage-sync` | Bidirectional sync engine: three-way merge, sync state, conflict serialization, SHA-256 hashing |
 | `armitage-triage` | LLM classification pipeline: SQLite DB, issue fetching, prompt building, review, apply, categories, examples, label import |
 | `armitage` | Binary crate: clap CLI dispatch (`cli/`), migration, error unification. `main.rs` delegates to `cli::run()` |
 
-**Dependency flow:** `armitage-core` is the leaf; `armitage-labels`, `armitage-milestones` depend on `armitage-core`; `armitage-github` depends on `armitage-core`; `armitage-sync` depends on `armitage-core` and `armitage-github`; `armitage-triage` depends on `armitage-core`, `armitage-labels`, and `armitage-github`; the `armitage` binary depends on all six.
+**Dependency flow:** `armitage-core` is the leaf; `armitage-labels` depends on `armitage-core`; `armitage-github` depends on `armitage-core`; `armitage-sync` depends on `armitage-core` and `armitage-github`; `armitage-triage` depends on `armitage-core`, `armitage-labels`, and `armitage-github`; the `armitage` binary depends on all of them.
 
 **CLI layout** (`crates/armitage/src/cli/`):
 - `mod.rs` — clap derive `Commands` enum, routes to handlers
-- Each subcommand in its own file (`node.rs`, `triage.rs`, `milestone.rs`, etc.) with `pub fn run_*()` entry points plus lower-level functions exported for testing
+- Each subcommand in its own file (`node.rs`, `triage.rs`, `okr.rs`, etc.) with `pub fn run_*()` entry points plus lower-level functions exported for testing
 
 **`.armitage/` directory layout** (gitignored, per-machine state):
 - `sync/state.toml` — per-node sync metadata (local_hash, remote_updated_at)
@@ -69,7 +68,7 @@ The `migrate` module in the binary crate handles migration from the old flat `.a
 
 **Key design decisions:**
 - Directory = hierarchy. Parent is never stored; derived from filesystem nesting.
-- Each node directory contains `node.toml` (metadata), optionally `issue.md` (body) and `milestones.toml`.
+- Each node directory contains `node.toml` (metadata) and optionally `issue.md` (body). Milestones are modeled as child nodes with their own `[timeline]`.
 - GitHub issue refs use `owner/repo#number` format, parsed by `IssueRef::parse()`.
 - Node repos may use `owner/repo@branch` qualifiers for triage affinity; `strip_repo_qualifier()` strips the suffix for GitHub API calls.
 - Sync direction determined by comparing `local_hash` (SHA-256) and `remote_updated_at` (from GitHub API).
