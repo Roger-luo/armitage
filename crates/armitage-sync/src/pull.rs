@@ -234,7 +234,7 @@ pub fn pull_all(gh: &Gh, org_root: &Path, scope: Option<&str>, dry_run: bool) ->
             }
             PullNodeResult::Conflicted => {
                 println!(
-                    "conflicted: {} — run `armitage resolve {}`",
+                    "conflicted: {} — run `armitage sync resolve {}`",
                     entry.path, entry.path
                 );
             }

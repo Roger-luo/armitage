@@ -121,11 +121,14 @@ the local timeline has been pushed to the project board.
 ### GitHub Sync
 
 ```
-armitage pull [<path>] [--dry-run]   # pull changes from GitHub into local nodes
-armitage push [<path>] [--dry-run]   # push local changes to GitHub issues
-armitage resolve [<path>] [--list]   # resolve sync conflicts
-armitage status                      # show org overview
+armitage sync pull [<path>] [--dry-run]   # pull changes from GitHub into local nodes
+armitage sync push [<path>] [--dry-run]   # push local changes to GitHub issues
+armitage sync resolve [<path>] [--list]   # resolve sync conflicts
+armitage status                           # show org overview
 ```
+
+The `sync` namespace will grow to host other GitHub-sync verbs (e.g. `sync issues`,
+`sync project`, `sync labels`) — keep new sync-style commands under this namespace.
 
 ### GitHub Project Board Sync
 

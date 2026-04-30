@@ -54,23 +54,10 @@ enum Commands {
         #[command(subcommand)]
         command: MilestoneCommands,
     },
-    /// Pull changes from GitHub
-    Pull {
-        path: Option<String>,
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Push changes to GitHub
-    Push {
-        path: Option<String>,
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Resolve conflicts
-    Resolve {
-        path: Option<String>,
-        #[arg(long)]
-        list: bool,
+    /// Synchronize local roadmap with GitHub (issues.toml, project board, labels, etc.)
+    Sync {
+        #[command(subcommand)]
+        command: SyncCommands,
     },
     /// Show org status
     Status,
@@ -195,6 +182,28 @@ enum ProjectCommands {
     },
     /// Clear the cached project field IDs (forces re-fetch on next sync)
     ClearCache,
+}
+
+#[derive(Subcommand)]
+enum SyncCommands {
+    /// Pull changes from GitHub
+    Pull {
+        path: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Push changes to GitHub
+    Push {
+        path: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Resolve conflicts
+    Resolve {
+        path: Option<String>,
+        #[arg(long)]
+        list: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1072,9 +1081,11 @@ pub fn run() -> Result<()> {
                 milestone::run_remove(node_path, name)?;
             }
         },
-        Commands::Pull { path, dry_run } => pull::run(path, dry_run)?,
-        Commands::Push { path, dry_run } => push::run(path, dry_run)?,
-        Commands::Resolve { path, list } => resolve::run(path, list)?,
+        Commands::Sync { command } => match command {
+            SyncCommands::Pull { path, dry_run } => pull::run(path, dry_run)?,
+            SyncCommands::Push { path, dry_run } => push::run(path, dry_run)?,
+            SyncCommands::Resolve { path, list } => resolve::run(path, list)?,
+        },
         Commands::Status => status::run()?,
         Commands::Chart {
             output,

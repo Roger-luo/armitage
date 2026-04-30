@@ -78,16 +78,16 @@ ion run armitage node show backend/auth  # details for a node
 Each node can be linked to a GitHub issue via the `github_issue` field in its `node.toml` (format: `owner/repo#123`).
 
 ```bash
-ion run armitage pull              # pull changes from GitHub issues
-ion run armitage push              # push local changes to GitHub
-ion run armitage push --dry-run    # preview what would change
+ion run armitage sync pull              # pull changes from GitHub issues
+ion run armitage sync push              # push local changes to GitHub
+ion run armitage sync push --dry-run    # preview what would change
 ```
 
 Pull uses three-way merge with conflict detection. If conflicts arise:
 
 ```bash
-ion run armitage resolve --list    # see conflicts
-ion run armitage resolve           # resolve interactively
+ion run armitage sync resolve --list    # see conflicts
+ion run armitage sync resolve           # resolve interactively
 ```
 
 ### Milestones

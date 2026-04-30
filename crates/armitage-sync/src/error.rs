@@ -14,10 +14,10 @@ pub enum Error {
     #[error("TOML serialize error: {0}")]
     TomlSerialize(#[from] toml::ser::Error),
 
-    #[error("unresolved conflicts exist — run `armitage resolve` first")]
+    #[error("unresolved conflicts exist — run `armitage sync resolve` first")]
     UnresolvedConflicts,
 
-    #[error("remote has changed since last pull — run `armitage pull` first")]
+    #[error("remote has changed since last pull — run `armitage sync pull` first")]
     StalePush,
 
     #[error(transparent)]
