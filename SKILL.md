@@ -190,9 +190,7 @@ The triage pipeline: **fetch** → **classify** → **review** → **apply**.
 ```
 armitage triage fetch [--repo <r>...] [--since <date>]
 armitage triage classify [--backend claude|codex|gemini|gemini-api] [--model <m>] [--effort <e>] [--batch-size N] [--parallel N] [--limit N] [--repo <r>] [--format table|json]
-armitage triage review -i [--min-confidence N] [--max-confidence N]
-armitage triage review --list [--min-confidence N] [--max-confidence N] [--format table|json]
-armitage triage review --auto-approve <threshold>
+armitage triage review [--min-confidence N] [--max-confidence N]
 armitage triage decide <issue-ref>... --decision <approve|reject|modify|stale|inquire> [--node <path>] [--labels <l,...>] [--note <text>] [--question <text>]
 armitage triage decide --all-pending --decision <approve|reject|stale> [--min-confidence N] [--max-confidence N] [--note <text>]
 armitage triage apply [--dry-run]
@@ -213,20 +211,22 @@ armitage triage watch dismiss <issue-ref>...
 - **classify** — sends untriaged issues to an LLM with the roadmap tree, label schema, curated labels, and any classification examples as context; stores suggestions in the DB (including `is_stale` for issues referencing removed/deprecated features, `is_inactive` for issues with 180+ days of no GitHub activity, and `needs_followup`/`followup_reason` when the discussion lacks concrete next steps), then refreshes the issue cache. **Labels are additive only:** the LLM is prompted to suggest only labels the issue does not already have, and any existing labels that slip through are filtered out before storage. `--limit N` classifies at most N issues per run (default: all) — useful for iterative batch workflows. `--batch-size` controls how many issues are sent per LLM call (prompt granularity), while `--limit` controls the total number of issues processed in the run
 - **inactive** — queries the local DB for open issues with no GitHub activity for at least N days (default 180). Scoped to repos in `node.toml` files only. Outputs a table with the issue ref, title, time since last update, and suggested node (if classified). `--days N` sets the inactivity threshold. `--since <date>` sets an absolute cutoff date (ISO 8601). `--repo <r>` scopes to one repo. `--inquire "message"` stages all matching unreviewed issues as `inquire` decisions with the given comment text (applied by `triage apply`)
 - **overdue** — queries the local DB for open issues whose project-board target date is more than N days in the past (default: 0, meaning any overdue issue). Orthogonal to `inactive`: an issue can be actively discussed but still past its deadline. `--comment "message"` stages a follow-up comment on each matching issue (posted via `triage apply`), analogous to `inactive --inquire`. Useful as a regular OKR review step to surface deadline drift before it compounds.
-- **review** — three modes:
-  - `-i` / `--interactive` — step through each pending suggestion one at a time. For each:
-    **[a]pprove** accepts as-is, **[r]eject** marks as wrong, **[m]odify** lets you correct the
-    node and labels (with tab completion), s**[t]**ale marks as stale (references removed/deprecated
-    features — saved as an example so the LLM learns; after the note prompt, optionally generates
-    a staleness inquiry via LLM asking the author if the issue is still relevant or can be closed
-    — posted as a comment on `triage apply`), **[i]nquire** generates a clarification question
-    via LLM and lets you edit it before storing (the question is posted as a comment on
-    `triage apply`), **[s]kip** moves on, **[b]ack** undoes the previous decision and returns to
-    that item, **[q]uit** exits. On reject or modify, you are prompted for an optional note
-    explaining *why* the LLM was wrong — this note is saved as a classification example for future
-    runs (see Examples below).
-  - `--list` — show all pending suggestions as a table (default when neither `-i` nor `--auto-approve` is given)
-  - `--auto-approve <threshold>` — auto-approve all suggestions with confidence >= threshold
+- **review** — interactive walker. Steps through each pending suggestion one at a time. For each:
+  **[a]pprove** accepts as-is, **[r]eject** marks as wrong, **[m]odify** lets you correct the
+  node and labels (with tab completion), s**[t]**ale marks as stale (references removed/deprecated
+  features — saved as an example so the LLM learns; after the note prompt, optionally generates
+  a staleness inquiry via LLM asking the author if the issue is still relevant or can be closed
+  — posted as a comment on `triage apply`), **[i]nquire** generates a clarification question
+  via LLM and lets you edit it before storing (the question is posted as a comment on
+  `triage apply`), **[s]kip** moves on, **[b]ack** undoes the previous decision and returns to
+  that item, **[q]uit** exits. On reject or modify, you are prompted for an optional note
+  explaining *why* the LLM was wrong — this note is saved as a classification example for future
+  runs (see Examples below). Use `--min-confidence`/`--max-confidence` to scope which suggestions
+  to walk through.
+
+  For non-interactive equivalents:
+  - **List pending suggestions:** `triage suggestions --status pending [--min-confidence N] [--max-confidence N] [--format table|json|summary]`
+  - **Bulk-approve by confidence:** `triage decide --all-pending --decision approve --min-confidence <threshold>`
 
   **Label handling in review:** Existing issue labels are human-applied and authoritative. Approving
   a suggestion merges existing labels with suggested additions (never removes). The modify prompt
@@ -285,7 +285,7 @@ armitage triage examples remove <issue-ref>
   the examples file, deduplicating against existing entries
 - **remove** — remove an example by issue reference (e.g. `owner/repo#123`)
 
-Examples are also auto-saved during `triage review -i` whenever you reject or modify a suggestion.
+Examples are also auto-saved during `triage review` whenever you reject or modify a suggestion.
 The optional note you enter at the prompt is stored in the `note` field and included in the LLM
 prompt as reasoning guidance.
 
@@ -443,19 +443,22 @@ should help the user discover field names via the GraphQL query above and config
 3. `triage summary` — check confidence distribution and suggested new categories
 4. `triage categories refine --min-votes 1 --auto-accept` — let LLM consolidate category suggestions into new nodes
 5. `triage classify` — re-classify issues affected by new nodes
-6. `triage review -i --max-confidence 0.7` — interactively review low-confidence issues
-7. `triage review --auto-approve 0.8` — auto-approve high-confidence suggestions
+6. `triage review --max-confidence 0.7` — interactively review low-confidence issues
+7. `triage decide --all-pending --decision approve --min-confidence 0.8` — bulk-approve high-confidence suggestions
 8. `triage apply --dry-run` then `triage apply` — push to GitHub
 
 ### Reviewing classifications interactively
 
-`triage review -i` walks through each pending suggestion. Use confidence filters to focus on
+`triage review` walks through each pending suggestion. Use confidence filters to focus on
 uncertain classifications first:
 
 ```
-armitage triage review -i --max-confidence 0.7   # review low-confidence first
-armitage triage review -i --min-confidence 0.7 --max-confidence 0.85  # then medium
+armitage triage review --max-confidence 0.7   # review low-confidence first
+armitage triage review --min-confidence 0.7 --max-confidence 0.85  # then medium
 ```
+
+To list pending suggestions without entering the interactive walker, use
+`triage suggestions --status pending [--min-confidence N] [--max-confidence N] [--format table|json|summary]`.
 
 At each suggestion you see the issue title, body excerpt, existing labels, suggested node, new
 labels to add (highlighted in green), confidence, and LLM reasoning. Press:
@@ -479,17 +482,17 @@ a prompt that hasn't yet learned from your corrections:
 ```
 # Round 1: classify a small batch, review, record feedback
 armitage triage classify --limit 30
-armitage triage review -i --min-confidence 0.7   # review confident ones first (quick wins)
+armitage triage review --min-confidence 0.7      # review confident ones first (quick wins)
 armitage triage reset --unreviewed               # put skipped/rejected back in the untriaged pool
 
 # Round 2: classify more — the LLM now has examples from round 1
 armitage triage classify --limit 30
-armitage triage review -i
+armitage triage review
 armitage triage reset --unreviewed
 
 # Repeat until the backlog is empty or quality is satisfactory
 # Then bulk-approve remaining high-confidence suggestions:
-armitage triage review --auto-approve 0.85
+armitage triage decide --all-pending --decision approve --min-confidence 0.85
 armitage triage apply
 ```
 
@@ -558,7 +561,7 @@ When reviewing a person's OKR (e.g. comparing a manually written plan against th
 
 ### Improving classification accuracy
 
-1. Review low-confidence issues with `triage review -i --max-confidence 0.7`
+1. Review low-confidence issues with `triage review --max-confidence 0.7`
 2. When rejecting or modifying, enter a note explaining the correct reasoning
 3. Run `triage examples list` to see accumulated examples
 4. Run `triage reset --unreviewed` to reset unreviewed and rejected suggestions (keeping approved/modified ones), then `triage classify` to reclassify with examples in the LLM prompt

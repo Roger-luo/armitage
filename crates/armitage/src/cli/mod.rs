@@ -532,23 +532,17 @@ enum TriageCommands {
         #[arg(long, default_value = "table")]
         format: String,
     },
-    /// Review LLM suggestions
+    /// Interactively review LLM suggestions one at a time.
+    ///
+    /// For non-interactive use, see `triage suggestions --status pending` to list pending
+    /// suggestions and `triage decide --all-pending --decision approve` to bulk-approve.
     Review {
-        #[arg(long, short)]
-        interactive: bool,
-        #[arg(long)]
-        list: bool,
-        #[arg(long)]
-        auto_approve: Option<f64>,
-        /// Only show suggestions with confidence >= this value (0.0-1.0)
+        /// Only walk suggestions with confidence >= this value (0.0-1.0)
         #[arg(long)]
         min_confidence: Option<f64>,
-        /// Only show suggestions with confidence <= this value (0.0-1.0)
+        /// Only walk suggestions with confidence <= this value (0.0-1.0)
         #[arg(long)]
         max_confidence: Option<f64>,
-        /// Output format: "table" (default) or "json" (only used with --list)
-        #[arg(long, default_value = "table")]
-        format: String,
     },
     /// Push approved label changes to GitHub
     Apply {
@@ -1173,21 +1167,10 @@ pub fn run() -> Result<()> {
                 )?;
             }
             TriageCommands::Review {
-                interactive,
-                list,
-                auto_approve,
                 min_confidence,
                 max_confidence,
-                format,
             } => {
-                triage::run_review(
-                    interactive,
-                    list,
-                    auto_approve,
-                    min_confidence,
-                    max_confidence,
-                    format,
-                )?;
+                triage::run_review(min_confidence, max_confidence)?;
             }
             TriageCommands::Apply { dry_run } => {
                 triage::run_apply(dry_run)?;
