@@ -149,6 +149,7 @@ pub fn run_show(
     person: Option<String>,
     team: Option<String>,
     depth: usize,
+    include_external: bool,
     format: String,
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
@@ -184,6 +185,22 @@ pub fn run_show(
 
     let all_nodes = walk_nodes(&org_root)?;
     let team_file = TeamFile::read(&org_root).unwrap_or_default();
+
+    // Build the set of external handles to hide unless --include-external is set,
+    // or the user explicitly named that handle via --person.
+    // TODO: --reports-to filter (rollup of direct/indirect reports of a manager).
+    let external_handles: std::collections::HashSet<String> = if include_external {
+        std::collections::HashSet::new()
+    } else {
+        team_file
+            .members
+            .iter()
+            .filter(|m| m.external)
+            .filter(|m| person.as_deref() != Some(m.github.as_str()))
+            .map(|m| m.github.clone())
+            .collect()
+    };
+    let is_external_hidden = |handle: &str| -> bool { external_handles.contains(handle) };
 
     // Load all classified issues, with track-field overrides applied.
     let all_issues = load_issues_with_track_overrides(&org_root, &all_nodes);
@@ -237,6 +254,21 @@ pub fn run_show(
                 .iter()
                 .any(|i| i.issue.assignees.contains(p));
             if !is_owner && !has_assigned_issue {
+                return false;
+            }
+        } else if !external_handles.is_empty() {
+            // Default rollup: drop nodes that exist solely because of external
+            // owners/assignees. A node survives if it has at least one non-external
+            // owner OR at least one issue assigned to a non-external member OR no
+            // owners/assignees at all (still useful to show as unowned).
+            let has_internal_owner = e.node.owners.iter().any(|o| !is_external_hidden(o));
+            let any_owners = !e.node.owners.is_empty();
+            let subtree_issues = issues_for_subtree(&e.path);
+            let has_internal_assignee = subtree_issues
+                .iter()
+                .any(|i| i.issue.assignees.iter().any(|a| !is_external_hidden(a)));
+            let any_assigned = subtree_issues.iter().any(|i| !i.issue.assignees.is_empty());
+            if any_owners && !has_internal_owner && any_assigned && !has_internal_assignee {
                 return false;
             }
         }

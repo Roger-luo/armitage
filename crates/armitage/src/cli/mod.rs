@@ -332,6 +332,11 @@ enum OkrCommands {
         /// Max depth of nodes to include (1 = top-level only, 4 = leaf tasks, default: 4)
         #[arg(long, default_value = "4")]
         depth: usize,
+        /// Include external collaborators (PMs, advisors) in the view. By default
+        /// members marked `external = true` in team.toml are hidden. When --person
+        /// names an external member explicitly, they are always shown.
+        #[arg(long, default_value_t = false)]
+        include_external: bool,
         /// Output format: table, json, markdown
         #[arg(long, default_value = "table")]
         format: String,
@@ -1317,9 +1322,10 @@ pub fn run() -> Result<()> {
                 person,
                 team,
                 depth,
+                include_external,
                 format,
             } => {
-                okr::run_show(period, goal, person, team, depth, format)?;
+                okr::run_show(period, goal, person, team, depth, include_external, format)?;
             }
             OkrCommands::Check {
                 period,
