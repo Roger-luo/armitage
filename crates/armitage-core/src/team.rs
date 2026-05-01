@@ -14,6 +14,18 @@ pub struct TeamMember {
     pub teams: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub site: Option<String>,
+    /// External collaborators (PMs, advisors, contractors) — receive issues but
+    /// are filtered from default OKR/status views unless explicitly requested.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub external: bool,
+    /// GitHub handle of this member's manager. Enables future rollup views.
+    // TODO: --reports-to filter
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reports_to: Option<String>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -98,6 +110,30 @@ mod tests {
     }
 
     #[test]
+    fn external_and_reports_to_optional() {
+        // Existing files without these fields parse cleanly and default sensibly.
+        let toml = r#"
+            [[members]]
+            github = "alice"
+            name = "Alice Smith"
+        "#;
+        let tf: TeamFile = toml::from_str(toml).expect("deserialize");
+        assert!(!tf.members[0].external);
+        assert!(tf.members[0].reports_to.is_none());
+
+        let toml = r#"
+            [[members]]
+            github = "ext-pm"
+            name = "External PM"
+            external = true
+            reports_to = "alice"
+        "#;
+        let tf: TeamFile = toml::from_str(toml).expect("deserialize");
+        assert!(tf.members[0].external);
+        assert_eq!(tf.members[0].reports_to.as_deref(), Some("alice"));
+    }
+
+    #[test]
     fn empty_file_returns_default() {
         let tf: TeamFile = toml::from_str("").expect("deserialize empty");
         assert!(tf.members.is_empty());
@@ -113,6 +149,8 @@ mod tests {
                     role: Some("Lead".to_string()),
                     teams: vec!["circuit".to_string()],
                     site: Some("boston".to_string()),
+                    external: false,
+                    reports_to: None,
                 },
                 TeamMember {
                     github: "bob".to_string(),
@@ -120,6 +158,8 @@ mod tests {
                     role: None,
                     teams: vec![],
                     site: None,
+                    external: false,
+                    reports_to: None,
                 },
             ],
         };
@@ -137,6 +177,8 @@ mod tests {
                 role: None,
                 teams: vec![],
                 site: None,
+                external: false,
+                reports_to: None,
             }],
         };
         assert!(tf.has("alice"));
@@ -153,6 +195,8 @@ mod tests {
                     role: None,
                     teams: vec![],
                     site: None,
+                    external: false,
+                    reports_to: None,
                 },
                 TeamMember {
                     github: "alice".to_string(),
@@ -160,6 +204,8 @@ mod tests {
                     role: None,
                     teams: vec![],
                     site: None,
+                    external: false,
+                    reports_to: None,
                 },
             ],
         };
