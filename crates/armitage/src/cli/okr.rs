@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use armitage_core::goal::{GoalsFile, node_in_goal};
 use armitage_core::node::NodeStatus;
@@ -189,8 +189,8 @@ pub fn run_show(
     // Build the set of external handles to hide unless --include-external is set,
     // or the user explicitly named that handle via --person.
     // TODO: --reports-to filter (rollup of direct/indirect reports of a manager).
-    let external_handles: std::collections::HashSet<String> = if include_external {
-        std::collections::HashSet::new()
+    let external_handles: HashSet<String> = if include_external {
+        HashSet::new()
     } else {
         team_file
             .members
