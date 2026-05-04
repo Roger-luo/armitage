@@ -84,7 +84,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "armitage"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "armitage-chart",
  "armitage-core",
@@ -114,7 +114,7 @@ dependencies = [
 
 [[package]]
 name = "armitage-chart"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "armitage-core",
  "askama",
@@ -130,7 +130,7 @@ dependencies = [
 
 [[package]]
 name = "armitage-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "serde",
@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "armitage-github"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "armitage-core",
  "ionem",
@@ -153,7 +153,7 @@ dependencies = [
 
 [[package]]
 name = "armitage-labels"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "armitage-core",
  "chrono",
@@ -165,7 +165,7 @@ dependencies = [
 
 [[package]]
 name = "armitage-project"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "armitage-core",
  "armitage-github",
@@ -180,7 +180,7 @@ dependencies = [
 
 [[package]]
 name = "armitage-sync"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "armitage-core",
  "armitage-github",
@@ -196,7 +196,7 @@ dependencies = [
 
 [[package]]
 name = "armitage-triage"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "armitage-core",
  "armitage-github",

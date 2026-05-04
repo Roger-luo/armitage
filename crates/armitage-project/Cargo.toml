@@ -1,6 +1,6 @@
 [package]
 name = "armitage-project"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 description = "GitHub Projects v2 sync for armitage nodes"
 
