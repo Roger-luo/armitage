@@ -129,3 +129,29 @@ jobs:
         with:
           tag_name: ${{ needs.release-plz-release.outputs.armitage_tag }}
           files: armitage-*.tar.gz
+
+  verify-ion-add:
+    name: Verify ion add (${{ matrix.os }})
+    needs: [release-plz-release, upload]
+    if: needs.release-plz-release.outputs.armitage_tag
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install ion
+        run: curl -fsSL https://raw.githubusercontent.com/Roger-luo/Ion/main/install.sh | sh -s -- --yes
+      - name: Add ion to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Smoke test ion add
+        env:
+          TAG: ${{ needs.release-plz-release.outputs.armitage_tag }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eux
+          mkdir scratch && cd scratch
+          ion init
+          ion add --bin --rev "$TAG" Roger-luo/armitage
+          ion run armitage --version
+          ion run armitage --help > /dev/null
