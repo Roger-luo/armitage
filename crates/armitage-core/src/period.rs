@@ -50,6 +50,15 @@ impl Period {
         )))
     }
 
+    /// Return the (start, end) NaiveDates for a quarter label like "2026-Q2".
+    /// Returns `None` if the label is not a valid quarter.
+    pub fn quarter_bounds(label: &str) -> Option<(NaiveDate, NaiveDate)> {
+        let p = Period::parse(label).ok()?;
+        // Re-validate that it actually was a quarter (parse can also accept years).
+        p.quarter_label()?;
+        Some((p.start, p.end))
+    }
+
     fn quarter(year: i32, q: u32) -> Self {
         let (sm, em) = match q {
             1 => (1u32, 3u32),
@@ -61,6 +70,23 @@ impl Period {
             label: format!("{year}-Q{q}"),
             start: NaiveDate::from_ymd_opt(year, sm, 1).unwrap(),
             end: NaiveDate::from_ymd_opt(year, em, days_in_month(year, em)).unwrap(),
+        }
+    }
+
+    /// Return `Some("YYYY-Q[1-4]")` if this period is exactly one quarter, else `None`.
+    /// Yearly periods (e.g. `"2026"`) return `None`.
+    pub fn quarter_label(&self) -> Option<String> {
+        // The label set in `quarter()` is already YYYY-QN; yearly is just YYYY.
+        let bytes = self.label.as_bytes();
+        if bytes.len() == 7
+            && bytes[0..4].iter().all(|b| b.is_ascii_digit())
+            && bytes[4] == b'-'
+            && bytes[5] == b'Q'
+            && (b'1'..=b'4').contains(&bytes[6])
+        {
+            Some(self.label.clone())
+        } else {
+            None
         }
     }
 

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use armitage_core::goal::{GoalsFile, node_in_goal};
+use armitage_core::goal::{Checkpoint, Goal, GoalsFile, node_in_goal};
 use armitage_core::node::NodeStatus;
 use armitage_core::period::Period;
 use armitage_core::team::TeamFile;
@@ -54,6 +54,27 @@ pub struct OkrObjective {
     pub key_results: Vec<KeyResult>,
     /// Refs of open issues whose target date is already past.
     pub at_risk: Vec<String>,
+    /// "checkpoint" or "node". Defaults to "node" for back-compat.
+    #[serde(default = "default_kind")]
+    pub kind: String,
+    /// Goal slug when this objective is a checkpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal_slug: Option<String>,
+    /// Quarter the checkpoint was originally targeted at (when carried over,
+    /// this is earlier than the current quarter).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_quarter: Option<String>,
+    /// True when this checkpoint was carried over from an earlier quarter.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub carried_over: bool,
+    /// Checkpoint status (planned/in-progress/done/dropped) when applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_status: Option<String>,
+}
+
+#[allow(dead_code)]
+fn default_kind() -> String {
+    "node".to_string()
 }
 
 #[derive(Debug, Serialize)]
@@ -143,6 +164,7 @@ fn load_issues_with_track_overrides(
 // okr show
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_show(
     period_str: String,
     goal_slug: Option<String>,
@@ -150,6 +172,7 @@ pub fn run_show(
     team: Option<String>,
     depth: usize,
     include_external: bool,
+    include_uncovered: bool,
     format: String,
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
@@ -185,6 +208,8 @@ pub fn run_show(
 
     let all_nodes = walk_nodes(&org_root)?;
     let team_file = TeamFile::read(&org_root).unwrap_or_default();
+    // Load goals always — we need them to render checkpoints in quarter mode.
+    let goals_file = GoalsFile::read(&org_root).unwrap_or_default();
 
     // Build the set of external handles to hide unless --include-external is set,
     // or the user explicitly named that handle via --person.
@@ -323,21 +348,279 @@ pub fn run_show(
             .collect()
     };
 
-    // Pass 2 — build objectives using the smart issue lookup.
-    let mut objectives: Vec<OkrObjective> = all_nodes
-        .iter()
-        .filter(|e| in_scope_paths.contains(&e.path))
-        .map(|e| {
-            let subtree_issues = issues_for_node(&e.path);
+    // Determine whether this quarter has any checkpoints that would be rendered
+    // (current-quarter or carried-over). When true and --include-uncovered is not set,
+    // the view becomes OKR-only and we skip building node-tree fallback objectives.
+    let quarter_has_checkpoints: bool = if let Some(quarter) = period.quarter_label() {
+        goals_file.goals.iter().any(|g| {
+            if let Some(ref slug) = goal_slug
+                && &g.slug != slug
+            {
+                return false;
+            }
+            !g.checkpoints_for_quarter(&quarter).is_empty()
+                || !g.carried_over_into(&quarter).is_empty()
+        })
+    } else {
+        false
+    };
+    let okr_only_mode = quarter_has_checkpoints && !include_uncovered;
 
-            // Collect issues relevant to this period.
-            // Open issues always appear — a project can span multiple OKR periods and
-            // all open work is relevant context regardless of when it is due.
-            // Closed issues appear only if they completed within this period.
-            let period_issues: Vec<&&armitage_triage::db::IssueWithProjectData> = subtree_issues
+    // Pass 2 — build objectives using the smart issue lookup.
+    let mut objectives: Vec<OkrObjective> = if okr_only_mode {
+        Vec::new()
+    } else {
+        all_nodes
+            .iter()
+            .filter(|e| in_scope_paths.contains(&e.path))
+            .map(|e| {
+                let subtree_issues = issues_for_node(&e.path);
+
+                // Collect issues relevant to this period.
+                // Open issues always appear — a project can span multiple OKR periods and
+                // all open work is relevant context regardless of when it is due.
+                // Closed issues appear only if they completed within this period.
+                let period_issues: Vec<&&armitage_triage::db::IssueWithProjectData> =
+                    subtree_issues
+                        .iter()
+                        .filter(|i| {
+                            // Person filter on assignee when --person is given.
+                            if let Some(ref p) = person
+                                && !i.issue.assignees.contains(p)
+                            {
+                                return false;
+                            }
+                            let is_open = i.issue.state.eq_ignore_ascii_case("open");
+                            if is_open {
+                                return true;
+                            }
+                            // Closed: only include if it completed within this period.
+                            i.target_date
+                                .as_deref()
+                                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                                .is_some_and(|d| period.contains_date(d))
+                        })
+                        .collect();
+
+                let closed = period_issues
+                    .iter()
+                    .filter(|i| i.issue.state.eq_ignore_ascii_case("closed"))
+                    .count();
+                let total = period_issues.len();
+                let progress = if total > 0 {
+                    closed as f64 / total as f64
+                } else {
+                    0.0
+                };
+
+                let at_risk: Vec<String> = period_issues
+                    .iter()
+                    .filter(|i| {
+                        i.issue.state.eq_ignore_ascii_case("open")
+                            && i.target_date
+                                .as_deref()
+                                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                                .is_some_and(|d| d < today)
+                    })
+                    .map(|i| format!("{}#{}", i.issue.repo, i.issue.number))
+                    .collect();
+
+                let key_results: Vec<KeyResult> = period_issues
+                    .iter()
+                    .map(|i| {
+                        let overdue = i.issue.state.eq_ignore_ascii_case("open")
+                            && i.target_date
+                                .as_deref()
+                                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                                .is_some_and(|d| d < today);
+                        let issue_ref = format!("{}#{}", i.issue.repo, i.issue.number);
+                        let sub_issues = sub_issue_map
+                            .get(&issue_ref)
+                            .map(|children| {
+                                children
+                                    .iter()
+                                    .filter_map(|child_ref| {
+                                        all_issues.iter().find(|ci| {
+                                            &format!("{}#{}", ci.issue.repo, ci.issue.number)
+                                                == child_ref
+                                        })
+                                    })
+                                    .map(|ci| {
+                                        let sub_overdue =
+                                            ci.issue.state.eq_ignore_ascii_case("open")
+                                                && ci
+                                                    .target_date
+                                                    .as_deref()
+                                                    .and_then(|d| {
+                                                        NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                                                            .ok()
+                                                    })
+                                                    .is_some_and(|d| d < today);
+                                        SubKeyResult {
+                                            issue_ref: format!(
+                                                "{}#{}",
+                                                ci.issue.repo, ci.issue.number
+                                            ),
+                                            title: ci.issue.title.clone(),
+                                            state: ci.issue.state.clone(),
+                                            assignees: ci.issue.assignees.clone(),
+                                            target_date: ci.target_date.clone(),
+                                            overdue: sub_overdue,
+                                        }
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        KeyResult {
+                            issue_ref,
+                            title: i.issue.title.clone(),
+                            state: i.issue.state.clone(),
+                            assignees: i.issue.assignees.clone(),
+                            target_date: i.target_date.clone(),
+                            overdue,
+                            sub_issues,
+                        }
+                    })
+                    .collect();
+
+                OkrObjective {
+                    node_path: e.path.clone(),
+                    name: e.node.name.clone(),
+                    team: e.node.team.clone(),
+                    owners: e.node.owners.clone(),
+                    node_end: e.node.timeline.as_ref().map(|tl| tl.end.to_string()),
+                    node_status: e.node.status.to_string(),
+                    total_issues: total,
+                    closed_issues: closed,
+                    progress,
+                    key_results,
+                    at_risk,
+                    kind: "node".to_string(),
+                    goal_slug: None,
+                    target_quarter: None,
+                    carried_over: false,
+                    checkpoint_status: None,
+                }
+            })
+            // Drop nodes that have no relevant issues this period.
+            .filter(|o| o.total_issues > 0)
+            .collect()
+    };
+
+    // -----------------------------------------------------------------
+    // Checkpoint-based objectives (quarter mode only).
+    //
+    // When the period is exactly one quarter, render quarterly checkpoints
+    // authored in goals.toml as the primary objectives. Node-tree objectives
+    // are still kept as a fallback for nodes outside any checkpoint's scope.
+    // -----------------------------------------------------------------
+    if let Some(quarter) = period.quarter_label() {
+        // Build list of (goal, checkpoint, carried_over_flag).
+        let mut chosen: Vec<(&Goal, &Checkpoint, bool)> = Vec::new();
+        for g in &goals_file.goals {
+            if let Some(ref slug) = goal_slug
+                && &g.slug != slug
+            {
+                continue;
+            }
+            for d in g.checkpoints_for_quarter(&quarter) {
+                chosen.push((g, d, false));
+            }
+            for d in g.carried_over_into(&quarter) {
+                chosen.push((g, d, true));
+            }
+        }
+
+        // Person/team filtering for checkpoints, and external-rollup hiding.
+        let node_lookup: HashMap<&str, &NodeEntry> =
+            all_nodes.iter().map(|e| (e.path.as_str(), e)).collect();
+        let checkpoint_passes = |g: &Goal, d: &Checkpoint| -> bool {
+            let owners = d.effective_owners(g);
+            if let Some(ref p) = person {
+                let is_owner = owners.iter().any(|o| o == p);
+                let assigned = d.effective_nodes(g).iter().any(|np| {
+                    issues_by_node
+                        .get(np)
+                        .map(|idxs| {
+                            idxs.iter()
+                                .any(|&i| all_issues[i].issue.assignees.contains(p))
+                        })
+                        .unwrap_or(false)
+                });
+                if !is_owner && !assigned {
+                    return false;
+                }
+            } else if !external_handles.is_empty() {
+                let any_owners = !owners.is_empty();
+                let has_internal_owner = owners.iter().any(|o| !is_external_hidden(o));
+                if any_owners && !has_internal_owner {
+                    return false;
+                }
+            }
+            if let Some(ref t) = team {
+                let any_team = d.effective_nodes(g).iter().any(|np| {
+                    node_lookup
+                        .get(np.as_str())
+                        .and_then(|e| e.node.team.as_deref())
+                        == Some(t.as_str())
+                });
+                if !any_team {
+                    return false;
+                }
+            }
+            true
+        };
+        chosen.retain(|(g, d, _)| checkpoint_passes(g, d));
+
+        // Track nodes claimed by checkpoints so we can suppress duplicate
+        // node-tree objectives (subtree rule).
+        let mut claimed_node_paths: HashSet<String> = HashSet::new();
+
+        // Build OkrObjective per checkpoint.
+        let mut checkpoint_objs: Vec<OkrObjective> = Vec::new();
+        for (g, d, carried) in &chosen {
+            let owners = d.effective_owners(g).to_vec();
+            let nodes = d.effective_nodes(g);
+            for n in nodes {
+                claimed_node_paths.insert(n.clone());
+            }
+            // Pick first non-empty team across nodes.
+            let team_val = nodes.iter().find_map(|np| {
+                node_lookup
+                    .get(np.as_str())
+                    .and_then(|e| e.node.team.clone())
+            });
+
+            // Collect issues from explicit list + node subtree.
+            let mut seen_refs: HashSet<String> = HashSet::new();
+            let mut issues: Vec<&armitage_triage::db::IssueWithProjectData> = Vec::new();
+            for iref in &d.issues {
+                if seen_refs.insert(iref.clone())
+                    && let Some(idx) = all_issues
+                        .iter()
+                        .position(|i| format!("{}#{}", i.issue.repo, i.issue.number) == *iref)
+                {
+                    issues.push(&all_issues[idx]);
+                }
+            }
+            for np in nodes {
+                for (path, idxs) in &issues_by_node {
+                    if path.as_str() == np.as_str() || path.starts_with(&format!("{np}/")) {
+                        for &idx in idxs {
+                            let i = &all_issues[idx];
+                            let r = format!("{}#{}", i.issue.repo, i.issue.number);
+                            if seen_refs.insert(r) {
+                                issues.push(i);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Apply person filter at issue level too.
+            let period_issues: Vec<&&armitage_triage::db::IssueWithProjectData> = issues
                 .iter()
                 .filter(|i| {
-                    // Person filter on assignee when --person is given.
                     if let Some(ref p) = person
                         && !i.issue.assignees.contains(p)
                     {
@@ -347,45 +630,42 @@ pub fn run_show(
                     if is_open {
                         return true;
                     }
-                    // Closed: only include if it completed within this period.
                     i.target_date
                         .as_deref()
-                        .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                        .is_some_and(|d| period.contains_date(d))
+                        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                        .is_some_and(|dt| period.contains_date(dt))
                 })
                 .collect();
 
+            let total = period_issues.len();
             let closed = period_issues
                 .iter()
                 .filter(|i| i.issue.state.eq_ignore_ascii_case("closed"))
                 .count();
-            let total = period_issues.len();
             let progress = if total > 0 {
                 closed as f64 / total as f64
             } else {
                 0.0
             };
-
             let at_risk: Vec<String> = period_issues
                 .iter()
                 .filter(|i| {
                     i.issue.state.eq_ignore_ascii_case("open")
                         && i.target_date
                             .as_deref()
-                            .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                            .is_some_and(|d| d < today)
+                            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                            .is_some_and(|dt| dt < today)
                 })
                 .map(|i| format!("{}#{}", i.issue.repo, i.issue.number))
                 .collect();
-
             let key_results: Vec<KeyResult> = period_issues
                 .iter()
                 .map(|i| {
                     let overdue = i.issue.state.eq_ignore_ascii_case("open")
                         && i.target_date
                             .as_deref()
-                            .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                            .is_some_and(|d| d < today);
+                            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                            .is_some_and(|dt| dt < today);
                     let issue_ref = format!("{}#{}", i.issue.repo, i.issue.number);
                     let sub_issues = sub_issue_map
                         .get(&issue_ref)
@@ -403,10 +683,10 @@ pub fn run_show(
                                         && ci
                                             .target_date
                                             .as_deref()
-                                            .and_then(|d| {
-                                                NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()
+                                            .and_then(|s| {
+                                                NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
                                             })
-                                            .is_some_and(|d| d < today);
+                                            .is_some_and(|dt| dt < today);
                                     SubKeyResult {
                                         issue_ref: format!("{}#{}", ci.issue.repo, ci.issue.number),
                                         title: ci.issue.title.clone(),
@@ -431,23 +711,43 @@ pub fn run_show(
                 })
                 .collect();
 
-            OkrObjective {
-                node_path: e.path.clone(),
-                name: e.node.name.clone(),
-                team: e.node.team.clone(),
-                owners: e.node.owners.clone(),
-                node_end: e.node.timeline.as_ref().map(|tl| tl.end.to_string()),
-                node_status: e.node.status.to_string(),
+            // End-of-quarter date for the checkpoint's target_quarter.
+            let node_end =
+                Period::quarter_bounds(&d.target_quarter).map(|(_, end)| end.to_string());
+
+            checkpoint_objs.push(OkrObjective {
+                node_path: format!("{}/{}", g.slug, d.slug),
+                name: d.name.clone(),
+                team: team_val,
+                owners,
+                node_end,
+                node_status: d.status.to_string(),
                 total_issues: total,
                 closed_issues: closed,
                 progress,
                 key_results,
                 at_risk,
-            }
-        })
-        // Drop nodes that have no relevant issues this period.
-        .filter(|o| o.total_issues > 0)
-        .collect();
+                kind: "checkpoint".to_string(),
+                goal_slug: Some(g.slug.clone()),
+                target_quarter: Some(d.target_quarter.clone()),
+                carried_over: *carried,
+                checkpoint_status: Some(d.status.to_string()),
+            });
+        }
+
+        // Drop node-tree objectives whose path is claimed by a checkpoint
+        // (or is a descendant of a claimed node) — avoids double-counting.
+        objectives.retain(|o| {
+            !claimed_node_paths
+                .iter()
+                .any(|np| o.node_path == *np || o.node_path.starts_with(&format!("{np}/")))
+        });
+
+        // Prepend checkpoints so they sort first.
+        let mut combined = checkpoint_objs;
+        combined.append(&mut objectives);
+        objectives = combined;
+    }
 
     // Sort: soonest deadline first; within same deadline, lowest progress first.
     objectives.sort_by(|a, b| {
@@ -467,7 +767,7 @@ pub fn run_show(
                 .map_err(|e| crate::error::Error::Other(e.to_string()))?
         ),
         "markdown" => print_markdown(&period, &objectives, &team_file),
-        _ => print_table(&period, &objectives, today),
+        _ => print_table(&period, &objectives, today, okr_only_mode),
     }
     Ok(())
 }
@@ -706,6 +1006,47 @@ pub fn run_check(
         }
     }
 
+    // Checkpoint-level checks (quarter mode only).
+    if let Some(quarter) = period.quarter_label() {
+        let goals_file = GoalsFile::read(&org_root).unwrap_or_default();
+        for g in &goals_file.goals {
+            if let Some(ref slug) = goal_slug
+                && &g.slug != slug
+            {
+                continue;
+            }
+            // Current-quarter checkpoints: must have effective_nodes or issues.
+            for d in g.checkpoints_for_quarter(&quarter) {
+                if d.effective_nodes(g).is_empty() && d.issues.is_empty() {
+                    problems.push(CheckProblem {
+                        kind: "checkpoint-no-key-results".to_string(),
+                        node_path: format!("{}/{}", g.slug, d.slug),
+                        detail: format!("checkpoint '{}' has no nodes and no issues", d.name),
+                    });
+                }
+            }
+            // Overdue: target_quarter < current_quarter and status is Planned/InProgress.
+            for d in &g.checkpoints {
+                if d.target_quarter.as_str() < quarter.as_str()
+                    && matches!(
+                        d.status,
+                        armitage_core::goal::CheckpointStatus::Planned
+                            | armitage_core::goal::CheckpointStatus::InProgress
+                    )
+                {
+                    problems.push(CheckProblem {
+                        kind: "checkpoint-overdue".to_string(),
+                        node_path: format!("{}/{}", g.slug, d.slug),
+                        detail: format!(
+                            "checkpoint '{}' targeted {} but status is {} (current quarter: {})",
+                            d.name, d.target_quarter, d.status, quarter
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
     if format == "json" {
         println!(
             "{}",
@@ -726,10 +1067,11 @@ pub fn run_check(
     );
     for p in &problems {
         let icon = match p.kind.as_str() {
-            "overdue" => "⚠",
+            "overdue" | "checkpoint-overdue" => "⚠",
             "unowned" => "👤",
             "unassigned" => "—",
             "missing-label" => "🏷",
+            "checkpoint-no-key-results" | "no-key-results" => "✗",
             _ => "?",
         };
         println!(
@@ -746,8 +1088,14 @@ pub fn run_check(
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
-fn print_table(period: &Period, objectives: &[OkrObjective], today: NaiveDate) {
-    println!("OKRs — {} ({})\n", period.label, period.display_range());
+fn print_table(period: &Period, objectives: &[OkrObjective], today: NaiveDate, okr_only: bool) {
+    println!("OKRs — {} ({})", period.label, period.display_range());
+    if okr_only {
+        println!(
+            "Showing OKR checkpoints only. Use --include-uncovered to also show assigned work outside any checkpoint."
+        );
+    }
+    println!();
     for obj in objectives {
         let pct = (obj.progress * 100.0).round() as u32;
         let bar = progress_bar(obj.progress, 10);
@@ -756,10 +1104,33 @@ fn print_table(period: &Period, objectives: &[OkrObjective], today: NaiveDate) {
             .as_deref()
             .map(|d| format!("  ends {d}"))
             .unwrap_or_default();
+        let display_path = if obj.kind == "checkpoint" {
+            if let Some(ref gs) = obj.goal_slug {
+                format!("[{gs}] {}", obj.node_path.rsplit('/').next().unwrap_or(""))
+            } else {
+                obj.node_path.clone()
+            }
+        } else {
+            obj.node_path.clone()
+        };
+        let mut name = obj.name.clone();
+        if let Some(ref tq) = obj.target_quarter
+            && obj.carried_over
+        {
+            name = format!("{name} [carried from {tq}]");
+        }
+        let status_tag = if obj.kind == "checkpoint" {
+            obj.checkpoint_status
+                .as_deref()
+                .map(|s| format!("  {s}"))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         println!(
-            "{path:<35}  {name:<30}  {bar} {closed}/{total} ({pct}%){deadline}",
-            path = obj.node_path,
-            name = truncate(&obj.name, 30),
+            "{path:<35}  {name:<30}  {bar} {closed}/{total} ({pct}%){deadline}{status_tag}",
+            path = display_path,
+            name = truncate(&name, 30),
             closed = obj.closed_issues,
             total = obj.total_issues,
         );
@@ -832,9 +1203,32 @@ fn print_markdown(period: &Period, objectives: &[OkrObjective], team_file: &Team
             .as_deref()
             .map(|d| format!(" | **Due:** {d}"))
             .unwrap_or_default();
+        let display_path = if obj.kind == "checkpoint" {
+            if let Some(ref gs) = obj.goal_slug {
+                format!("[{gs}] {}", obj.node_path.rsplit('/').next().unwrap_or(""))
+            } else {
+                obj.node_path.clone()
+            }
+        } else {
+            obj.node_path.clone()
+        };
+        let mut name = obj.name.clone();
+        if let Some(ref tq) = obj.target_quarter
+            && obj.carried_over
+        {
+            name = format!("{name} (carried from {tq})");
+        }
+        let status_tag = if obj.kind == "checkpoint" {
+            obj.checkpoint_status
+                .as_deref()
+                .map(|s| format!(" | **Status:** {s}"))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         println!(
-            "## {} — {} ({}%)\n**Owners:** {}{}\n",
-            obj.node_path, obj.name, pct, owner_str, deadline
+            "## {} — {} ({}%)\n**Owners:** {}{}{}\n",
+            display_path, name, pct, owner_str, deadline, status_tag
         );
         println!("| Issue | Title | Status | Target | Assignees |");
         println!("|---|---|---|---|---|");

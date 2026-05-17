@@ -337,6 +337,11 @@ enum OkrCommands {
         /// names an external member explicitly, they are always shown.
         #[arg(long, default_value_t = false)]
         include_external: bool,
+        /// Also include node-tree objectives for assigned work that lies outside any
+        /// checkpoint. By default, when the period is a single quarter and at least one
+        /// checkpoint is rendered, only checkpoint objectives are shown.
+        #[arg(long, default_value_t = false)]
+        include_uncovered: bool,
         /// Output format: table, json, markdown
         #[arg(long, default_value = "table")]
         format: String,
@@ -425,6 +430,80 @@ enum GoalCommands {
     },
     /// Remove a goal
     Remove {
+        slug: String,
+        #[arg(long, short)]
+        yes: bool,
+    },
+    /// Manage quarterly checkpoints nested inside a goal
+    Checkpoint {
+        #[command(subcommand)]
+        command: CheckpointCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum CheckpointCommands {
+    /// Add a new checkpoint to a goal
+    Add {
+        /// Goal slug to add the checkpoint under
+        goal_slug: String,
+        /// Checkpoint slug (short identifier, unique within the goal)
+        #[arg(long)]
+        slug: String,
+        /// Display name
+        #[arg(long)]
+        name: String,
+        /// Target quarter (YYYY-Q[1-4], e.g. 2026-Q2)
+        #[arg(long)]
+        quarter: String,
+        #[arg(long)]
+        description: Option<String>,
+        /// Status: planned (default), in-progress, done, dropped
+        #[arg(long)]
+        status: Option<String>,
+        /// Comma-separated GitHub usernames (overrides goal owners)
+        #[arg(long)]
+        owners: Option<String>,
+        /// Comma-separated roadmap node paths (overrides goal nodes)
+        #[arg(long)]
+        nodes: Option<String>,
+        /// Comma-separated issue refs (owner/repo#N)
+        #[arg(long)]
+        issues: Option<String>,
+    },
+    /// Update fields on an existing checkpoint
+    Set {
+        goal_slug: String,
+        slug: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        quarter: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long)]
+        owners: Option<String>,
+        #[arg(long)]
+        nodes: Option<String>,
+        #[arg(long)]
+        issues: Option<String>,
+    },
+    /// List checkpoints across all goals (or filter by goal/quarter/status)
+    List {
+        #[arg(long)]
+        goal: Option<String>,
+        #[arg(long)]
+        quarter: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    /// Remove a checkpoint from a goal
+    Rm {
+        goal_slug: String,
         slug: String,
         #[arg(long, short)]
         yes: bool,
@@ -1323,9 +1402,19 @@ pub fn run() -> Result<()> {
                 team,
                 depth,
                 include_external,
+                include_uncovered,
                 format,
             } => {
-                okr::run_show(period, goal, person, team, depth, include_external, format)?;
+                okr::run_show(
+                    period,
+                    goal,
+                    person,
+                    team,
+                    depth,
+                    include_external,
+                    include_uncovered,
+                    format,
+                )?;
             }
             OkrCommands::Check {
                 period,
@@ -1372,6 +1461,61 @@ pub fn run() -> Result<()> {
                 remove_nodes,
             )?,
             GoalCommands::Remove { slug, yes } => goal::run_remove(slug, yes)?,
+            GoalCommands::Checkpoint { command } => match command {
+                CheckpointCommands::Add {
+                    goal_slug,
+                    slug,
+                    name,
+                    quarter,
+                    description,
+                    status,
+                    owners,
+                    nodes,
+                    issues,
+                } => goal::run_checkpoint_add(
+                    goal_slug,
+                    slug,
+                    name,
+                    quarter,
+                    description,
+                    status,
+                    owners,
+                    nodes,
+                    issues,
+                )?,
+                CheckpointCommands::Set {
+                    goal_slug,
+                    slug,
+                    name,
+                    description,
+                    quarter,
+                    status,
+                    owners,
+                    nodes,
+                    issues,
+                } => goal::run_checkpoint_set(
+                    goal_slug,
+                    slug,
+                    name,
+                    description,
+                    quarter,
+                    status,
+                    owners,
+                    nodes,
+                    issues,
+                )?,
+                CheckpointCommands::List {
+                    goal,
+                    quarter,
+                    status,
+                    format,
+                } => goal::run_checkpoint_list(goal, quarter, status, format)?,
+                CheckpointCommands::Rm {
+                    goal_slug,
+                    slug,
+                    yes,
+                } => goal::run_checkpoint_remove(goal_slug, slug, yes)?,
+            },
         },
         Commands::SelfCmd { command } => run_self(command),
     }
