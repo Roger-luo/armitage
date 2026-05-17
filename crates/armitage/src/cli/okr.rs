@@ -161,6 +161,79 @@ fn load_issues_with_track_overrides(
 }
 
 // ---------------------------------------------------------------------------
+// Shared filtering helpers
+// ---------------------------------------------------------------------------
+
+/// Return all issues whose effective node path equals `node_path` or is a
+/// descendant of it (full subtree rollup, with no exclusions).
+fn issues_in_subtree<'a>(
+    node_path: &str,
+    issues_by_node: &HashMap<String, Vec<usize>>,
+    all_issues: &'a [armitage_triage::db::IssueWithProjectData],
+) -> Vec<&'a armitage_triage::db::IssueWithProjectData> {
+    let prefix = format!("{node_path}/");
+    issues_by_node
+        .iter()
+        .filter(|(p, _)| p.as_str() == node_path || p.starts_with(&prefix))
+        .flat_map(|(_, idxs)| idxs.iter().map(|&i| &all_issues[i]))
+        .collect()
+}
+
+/// Smart subtree lookup: returns issues directly under `node_path`, plus any
+/// subtree issues NOT already claimed by an in-scope descendant of
+/// `node_path`. Used so a parent doesn't duplicate KRs already shown under a
+/// more-specific in-scope child.
+fn issues_for_node_excluding_in_scope_children<'a>(
+    node_path: &str,
+    issues_by_node: &HashMap<String, Vec<usize>>,
+    all_issues: &'a [armitage_triage::db::IssueWithProjectData],
+    in_scope_paths: &HashSet<String>,
+) -> Vec<&'a armitage_triage::db::IssueWithProjectData> {
+    let prefix = format!("{node_path}/");
+    issues_by_node
+        .iter()
+        .filter(|(p, _)| {
+            let p = p.as_str();
+            if p != node_path && !p.starts_with(&prefix) {
+                return false;
+            }
+            if p == node_path {
+                return true;
+            }
+            // Subtree path: include only if no in-scope child of node_path covers it.
+            !in_scope_paths.iter().any(|scope| {
+                scope.as_str() != node_path
+                    && scope.starts_with(&prefix)
+                    && (p == scope.as_str() || p.starts_with(&format!("{scope}/")))
+            })
+        })
+        .flat_map(|(_, idxs)| idxs.iter().map(|&i| &all_issues[i]))
+        .collect()
+}
+
+/// Build the set of external GitHub handles that should be hidden from the
+/// view. When `include_external` is true, the set is empty. When `person` is
+/// `Some(handle)` and that handle belongs to an external member, the named
+/// person is excluded from the hidden set (so they remain visible).
+fn build_external_handles(
+    team_file: &TeamFile,
+    include_external: bool,
+    person: Option<&str>,
+) -> HashSet<String> {
+    if include_external {
+        HashSet::new()
+    } else {
+        team_file
+            .members
+            .iter()
+            .filter(|m| m.external)
+            .filter(|m| person != Some(m.github.as_str()))
+            .map(|m| m.github.clone())
+            .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // okr show
 // ---------------------------------------------------------------------------
 
@@ -214,17 +287,8 @@ pub fn run_show(
     // Build the set of external handles to hide unless --include-external is set,
     // or the user explicitly named that handle via --person.
     // TODO: --reports-to filter (rollup of direct/indirect reports of a manager).
-    let external_handles: HashSet<String> = if include_external {
-        HashSet::new()
-    } else {
-        team_file
-            .members
-            .iter()
-            .filter(|m| m.external)
-            .filter(|m| person.as_deref() != Some(m.github.as_str()))
-            .map(|m| m.github.clone())
-            .collect()
-    };
+    let external_handles: HashSet<String> =
+        build_external_handles(&team_file, include_external, person.as_deref());
     let is_external_hidden = |handle: &str| -> bool { external_handles.contains(handle) };
 
     // Load all classified issues, with track-field overrides applied.
@@ -247,11 +311,7 @@ pub fn run_show(
 
     // Full subtree lookup — used only for the initial in-scope determination.
     let issues_for_subtree = |node_path: &str| -> Vec<&armitage_triage::db::IssueWithProjectData> {
-        issues_by_node
-            .iter()
-            .filter(|(p, _)| *p == node_path || p.starts_with(&format!("{node_path}/")))
-            .flat_map(|(_, idxs)| idxs.iter().map(|&i| &all_issues[i]))
-            .collect()
+        issues_in_subtree(node_path, &issues_by_node, &all_issues)
     };
 
     // Predicate shared by both the in-scope pass and the build pass.
@@ -327,25 +387,12 @@ pub fn run_show(
     // subtree issues that are NOT already claimed by an in-scope child node.
     // This prevents parent nodes from duplicating KRs already shown under a child.
     let issues_for_node = |node_path: &str| -> Vec<&armitage_triage::db::IssueWithProjectData> {
-        issues_by_node
-            .iter()
-            .filter(|(p, _)| {
-                let p = p.as_str();
-                if p != node_path && !p.starts_with(&format!("{node_path}/")) {
-                    return false;
-                }
-                if p == node_path {
-                    return true;
-                }
-                // Subtree path: include only if no in-scope child of node_path covers it.
-                !in_scope_paths.iter().any(|scope| {
-                    scope.as_str() != node_path
-                        && scope.starts_with(&format!("{node_path}/"))
-                        && (p == scope.as_str() || p.starts_with(&format!("{scope}/")))
-                })
-            })
-            .flat_map(|(_, idxs)| idxs.iter().map(|&i| &all_issues[i]))
-            .collect()
+        issues_for_node_excluding_in_scope_children(
+            node_path,
+            &issues_by_node,
+            &all_issues,
+            &in_scope_paths,
+        )
     };
 
     // Determine whether this quarter has any checkpoints that would be rendered
@@ -850,12 +897,8 @@ pub fn run_check(
             }
             if let Some(ref p) = person {
                 let is_owner = e.node.owners.contains(p);
-                let has_assigned_issue = issues_by_node
+                let has_assigned_issue = issues_in_subtree(&e.path, &issues_by_node, &all_issues)
                     .iter()
-                    .filter(|(path, _)| {
-                        path.as_str() == e.path || path.starts_with(&format!("{}/", e.path))
-                    })
-                    .flat_map(|(_, idxs)| idxs.iter().map(|&i| &all_issues[i]))
                     .any(|i| i.issue.assignees.contains(p));
                 if !is_owner && !has_assigned_issue {
                     return false;
@@ -868,24 +911,12 @@ pub fn run_check(
 
     // Smart issue lookup — same exclusion logic as run_show.
     let issues_for_node = |node_path: &str| -> Vec<&armitage_triage::db::IssueWithProjectData> {
-        issues_by_node
-            .iter()
-            .filter(|(p, _)| {
-                let p = p.as_str();
-                if p != node_path && !p.starts_with(&format!("{node_path}/")) {
-                    return false;
-                }
-                if p == node_path {
-                    return true;
-                }
-                !in_scope_paths.iter().any(|scope| {
-                    scope.as_str() != node_path
-                        && scope.starts_with(&format!("{node_path}/"))
-                        && (p == scope.as_str() || p.starts_with(&format!("{scope}/")))
-                })
-            })
-            .flat_map(|(_, idxs)| idxs.iter().map(|&i| &all_issues[i]))
-            .collect()
+        issues_for_node_excluding_in_scope_children(
+            node_path,
+            &issues_by_node,
+            &all_issues,
+            &in_scope_paths,
+        )
     };
 
     let mut problems: Vec<CheckProblem> = Vec::new();
