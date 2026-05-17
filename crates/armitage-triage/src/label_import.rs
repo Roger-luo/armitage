@@ -113,7 +113,7 @@ pub fn write_import_session(org_root: &Path, session: &LabelImportSession) -> Re
 pub fn read_import_session(org_root: &Path, session_id: &str) -> Result<LabelImportSession> {
     let path = import_sessions_dir(org_root).join(format!("{session_id}.toml"));
     let content = std::fs::read_to_string(&path)?;
-    toml::from_str(&content).map_err(|source| Error::TomlParse { path, source })
+    toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))
 }
 
 pub fn list_import_session_ids(org_root: &Path) -> Result<Vec<String>> {

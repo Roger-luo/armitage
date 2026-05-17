@@ -1,5 +1,9 @@
+use armitage_core::error::CommonError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error(transparent)]
+    Common(#[from] CommonError),
     #[error(transparent)]
     Core(#[from] armitage_core::error::Error),
     #[error(transparent)]
@@ -14,14 +18,22 @@ pub enum Error {
     Chart(#[from] armitage_chart::error::Error),
     #[error(transparent)]
     Project(#[from] armitage_project::error::Error),
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("TOML serialize error: {0}")]
-    TomlSerialize(#[from] toml::ser::Error),
     #[error("GitHub CLI error: {0}")]
     Cli(#[from] ionem::shell::CliError),
     #[error("{0}")]
     Other(String),
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Self::Common(CommonError::Io(e))
+    }
+}
+
+impl From<toml::ser::Error> for Error {
+    fn from(e: toml::ser::Error) -> Self {
+        Self::Common(CommonError::TomlSerialize(e))
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

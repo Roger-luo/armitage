@@ -118,10 +118,7 @@ pub fn read_node(org_root: &Path, node_path: &str) -> Result<NodeEntry> {
 
 fn parse_node_toml(path: &Path) -> Result<Node> {
     let content = fs::read_to_string(path)?;
-    toml::from_str(&content).map_err(|source| Error::TomlParse {
-        path: path.to_path_buf(),
-        source,
-    })
+    toml::from_str(&content).map_err(|source| Error::toml_parse(path.to_path_buf(), source))
 }
 
 #[cfg(test)]

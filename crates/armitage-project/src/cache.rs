@@ -40,7 +40,7 @@ pub fn read_field_cache(org_root: &Path) -> Result<Option<FieldCache>> {
     }
     let content = std::fs::read_to_string(&path)?;
     let cache: FieldCache =
-        toml::from_str(&content).map_err(|source| Error::TomlParse { path, source })?;
+        toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))?;
     Ok(Some(cache))
 }
 
