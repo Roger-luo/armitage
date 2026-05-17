@@ -1,8 +1,9 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::toml_file::TomlFile;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamMember {
@@ -34,29 +35,43 @@ pub struct TeamFile {
     pub members: Vec<TeamMember>,
 }
 
-const TEAM_FILE: &str = "team.toml";
+impl TomlFile for TeamFile {
+    type Error = Error;
 
-impl TeamFile {
-    pub fn read(org_root: &Path) -> Result<Self> {
-        let path = org_root.join(TEAM_FILE);
+    fn file_name() -> &'static str {
+        "team.toml"
+    }
+
+    fn parse_error(path: PathBuf, source: toml::de::Error) -> Self::Error {
+        Error::toml_parse(path, source)
+    }
+
+    fn default_when_missing() -> Option<Self> {
+        Some(Self::default())
+    }
+
+    fn read(dir: &Path) -> Result<Self> {
+        let path = Self::path(dir);
         if !path.exists() {
             return Ok(Self::default());
         }
         let content = std::fs::read_to_string(&path)?;
         let parsed: Self =
-            toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))?;
+            toml::from_str(&content).map_err(|source| Self::parse_error(path, source))?;
         parsed.validate_unique_github()?;
         Ok(parsed)
     }
 
-    pub fn write(&self, org_root: &Path) -> Result<()> {
+    fn write(&self, dir: &Path) -> Result<()> {
         self.validate_unique_github()?;
-        let path = org_root.join(TEAM_FILE);
-        let content = toml::to_string(self)?;
+        let path = Self::path(dir);
+        let content = toml::to_string_pretty(self)?;
         std::fs::write(path, content)?;
         Ok(())
     }
+}
 
+impl TeamFile {
     pub fn has(&self, github: &str) -> bool {
         self.members.iter().any(|m| m.github == github)
     }

@@ -1,9 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::toml_file::TomlFile;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -140,29 +141,23 @@ pub struct GoalsFile {
     pub goals: Vec<Goal>,
 }
 
-const GOALS_FILE: &str = "goals.toml";
+impl TomlFile for GoalsFile {
+    type Error = Error;
+
+    fn file_name() -> &'static str {
+        "goals.toml"
+    }
+
+    fn parse_error(path: PathBuf, source: toml::de::Error) -> Self::Error {
+        Error::toml_parse(path, source)
+    }
+
+    fn default_when_missing() -> Option<Self> {
+        Some(Self::default())
+    }
+}
 
 impl GoalsFile {
-    pub fn path(org_root: &Path) -> PathBuf {
-        org_root.join(GOALS_FILE)
-    }
-
-    pub fn read(org_root: &Path) -> Result<Self> {
-        let path = Self::path(org_root);
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        let content = std::fs::read_to_string(&path)?;
-        toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))
-    }
-
-    pub fn write(&self, org_root: &Path) -> Result<()> {
-        let path = Self::path(org_root);
-        let content = toml::to_string_pretty(self).map_err(|e| Error::Other(e.to_string()))?;
-        std::fs::write(&path, content)?;
-        Ok(())
-    }
-
     pub fn find(&self, slug: &str) -> Option<&Goal> {
         self.goals.iter().find(|g| g.slug == slug)
     }

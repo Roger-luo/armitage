@@ -7,4 +7,7 @@ pub mod org;
 pub mod period;
 pub mod secrets;
 pub mod team;
+pub mod toml_file;
 pub mod tree;
+
+pub use toml_file::TomlFile;
