@@ -13,7 +13,7 @@ pub fn read_secret(org_root: &Path, key: &str) -> Result<Option<String>> {
     }
     let content = std::fs::read_to_string(&path)?;
     let table: toml::Table =
-        toml::from_str(&content).map_err(|source| Error::TomlParse { path, source })?;
+        toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))?;
     Ok(table.get(key).and_then(|v| v.as_str()).map(String::from))
 }
 
@@ -28,10 +28,7 @@ pub fn write_secret(org_root: &Path, key: &str, value: &str) -> Result<()> {
 
     let mut table: toml::Table = if path.exists() {
         let content = std::fs::read_to_string(&path)?;
-        toml::from_str(&content).map_err(|source| Error::TomlParse {
-            path: path.clone(),
-            source,
-        })?
+        toml::from_str(&content).map_err(|source| Error::toml_parse(path.clone(), source))?
     } else {
         toml::Table::new()
     };

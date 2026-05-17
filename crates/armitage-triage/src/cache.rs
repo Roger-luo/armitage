@@ -126,7 +126,7 @@ pub fn write_repo_cache(org_root: &Path, cache: &RepoCache) -> Result<()> {
 pub fn read_repo_cache(org_root: &Path, repo: &str) -> Result<RepoCache> {
     let path = repo_cache_path(org_root, repo);
     let content = std::fs::read_to_string(&path)?;
-    toml::from_str(&content).map_err(|source| crate::error::Error::TomlParse { path, source })
+    toml::from_str(&content).map_err(|source| crate::error::Error::toml_parse(path, source))
 }
 
 /// Rebuild and write cache files for all repos in the DB.

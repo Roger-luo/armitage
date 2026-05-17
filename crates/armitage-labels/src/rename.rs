@@ -36,7 +36,7 @@ pub fn read_rename_ledger(org_root: &Path) -> Result<LabelRenameLedger> {
         return Ok(LabelRenameLedger::default());
     }
     let content = std::fs::read_to_string(&path)?;
-    toml::from_str(&content).map_err(|source| Error::TomlParse { path, source })
+    toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))
 }
 
 pub fn write_rename_ledger(org_root: &Path, ledger: &LabelRenameLedger) -> Result<()> {

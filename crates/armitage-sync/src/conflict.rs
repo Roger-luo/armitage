@@ -91,7 +91,7 @@ pub fn list_conflicts(org_root: &Path) -> Result<Vec<StoredConflict>> {
         }
         let content = std::fs::read_to_string(&path)?;
         let conflict: StoredConflict =
-            toml::from_str(&content).map_err(|source| Error::TomlParse { path, source })?;
+            toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))?;
         conflicts.push(conflict);
     }
 

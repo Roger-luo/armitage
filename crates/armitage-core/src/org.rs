@@ -40,17 +40,15 @@ impl Org {
     pub fn open(root: &Path) -> Result<Self> {
         let path = root.join("armitage.toml");
         let content = std::fs::read_to_string(&path).map_err(|_| Error::NotInOrg)?;
-        let raw: toml::Table = toml::from_str(&content).map_err(|source| Error::TomlParse {
-            path: path.clone(),
-            source,
-        })?;
+        let raw: toml::Table =
+            toml::from_str(&content).map_err(|source| Error::toml_parse(path.clone(), source))?;
 
         let info: OrgInfo = raw
             .get("org")
             .map(|v| {
                 v.clone()
                     .try_into()
-                    .map_err(|source| Error::TomlParse { path, source })
+                    .map_err(|source| Error::toml_parse(path, source))
             })
             .transpose()?
             .unwrap_or_default();
@@ -84,10 +82,9 @@ impl Org {
         self.raw.get(D::CONFIG_KEY).map_or_else(
             || Ok(D::Config::default()),
             |v| {
-                v.clone().try_into().map_err(|source| Error::TomlParse {
-                    path: self.root.join("armitage.toml"),
-                    source,
-                })
+                v.clone()
+                    .try_into()
+                    .map_err(|source| Error::toml_parse(self.root.join("armitage.toml"), source))
             },
         )
     }

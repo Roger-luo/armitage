@@ -35,7 +35,7 @@ pub fn read_sync_state(org_root: &Path) -> Result<SyncState> {
         return Ok(SyncState::default());
     }
     let content = std::fs::read_to_string(&path)?;
-    toml::from_str(&content).map_err(|source| Error::TomlParse { path, source })
+    toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))
 }
 
 pub fn write_sync_state(org_root: &Path, state: &SyncState) -> Result<()> {

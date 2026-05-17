@@ -44,7 +44,7 @@ impl TeamFile {
         }
         let content = std::fs::read_to_string(&path)?;
         let parsed: Self =
-            toml::from_str(&content).map_err(|source| Error::TomlParse { path, source })?;
+            toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))?;
         parsed.validate_unique_github()?;
         Ok(parsed)
     }
