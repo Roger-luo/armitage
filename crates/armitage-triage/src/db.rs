@@ -225,6 +225,23 @@ pub struct StoredIssue {
     pub comment_count: i64,
 }
 
+impl StoredIssue {
+    /// Returns true if the issue state is `"open"` (case-insensitive).
+    pub fn is_open(&self) -> bool {
+        self.state.eq_ignore_ascii_case("open")
+    }
+
+    /// Returns true if the issue state is `"closed"` (case-insensitive).
+    pub fn is_closed(&self) -> bool {
+        self.state.eq_ignore_ascii_case("closed")
+    }
+
+    /// Returns the issue reference in `owner/repo#N` form.
+    pub fn issue_ref(&self) -> String {
+        format!("{}#{}", self.repo, self.number)
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct TriageSuggestion {
     pub id: i64,

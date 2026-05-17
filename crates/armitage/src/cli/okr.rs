@@ -437,7 +437,7 @@ pub fn run_show(
                             {
                                 return false;
                             }
-                            let is_open = i.issue.state.eq_ignore_ascii_case("open");
+                            let is_open = i.issue.is_open();
                             if is_open {
                                 return true;
                             }
@@ -449,10 +449,7 @@ pub fn run_show(
                         })
                         .collect();
 
-                let closed = period_issues
-                    .iter()
-                    .filter(|i| i.issue.state.eq_ignore_ascii_case("closed"))
-                    .count();
+                let closed = period_issues.iter().filter(|i| i.issue.is_closed()).count();
                 let total = period_issues.len();
                 let progress = if total > 0 {
                     closed as f64 / total as f64
@@ -463,48 +460,43 @@ pub fn run_show(
                 let at_risk: Vec<String> = period_issues
                     .iter()
                     .filter(|i| {
-                        i.issue.state.eq_ignore_ascii_case("open")
+                        i.issue.is_open()
                             && i.target_date
                                 .as_deref()
                                 .and_then(util::parse_date)
                                 .is_some_and(|d| d < today)
                     })
-                    .map(|i| format!("{}#{}", i.issue.repo, i.issue.number))
+                    .map(|i| i.issue.issue_ref())
                     .collect();
 
                 let key_results: Vec<KeyResult> = period_issues
                     .iter()
                     .map(|i| {
-                        let overdue = i.issue.state.eq_ignore_ascii_case("open")
+                        let overdue = i.issue.is_open()
                             && i.target_date
                                 .as_deref()
                                 .and_then(util::parse_date)
                                 .is_some_and(|d| d < today);
-                        let issue_ref = format!("{}#{}", i.issue.repo, i.issue.number);
+                        let issue_ref = i.issue.issue_ref();
                         let sub_issues = sub_issue_map
                             .get(&issue_ref)
                             .map(|children| {
                                 children
                                     .iter()
                                     .filter_map(|child_ref| {
-                                        all_issues.iter().find(|ci| {
-                                            &format!("{}#{}", ci.issue.repo, ci.issue.number)
-                                                == child_ref
-                                        })
+                                        all_issues
+                                            .iter()
+                                            .find(|ci| &ci.issue.issue_ref() == child_ref)
                                     })
                                     .map(|ci| {
-                                        let sub_overdue =
-                                            ci.issue.state.eq_ignore_ascii_case("open")
-                                                && ci
-                                                    .target_date
-                                                    .as_deref()
-                                                    .and_then(util::parse_date)
-                                                    .is_some_and(|d| d < today);
+                                        let sub_overdue = ci.issue.is_open()
+                                            && ci
+                                                .target_date
+                                                .as_deref()
+                                                .and_then(util::parse_date)
+                                                .is_some_and(|d| d < today);
                                         SubKeyResult {
-                                            issue_ref: format!(
-                                                "{}#{}",
-                                                ci.issue.repo, ci.issue.number
-                                            ),
+                                            issue_ref: ci.issue.issue_ref(),
                                             title: ci.issue.title.clone(),
                                             state: ci.issue.state.clone(),
                                             assignees: ci.issue.assignees.clone(),
@@ -640,9 +632,7 @@ pub fn run_show(
             let mut issues: Vec<&armitage_triage::db::IssueWithProjectData> = Vec::new();
             for iref in &d.issues {
                 if seen_refs.insert(iref.clone())
-                    && let Some(idx) = all_issues
-                        .iter()
-                        .position(|i| format!("{}#{}", i.issue.repo, i.issue.number) == *iref)
+                    && let Some(idx) = all_issues.iter().position(|i| i.issue.issue_ref() == *iref)
                 {
                     issues.push(&all_issues[idx]);
                 }
@@ -652,7 +642,7 @@ pub fn run_show(
                     if path.as_str() == np.as_str() || path.starts_with(&format!("{np}/")) {
                         for &idx in idxs {
                             let i = &all_issues[idx];
-                            let r = format!("{}#{}", i.issue.repo, i.issue.number);
+                            let r = i.issue.issue_ref();
                             if seen_refs.insert(r) {
                                 issues.push(i);
                             }
@@ -670,7 +660,7 @@ pub fn run_show(
                     {
                         return false;
                     }
-                    let is_open = i.issue.state.eq_ignore_ascii_case("open");
+                    let is_open = i.issue.is_open();
                     if is_open {
                         return true;
                     }
@@ -682,10 +672,7 @@ pub fn run_show(
                 .collect();
 
             let total = period_issues.len();
-            let closed = period_issues
-                .iter()
-                .filter(|i| i.issue.state.eq_ignore_ascii_case("closed"))
-                .count();
+            let closed = period_issues.iter().filter(|i| i.issue.is_closed()).count();
             let progress = if total > 0 {
                 closed as f64 / total as f64
             } else {
@@ -694,43 +681,42 @@ pub fn run_show(
             let at_risk: Vec<String> = period_issues
                 .iter()
                 .filter(|i| {
-                    i.issue.state.eq_ignore_ascii_case("open")
+                    i.issue.is_open()
                         && i.target_date
                             .as_deref()
                             .and_then(util::parse_date)
                             .is_some_and(|dt| dt < today)
                 })
-                .map(|i| format!("{}#{}", i.issue.repo, i.issue.number))
+                .map(|i| i.issue.issue_ref())
                 .collect();
             let key_results: Vec<KeyResult> = period_issues
                 .iter()
                 .map(|i| {
-                    let overdue = i.issue.state.eq_ignore_ascii_case("open")
+                    let overdue = i.issue.is_open()
                         && i.target_date
                             .as_deref()
                             .and_then(util::parse_date)
                             .is_some_and(|dt| dt < today);
-                    let issue_ref = format!("{}#{}", i.issue.repo, i.issue.number);
+                    let issue_ref = i.issue.issue_ref();
                     let sub_issues = sub_issue_map
                         .get(&issue_ref)
                         .map(|children| {
                             children
                                 .iter()
                                 .filter_map(|child_ref| {
-                                    all_issues.iter().find(|ci| {
-                                        &format!("{}#{}", ci.issue.repo, ci.issue.number)
-                                            == child_ref
-                                    })
+                                    all_issues
+                                        .iter()
+                                        .find(|ci| &ci.issue.issue_ref() == child_ref)
                                 })
                                 .map(|ci| {
-                                    let sub_overdue = ci.issue.state.eq_ignore_ascii_case("open")
+                                    let sub_overdue = ci.issue.is_open()
                                         && ci
                                             .target_date
                                             .as_deref()
                                             .and_then(util::parse_date)
                                             .is_some_and(|dt| dt < today);
                                     SubKeyResult {
-                                        issue_ref: format!("{}#{}", ci.issue.repo, ci.issue.number),
+                                        issue_ref: ci.issue.issue_ref(),
                                         title: ci.issue.title.clone(),
                                         state: ci.issue.state.clone(),
                                         assignees: ci.issue.assignees.clone(),
@@ -968,7 +954,7 @@ pub fn run_check(
 
         // Overdue open issues.
         for i in &subtree_issues {
-            if !i.issue.state.eq_ignore_ascii_case("open") {
+            if !i.issue.is_open() {
                 continue;
             }
             if let Some(d) = i.target_date.as_deref().and_then(util::parse_date)
@@ -987,7 +973,7 @@ pub fn run_check(
 
         // Unassigned open issues with a target date this period.
         for i in &dated_issues {
-            if i.issue.state.eq_ignore_ascii_case("open") && i.issue.assignees.is_empty() {
+            if i.issue.is_open() && i.issue.assignees.is_empty() {
                 problems.push(CheckProblem {
                     kind: "unassigned".to_string(),
                     node_path: e.path.clone(),
@@ -1002,7 +988,7 @@ pub fn run_check(
         // Required label prefix checks: flag open issues missing any required prefix.
         for prefix in &require_label_prefixes {
             for i in &subtree_issues {
-                if !i.issue.state.eq_ignore_ascii_case("open") {
+                if !i.issue.is_open() {
                     continue;
                 }
                 let has_match = i

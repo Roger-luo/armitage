@@ -1624,10 +1624,7 @@ pub fn triage_issues(
                 prompt,
                 is_batch,
                 issue_ids: unit.iter().map(|i| i.id).collect(),
-                issue_refs: unit
-                    .iter()
-                    .map(|i| format!("{}#{}", i.repo, i.number))
-                    .collect(),
+                issue_refs: unit.iter().map(|i| i.issue_ref()).collect(),
                 issue_titles: unit.iter().map(|i| i.title.clone()).collect(),
                 existing_labels: unit
                     .iter()
