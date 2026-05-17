@@ -1184,7 +1184,7 @@ fn review_interactive(
             let ch = term.read_char()?;
             eprintln!("{ch}");
 
-            let issue_ref = format!("{}#{}", issue_row.repo, issue_row.number);
+            let issue_ref = issue_row.issue_ref();
 
             match ch.to_ascii_lowercase() {
                 'a' => {
@@ -1436,7 +1436,7 @@ fn print_suggestion(
     let dim = console::Style::new().dim();
     let green = console::Style::new().green();
 
-    let issue_ref = format!("{}#{}", issue.repo, issue.number);
+    let issue_ref = issue.issue_ref();
     let issue_url = format!("https://github.com/{}/issues/{}", issue.repo, issue.number);
     let issue_link = osc8_link(&issue_url, &issue_ref);
 
@@ -1677,7 +1677,7 @@ fn save_review_example(
     };
 
     let example = examples::TriageExample {
-        issue_ref: format!("{}#{}", issue.repo, issue.number),
+        issue_ref: issue.issue_ref(),
         title: issue.title.clone(),
         body_excerpt,
         original_node: suggestion.suggested_node.clone(),
@@ -1889,10 +1889,7 @@ pub fn run_decide(
             println!("No pending suggestions found");
             return Ok(());
         }
-        pending
-            .iter()
-            .map(|(issue, _)| format!("{}#{}", issue.repo, issue.number))
-            .collect()
+        pending.iter().map(|(issue, _)| issue.issue_ref()).collect()
     } else {
         issue_ref_strs
     };
@@ -2104,7 +2101,7 @@ fn save_decide_example(
     };
 
     let example = examples::TriageExample {
-        issue_ref: format!("{}#{}", issue.repo, issue.number),
+        issue_ref: issue.issue_ref(),
         title: issue.title.clone(),
         body_excerpt,
         original_node: suggestion.suggested_node.clone(),
@@ -2345,7 +2342,7 @@ pub fn run_suggestions(
                     };
                     serde_json::json!({
                         "suggestion_id": sug.id,
-                        "issue_ref": format!("{}#{}", issue.repo, issue.number),
+                        "issue_ref": issue.issue_ref(),
                         "title": issue.title,
                         "repo": issue.repo,
                         "number": issue.number,
@@ -2385,7 +2382,7 @@ pub fn run_suggestions(
 
             println!("=== AUTO-APPROVE ({}) ===", auto.len());
             for (issue, sug) in &auto {
-                let issue_ref = format!("{}#{}", issue.repo, issue.number);
+                let issue_ref = issue.issue_ref();
                 let conf = sug.confidence.unwrap_or(0.0);
                 let node = sug.suggested_node.as_deref().unwrap_or("(none)");
                 let title: String = issue.title.chars().take(70).collect();
@@ -2394,7 +2391,7 @@ pub fn run_suggestions(
 
             println!("\n=== NEEDS REVIEW ({}) ===", uncertain.len());
             for (issue, sug) in &uncertain {
-                let issue_ref = format!("{}#{}", issue.repo, issue.number);
+                let issue_ref = issue.issue_ref();
                 let conf = sug.confidence.unwrap_or(0.0);
                 let node = sug.suggested_node.as_deref().unwrap_or("(none)");
                 let stale = if sug.is_stale { " [STALE]" } else { "" };
@@ -2428,7 +2425,7 @@ pub fn run_suggestions(
             );
             println!("{}", "-".repeat(120));
             for (issue, sug) in &results {
-                let issue_ref = format!("{}#{}", issue.repo, issue.number);
+                let issue_ref = issue.issue_ref();
                 let title: String = issue.title.chars().take(53).collect();
                 let node = sug.suggested_node.as_deref().unwrap_or("(unclassified)");
                 let conf = sug
@@ -2474,7 +2471,7 @@ pub fn run_decisions(
             .iter()
             .map(|(issue, dec)| {
                 let mut obj = serde_json::json!({
-                    "issue_ref": format!("{}#{}", issue.repo, issue.number),
+                    "issue_ref": issue.issue_ref(),
                     "title": issue.title,
                     "repo": issue.repo,
                     "number": issue.number,
@@ -2506,7 +2503,7 @@ pub fn run_decisions(
         );
         println!("{}", "-".repeat(115));
         for (issue, dec) in &results {
-            let issue_ref = format!("{}#{}", issue.repo, issue.number);
+            let issue_ref = issue.issue_ref();
             let title: String = issue.title.chars().take(38).collect();
             let node = dec.final_node.as_deref().unwrap_or("\u{2014}");
             let applied = dec.applied_at.as_deref().map_or("no", |_| "yes");
@@ -2576,7 +2573,7 @@ pub fn run_examples_export(status: Option<String>, limit: Option<usize>) -> Resu
 
     let mut added = 0usize;
     for (issue, suggestion, decision) in &rows {
-        let issue_ref = format!("{}#{}", issue.repo, issue.number);
+        let issue_ref = issue.issue_ref();
         if existing_refs.contains(&issue_ref) {
             continue;
         }
@@ -2679,7 +2676,7 @@ pub fn run_inactive(
             .iter()
             .map(|(issue, node)| {
                 serde_json::json!({
-                    "ref": format!("{}#{}", issue.repo, issue.number),
+                    "ref": issue.issue_ref(),
                     "repo": issue.repo,
                     "number": issue.number,
                     "title": issue.title,
@@ -2712,7 +2709,7 @@ pub fn run_inactive(
     );
     println!("  {}", "-".repeat(115));
     for (issue, node) in &rows {
-        let ref_str = format!("{}#{}", issue.repo, issue.number);
+        let ref_str = issue.issue_ref();
         let title = if issue.title.len() > 43 {
             format!("{}…", &issue.title[..42])
         } else {
@@ -2850,7 +2847,7 @@ pub fn run_overdue(
             .iter()
             .map(|(issue, target_date, node)| {
                 serde_json::json!({
-                    "ref": format!("{}#{}", issue.repo, issue.number),
+                    "ref": issue.issue_ref(),
                     "repo": issue.repo,
                     "number": issue.number,
                     "title": issue.title,
@@ -2888,7 +2885,7 @@ pub fn run_overdue(
     );
     println!("  {}", "-".repeat(115));
     for (issue, target_date, node) in &rows {
-        let ref_str = format!("{}#{}", issue.repo, issue.number);
+        let ref_str = issue.issue_ref();
         let title = if issue.title.len() > 43 {
             format!("{}…", &issue.title[..42])
         } else {

@@ -118,7 +118,7 @@ pub fn apply_all(
     let now = chrono::Utc::now().to_rfc3339();
 
     for (issue, decision) in &decisions {
-        let issue_ref_str = format!("{}#{}", issue.repo, issue.number);
+        let issue_ref_str = issue.issue_ref();
         let issue_ref = IssueRef::parse(&issue_ref_str)?;
 
         // Inquired / stale-with-question decisions: post question as a comment
