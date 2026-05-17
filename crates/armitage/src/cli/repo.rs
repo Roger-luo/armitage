@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
-use armitage_core::tree::{find_org_root, walk_nodes};
+use armitage_core::tree::walk_nodes;
 use armitage_triage::fetch::strip_repo_qualifier;
 use serde::Serialize;
 
+use crate::cli::util;
 use crate::error::Result;
 
 #[derive(Debug, Serialize)]
@@ -18,8 +19,7 @@ pub struct RepoInfo {
 /// Lists all repos referenced by node.toml files and their GitHub visibility
 /// (public / private / unknown). Queries GitHub once per unique repo.
 pub fn run_list(format: String) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let all_nodes = walk_nodes(&org_root)?;
 
     // Collect unique bare repos and the nodes that reference them.

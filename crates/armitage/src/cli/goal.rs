@@ -2,19 +2,17 @@ use std::str::FromStr;
 
 use armitage_core::goal::{Checkpoint, CheckpointStatus, Goal, GoalsFile, validate_quarter};
 use armitage_core::team::TeamFile;
-use armitage_core::tree::find_org_root;
-use chrono::NaiveDate;
 use serde::Serialize;
 
-use crate::error::Result;
+use crate::cli::util::{self, parse_csv, parse_date, truncate};
+use crate::error::{Error, Result};
 
 // ---------------------------------------------------------------------------
 // goal list
 // ---------------------------------------------------------------------------
 
 pub fn run_list(format: String) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let file = GoalsFile::read(&org_root)?;
 
     if file.goals.is_empty() {
@@ -22,12 +20,7 @@ pub fn run_list(format: String) -> Result<()> {
         return Ok(());
     }
 
-    if format == "json" {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&file.goals)
-                .map_err(|e| crate::error::Error::Other(e.to_string()))?
-        );
+    if util::maybe_print_json(&format, &file.goals)? {
         return Ok(());
     }
 
@@ -54,21 +47,15 @@ pub fn run_list(format: String) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn run_show(slug: String, format: String) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let file = GoalsFile::read(&org_root)?;
     let team_file = TeamFile::read(&org_root).unwrap_or_default();
 
     let goal = file
         .find(&slug)
-        .ok_or_else(|| crate::error::Error::Other(format!("goal '{slug}' not found")))?;
+        .ok_or_else(|| Error::other(format!("goal '{slug}' not found")))?;
 
-    if format == "json" {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(goal)
-                .map_err(|e| crate::error::Error::Other(e.to_string()))?
-        );
+    if util::maybe_print_json(&format, goal)? {
         return Ok(());
     }
 
@@ -147,8 +134,7 @@ pub fn run_checkpoint_add(
     nodes: Option<String>,
     issues: Option<String>,
 ) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let mut file = GoalsFile::read(&org_root)?;
 
     validate_quarter(&quarter)?;
@@ -159,9 +145,9 @@ pub fn run_checkpoint_add(
 
     let goal = file
         .find_mut(&goal_slug)
-        .ok_or_else(|| crate::error::Error::Other(format!("goal '{goal_slug}' not found")))?;
+        .ok_or_else(|| Error::other(format!("goal '{goal_slug}' not found")))?;
     if goal.find_checkpoint(&slug).is_some() {
-        return Err(crate::error::Error::Other(format!(
+        return Err(Error::other(format!(
             "checkpoint '{slug}' already exists in goal '{goal_slug}'"
         )));
     }
@@ -192,15 +178,14 @@ pub fn run_checkpoint_set(
     nodes: Option<String>,
     issues: Option<String>,
 ) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let mut file = GoalsFile::read(&org_root)?;
 
     let goal = file
         .find_mut(&goal_slug)
-        .ok_or_else(|| crate::error::Error::Other(format!("goal '{goal_slug}' not found")))?;
+        .ok_or_else(|| Error::other(format!("goal '{goal_slug}' not found")))?;
     let d = goal.find_checkpoint_mut(&slug).ok_or_else(|| {
-        crate::error::Error::Other(format!(
+        Error::other(format!(
             "checkpoint '{slug}' not found in goal '{goal_slug}'"
         ))
     })?;
@@ -238,8 +223,7 @@ pub fn run_checkpoint_list(
     status: Option<String>,
     format: String,
 ) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let file = GoalsFile::read(&org_root)?;
 
     let status_filter = status
@@ -290,12 +274,7 @@ pub fn run_checkpoint_list(
         }
     }
 
-    if format == "json" {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&rows)
-                .map_err(|e| crate::error::Error::Other(e.to_string()))?
-        );
+    if util::maybe_print_json(&format, &rows)? {
         return Ok(());
     }
 
@@ -322,26 +301,19 @@ pub fn run_checkpoint_list(
 }
 
 pub fn run_checkpoint_remove(goal_slug: String, slug: String, yes: bool) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let mut file = GoalsFile::read(&org_root)?;
 
     let goal = file
         .find_mut(&goal_slug)
-        .ok_or_else(|| crate::error::Error::Other(format!("goal '{goal_slug}' not found")))?;
+        .ok_or_else(|| Error::other(format!("goal '{goal_slug}' not found")))?;
     if goal.find_checkpoint(&slug).is_none() {
-        return Err(crate::error::Error::Other(format!(
+        return Err(Error::other(format!(
             "checkpoint '{slug}' not found in goal '{goal_slug}'"
         )));
     }
-    if !yes {
-        eprint!("Remove checkpoint '{goal_slug}/{slug}'? [y/N] ");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
-            println!("Aborted.");
-            return Ok(());
-        }
+    if !util::confirm(&format!("Remove checkpoint '{goal_slug}/{slug}'?"), yes)? {
+        return Ok(());
     }
     goal.checkpoints.retain(|d| d.slug != slug);
     file.write(&org_root)?;
@@ -362,21 +334,15 @@ pub fn run_add(
     track: Option<String>,
     nodes: Option<String>,
 ) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let mut file = GoalsFile::read(&org_root)?;
 
     if file.find(&slug).is_some() {
-        return Err(crate::error::Error::Other(format!(
-            "goal '{slug}' already exists"
-        )));
+        return Err(Error::other(format!("goal '{slug}' already exists")));
     }
 
     let deadline = deadline
-        .map(|d| {
-            NaiveDate::parse_from_str(&d, "%Y-%m-%d")
-                .map_err(|_| crate::error::Error::Other(format!("invalid date '{d}'")))
-        })
+        .map(|d| parse_date(&d).ok_or_else(|| Error::other(format!("invalid date '{d}'"))))
         .transpose()?;
 
     let goal = Goal {
@@ -412,13 +378,12 @@ pub fn run_set(
     add_nodes: Option<String>,
     remove_nodes: Option<String>,
 ) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let mut file = GoalsFile::read(&org_root)?;
 
     let goal = file
         .find_mut(&slug)
-        .ok_or_else(|| crate::error::Error::Other(format!("goal '{slug}' not found")))?;
+        .ok_or_else(|| Error::other(format!("goal '{slug}' not found")))?;
 
     if let Some(n) = name {
         goal.name = n;
@@ -427,10 +392,8 @@ pub fn run_set(
         goal.description = Some(d);
     }
     if let Some(d) = deadline {
-        goal.deadline = Some(
-            NaiveDate::parse_from_str(&d, "%Y-%m-%d")
-                .map_err(|_| crate::error::Error::Other(format!("invalid date '{d}'")))?,
-        );
+        goal.deadline =
+            Some(parse_date(&d).ok_or_else(|| Error::other(format!("invalid date '{d}'")))?);
     }
     if let Some(o) = owners {
         goal.owners = parse_csv(Some(o));
@@ -464,24 +427,15 @@ pub fn run_set(
 // ---------------------------------------------------------------------------
 
 pub fn run_remove(slug: String, yes: bool) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let mut file = GoalsFile::read(&org_root)?;
 
     if file.find(&slug).is_none() {
-        return Err(crate::error::Error::Other(format!(
-            "goal '{slug}' not found"
-        )));
+        return Err(Error::other(format!("goal '{slug}' not found")));
     }
 
-    if !yes {
-        eprint!("Remove goal '{slug}'? [y/N] ");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
-            println!("Aborted.");
-            return Ok(());
-        }
+    if !util::confirm(&format!("Remove goal '{slug}'?"), yes)? {
+        return Ok(());
     }
 
     file.goals.retain(|g| g.slug != slug);
@@ -502,18 +456,4 @@ pub struct GoalSummary {
     pub owners: Vec<String>,
     pub track: Option<String>,
     pub nodes: Vec<String>,
-}
-
-fn parse_csv(s: Option<String>) -> Vec<String> {
-    s.map(|v| {
-        v.split(',')
-            .map(|x| x.trim().to_string())
-            .filter(|x| !x.is_empty())
-            .collect()
-    })
-    .unwrap_or_default()
-}
-
-fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
 }

@@ -1,6 +1,7 @@
+use crate::cli::util;
 use crate::error::Result;
 use armitage_core::org::Org;
-use armitage_core::tree::{find_org_root, walk_nodes};
+use armitage_core::tree::walk_nodes;
 use armitage_sync::conflict::list_conflicts;
 use armitage_sync::hash::compute_node_hash;
 use armitage_sync::state::read_sync_state;
@@ -36,7 +37,7 @@ fn find_timeline_violations(nodes: &[armitage_core::tree::NodeEntry]) -> Vec<(&s
 }
 
 pub fn run() -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let org = Org::open(&org_root)?;
     let nodes = walk_nodes(&org_root)?;
     let sync_state = read_sync_state(&org_root)?;

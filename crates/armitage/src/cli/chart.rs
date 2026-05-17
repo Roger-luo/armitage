@@ -9,10 +9,11 @@ use std::time::{Duration, Instant};
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde_json;
 
+use crate::cli::util;
 use crate::error::Result;
 use armitage_chart::data::IssueDates;
 use armitage_core::org::Org;
-use armitage_core::tree::{find_org_root, walk_nodes};
+use armitage_core::tree::walk_nodes;
 
 /// Script injected into the chart HTML for live reload in watch mode.
 const LIVE_RELOAD_SCRIPT: &str = r"
@@ -39,8 +40,7 @@ pub fn run_chart(
     offline: bool,
     no_serve: bool,
 ) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
 
     // --output implies --no-serve (write to file)
     let write_to_file = no_serve || output.is_some();

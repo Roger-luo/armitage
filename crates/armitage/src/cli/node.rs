@@ -1,14 +1,14 @@
-use std::io::{self, Write};
 use std::path::Path;
 
 use rustyline::{DefaultEditor, Editor};
 
 use crate::cli::complete::{CommaCompleteHelper, NodePathHelper};
+use crate::cli::util;
 use crate::error::{Error, Result};
 use armitage_core::node::{self, Node, NodeStatus};
 use armitage_core::org::Org;
 use armitage_core::team::TeamFile;
-use armitage_core::tree::{NodeEntry, find_org_root, list_children, read_node, walk_nodes};
+use armitage_core::tree::{NodeEntry, list_children, read_node, walk_nodes};
 use armitage_labels::def::LabelsFile;
 
 // ---------------------------------------------------------------------------
@@ -395,8 +395,7 @@ fn run_create_noninteractive(
 ) -> Result<()> {
     let path =
         path.ok_or_else(|| Error::Other("path is required in non-interactive mode".to_string()))?;
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
 
     let repos_vec: Vec<String> = repos
         .map(|r| {
@@ -438,8 +437,7 @@ fn run_create_noninteractive(
 fn run_create_interactive() -> Result<()> {
     const LAST_STEP: usize = 7;
 
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
 
     let existing = walk_nodes(&org_root)?;
     if !existing.is_empty() {
@@ -871,8 +869,7 @@ fn rl_with_default(rl: &mut DefaultEditor, label: &str, default: &str) -> Result
 
 /// CLI entry point: armitage node list
 pub fn run_list(path: Option<String>, recursive: bool) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
 
     let entries = if recursive {
         match &path {
@@ -899,8 +896,7 @@ pub fn run_list(path: Option<String>, recursive: bool) -> Result<()> {
 
 /// CLI entry point: armitage node show
 pub fn run_show(path: String) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let entry = read_node(&org_root, &path)?;
 
     println!("name:        {}", entry.node.name);
@@ -940,8 +936,7 @@ pub fn run_show(path: String) -> Result<()> {
 pub fn run_edit(path: String) -> Result<()> {
     const LAST_STEP: usize = 7;
 
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let entry = read_node(&org_root, &path)?;
     let node = entry.node.clone();
     let node_toml_path = entry.dir.join("node.toml");
@@ -1337,30 +1332,21 @@ pub fn move_node(org_root: &Path, from: &str, to: &str) -> Result<()> {
 
 /// CLI entry point: armitage node move
 pub fn run_move(from: String, to: String) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     move_node(&org_root, &from, &to)
 }
 
 /// CLI entry point: armitage node remove
 pub fn run_remove(path: String, yes: bool) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
 
     let node_dir = org_root.join(&path);
     if !node_dir.join("node.toml").exists() {
         return Err(armitage_core::error::Error::NodeNotFound(path).into());
     }
 
-    if !yes {
-        print!("Remove '{path}'? [y/N] ");
-        io::stdout().flush()?;
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
-            println!("Aborted.");
-            return Ok(());
-        }
+    if !util::confirm(&format!("Remove '{path}'?"), yes)? {
+        return Ok(());
     }
 
     std::fs::remove_dir_all(&node_dir)?;
@@ -1371,8 +1357,7 @@ pub fn run_remove(path: String, yes: bool) -> Result<()> {
 /// CLI entry point: armitage node merge <from> <to>
 /// Merges one node into another: reassigns triage suggestions, moves children, removes source.
 pub fn run_merge(from: String, to: String, yes: bool) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
 
     let from_dir = org_root.join(&from);
     let to_dir = org_root.join(&to);
@@ -1420,15 +1405,8 @@ pub fn run_merge(from: String, to: String, yes: bool) -> Result<()> {
     }
     println!("  '{from}' will be removed");
 
-    if !yes {
-        print!("Proceed? [y/N] ");
-        io::stdout().flush()?;
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
-            println!("Aborted.");
-            return Ok(());
-        }
+    if !util::confirm("Proceed?", yes)? {
+        return Ok(());
     }
 
     // 1. Reassign triage suggestions in DB
@@ -1467,8 +1445,7 @@ pub fn run_merge(from: String, to: String, yes: bool) -> Result<()> {
 
 /// CLI entry point: armitage node tree
 pub fn run_tree(max_depth: Option<usize>) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let all = walk_nodes(&org_root)?;
     let filtered: Vec<_> = match max_depth {
         Some(d) => all
@@ -1498,8 +1475,7 @@ pub fn run_set(
     timeline_start: Option<String>,
     timeline_end: Option<String>,
 ) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let entry = read_node(&org_root, &path)?;
     let mut node = entry.node.clone();
 
@@ -1629,8 +1605,7 @@ pub fn run_set(
 /// CLI entry point: armitage node fmt
 /// Re-serialize node.toml files with canonical formatting (multi-line strings, etc.).
 pub fn run_fmt(paths: Vec<String>) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
 
     let entries = if paths.is_empty() {
         walk_nodes(&org_root)?
@@ -1664,8 +1639,7 @@ pub fn run_fmt(paths: Vec<String>) -> Result<()> {
 /// CLI entry point: armitage node check
 /// Scans the whole tree for timeline violations and other issues.
 pub fn run_check(check_repos: bool, check_dates: bool) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
     let all = walk_nodes(&org_root)?;
 
     let mut violations = 0;
