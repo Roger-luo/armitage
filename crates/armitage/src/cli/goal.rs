@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use armitage_core::TomlFile;
 use armitage_core::goal::{Checkpoint, CheckpointStatus, Goal, GoalsFile, validate_quarter};
 use armitage_core::team::TeamFile;
 use serde::Serialize;

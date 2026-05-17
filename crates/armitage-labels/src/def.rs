@@ -1,5 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use armitage_core::TomlFile;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -28,29 +29,43 @@ pub struct LabelsFile {
     pub labels: Vec<LabelDef>,
 }
 
-const LABELS_FILE: &str = "labels.toml";
+impl TomlFile for LabelsFile {
+    type Error = Error;
 
-impl LabelsFile {
-    pub fn read(org_root: &Path) -> Result<Self> {
-        let path = org_root.join(LABELS_FILE);
+    fn file_name() -> &'static str {
+        "labels.toml"
+    }
+
+    fn parse_error(path: PathBuf, source: toml::de::Error) -> Self::Error {
+        Error::toml_parse(path, source)
+    }
+
+    fn default_when_missing() -> Option<Self> {
+        Some(Self::default())
+    }
+
+    fn read(dir: &Path) -> Result<Self> {
+        let path = Self::path(dir);
         if !path.exists() {
             return Ok(Self::default());
         }
         let content = std::fs::read_to_string(&path)?;
         let parsed: Self =
-            toml::from_str(&content).map_err(|source| Error::toml_parse(path, source))?;
+            toml::from_str(&content).map_err(|source| Self::parse_error(path, source))?;
         parsed.validate_unique_names()?;
         Ok(parsed)
     }
 
-    pub fn write(&self, org_root: &Path) -> Result<()> {
+    fn write(&self, dir: &Path) -> Result<()> {
         self.validate_unique_names()?;
-        let path = org_root.join(LABELS_FILE);
-        let content = toml::to_string(self)?;
+        let path = Self::path(dir);
+        let content = toml::to_string_pretty(self)?;
         std::fs::write(path, content)?;
         Ok(())
     }
+}
 
+impl LabelsFile {
     pub fn has(&self, name: &str) -> bool {
         self.labels.iter().any(|l| l.name == name)
     }

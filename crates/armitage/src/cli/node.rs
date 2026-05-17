@@ -5,6 +5,7 @@ use rustyline::{DefaultEditor, Editor};
 use crate::cli::complete::{CommaCompleteHelper, NodePathHelper};
 use crate::cli::util;
 use crate::error::{Error, Result};
+use armitage_core::TomlFile;
 use armitage_core::node::{self, Node, NodeStatus};
 use armitage_core::org::Org;
 use armitage_core::team::TeamFile;

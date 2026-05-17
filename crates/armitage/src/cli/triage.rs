@@ -7,6 +7,7 @@ use rustyline::{DefaultEditor, Editor, error::ReadlineError};
 use crate::cli::complete::{CommaCompleteHelper, NodePathHelper};
 use crate::cli::util;
 use crate::error::{Error, Result};
+use armitage_core::TomlFile;
 use armitage_core::node::IssueRef;
 use armitage_core::org::Org;
 use armitage_core::tree::{NodeEntry, walk_nodes};
