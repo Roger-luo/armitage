@@ -25,3 +25,11 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    /// Convenience for ad-hoc string errors: `Error::other(format!(...))`
+    /// or `Error::other("literal")`.
+    pub fn other(msg: impl Into<String>) -> Self {
+        Self::Other(msg.into())
+    }
+}

@@ -13,6 +13,7 @@ pub mod repo;
 pub mod resolve;
 pub mod status;
 pub mod triage;
+pub mod util;
 
 use crate::error::Result;
 use clap::{Parser, Subcommand};

@@ -4,10 +4,11 @@ use armitage_core::goal::{Checkpoint, Goal, GoalsFile, node_in_goal};
 use armitage_core::node::NodeStatus;
 use armitage_core::period::Period;
 use armitage_core::team::TeamFile;
-use armitage_core::tree::{NodeEntry, find_org_root, walk_nodes};
+use armitage_core::tree::{NodeEntry, walk_nodes};
 use chrono::NaiveDate;
 use serde::Serialize;
 
+use crate::cli::util;
 use crate::error::Result;
 
 // ---------------------------------------------------------------------------
@@ -175,8 +176,7 @@ pub fn run_show(
     include_uncovered: bool,
     format: String,
 ) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
 
     // If --goal is given, resolve the goal. When period is "current" and the goal
     // has a deadline, use the goal's deadline year as the period so all relevant
@@ -315,7 +315,7 @@ pub fn run_show(
             let has_dated_issues = issues_for_subtree(&e.path).iter().any(|i| {
                 i.target_date
                     .as_deref()
-                    .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                    .and_then(util::parse_date)
                     .is_some_and(|d| period.contains_date(d))
             });
             timeline_overlap || has_dated_issues
@@ -397,7 +397,7 @@ pub fn run_show(
                             // Closed: only include if it completed within this period.
                             i.target_date
                                 .as_deref()
-                                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                                .and_then(util::parse_date)
                                 .is_some_and(|d| period.contains_date(d))
                         })
                         .collect();
@@ -419,7 +419,7 @@ pub fn run_show(
                         i.issue.state.eq_ignore_ascii_case("open")
                             && i.target_date
                                 .as_deref()
-                                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                                .and_then(util::parse_date)
                                 .is_some_and(|d| d < today)
                     })
                     .map(|i| format!("{}#{}", i.issue.repo, i.issue.number))
@@ -431,7 +431,7 @@ pub fn run_show(
                         let overdue = i.issue.state.eq_ignore_ascii_case("open")
                             && i.target_date
                                 .as_deref()
-                                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                                .and_then(util::parse_date)
                                 .is_some_and(|d| d < today);
                         let issue_ref = format!("{}#{}", i.issue.repo, i.issue.number);
                         let sub_issues = sub_issue_map
@@ -451,10 +451,7 @@ pub fn run_show(
                                                 && ci
                                                     .target_date
                                                     .as_deref()
-                                                    .and_then(|d| {
-                                                        NaiveDate::parse_from_str(d, "%Y-%m-%d")
-                                                            .ok()
-                                                    })
+                                                    .and_then(util::parse_date)
                                                     .is_some_and(|d| d < today);
                                         SubKeyResult {
                                             issue_ref: format!(
@@ -632,7 +629,7 @@ pub fn run_show(
                     }
                     i.target_date
                         .as_deref()
-                        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                        .and_then(util::parse_date)
                         .is_some_and(|dt| period.contains_date(dt))
                 })
                 .collect();
@@ -653,7 +650,7 @@ pub fn run_show(
                     i.issue.state.eq_ignore_ascii_case("open")
                         && i.target_date
                             .as_deref()
-                            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                            .and_then(util::parse_date)
                             .is_some_and(|dt| dt < today)
                 })
                 .map(|i| format!("{}#{}", i.issue.repo, i.issue.number))
@@ -664,7 +661,7 @@ pub fn run_show(
                     let overdue = i.issue.state.eq_ignore_ascii_case("open")
                         && i.target_date
                             .as_deref()
-                            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                            .and_then(util::parse_date)
                             .is_some_and(|dt| dt < today);
                     let issue_ref = format!("{}#{}", i.issue.repo, i.issue.number);
                     let sub_issues = sub_issue_map
@@ -683,9 +680,7 @@ pub fn run_show(
                                         && ci
                                             .target_date
                                             .as_deref()
-                                            .and_then(|s| {
-                                                NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
-                                            })
+                                            .and_then(util::parse_date)
                                             .is_some_and(|dt| dt < today);
                                     SubKeyResult {
                                         issue_ref: format!("{}#{}", ci.issue.repo, ci.issue.number),
@@ -761,11 +756,7 @@ pub fn run_show(
     });
 
     match format.as_str() {
-        "json" => println!(
-            "{}",
-            serde_json::to_string_pretty(&objectives)
-                .map_err(|e| crate::error::Error::Other(e.to_string()))?
-        ),
+        "json" => util::print_json(&objectives)?,
         "markdown" => print_markdown(&period, &objectives, &team_file),
         _ => print_table(&period, &objectives, today, okr_only_mode),
     }
@@ -784,8 +775,7 @@ pub fn run_check(
     require_label_prefixes: Vec<String>,
     format: String,
 ) -> Result<()> {
-    let cwd = std::env::current_dir()?;
-    let org_root = find_org_root(&cwd)?;
+    let org_root = util::org_root()?;
 
     let goal_filter = if let Some(ref slug) = goal_slug {
         let goals = GoalsFile::read(&org_root)?;
@@ -905,7 +895,7 @@ pub fn run_check(
                 all_issues[i]
                     .target_date
                     .as_deref()
-                    .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                    .and_then(util::parse_date)
                     .is_some_and(|d| period.contains_date(d))
             })
         });
@@ -928,7 +918,7 @@ pub fn run_check(
             .filter(|i| {
                 i.target_date
                     .as_deref()
-                    .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                    .and_then(util::parse_date)
                     .is_some_and(|d| period.contains_date(d))
             })
             .collect();
@@ -950,10 +940,7 @@ pub fn run_check(
             if !i.issue.state.eq_ignore_ascii_case("open") {
                 continue;
             }
-            if let Some(d) = i
-                .target_date
-                .as_deref()
-                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+            if let Some(d) = i.target_date.as_deref().and_then(util::parse_date)
                 && d < today
             {
                 problems.push(CheckProblem {
@@ -1047,12 +1034,7 @@ pub fn run_check(
         }
     }
 
-    if format == "json" {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&problems)
-                .map_err(|e| crate::error::Error::Other(e.to_string()))?
-        );
+    if util::maybe_print_json(&format, &problems)? {
         return Ok(());
     }
 
@@ -1130,7 +1112,7 @@ fn print_table(period: &Period, objectives: &[OkrObjective], today: NaiveDate, o
         println!(
             "{path:<35}  {name:<30}  {bar} {closed}/{total} ({pct}%){deadline}{status_tag}",
             path = display_path,
-            name = truncate(&name, 30),
+            name = util::truncate(&name, 30),
             closed = obj.closed_issues,
             total = obj.total_issues,
         );
@@ -1150,7 +1132,7 @@ fn print_table(period: &Period, objectives: &[OkrObjective], today: NaiveDate, o
                 .as_deref()
                 .map(|d| {
                     if kr.state.eq_ignore_ascii_case("open") {
-                        let date = NaiveDate::parse_from_str(d, "%Y-%m-%d").ok();
+                        let date = util::parse_date(d);
                         let overdue = date.is_some_and(|dt| dt < today);
                         if overdue {
                             format!("  {d} OVERDUE")
@@ -1170,7 +1152,7 @@ fn print_table(period: &Period, objectives: &[OkrObjective], today: NaiveDate, o
             println!(
                 "  {state_icon} {iref:<45}  {title}{due}{assignee}",
                 iref = kr.issue_ref,
-                title = truncate(&kr.title, 55),
+                title = util::truncate(&kr.title, 55),
             );
         }
         println!();
@@ -1296,8 +1278,4 @@ fn progress_bar(progress: f64, width: usize) -> String {
     }
     s.push(']');
     s
-}
-
-fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
 }

@@ -1,13 +1,14 @@
 use std::io::{self, BufRead, Write};
 
+use crate::cli::util;
 use crate::error::Result;
 use armitage_core::node::Node;
-use armitage_core::tree::{find_org_root, read_node};
+use armitage_core::tree::read_node;
 use armitage_labels::rename::{read_rename_ledger, translate_labels};
 use armitage_sync::conflict::{StoredConflict, list_conflicts, remove_conflict};
 
 pub fn run(path: Option<String>, list: bool) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
 
     if list || path.is_none() {
         // List all conflicts

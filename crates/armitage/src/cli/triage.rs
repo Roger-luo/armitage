@@ -5,10 +5,11 @@ use chrono::Utc;
 use rustyline::{DefaultEditor, Editor, error::ReadlineError};
 
 use crate::cli::complete::{CommaCompleteHelper, NodePathHelper};
+use crate::cli::util;
 use crate::error::{Error, Result};
 use armitage_core::node::IssueRef;
 use armitage_core::org::Org;
-use armitage_core::tree::{NodeEntry, find_org_root, walk_nodes};
+use armitage_core::tree::{NodeEntry, walk_nodes};
 use armitage_github::issue;
 use armitage_labels::LabelsDomain;
 use armitage_labels::def::{LabelDef, LabelsFile};
@@ -44,7 +45,7 @@ impl std::str::FromStr for OutputFormat {
 }
 
 pub fn run_fetch(repo: Vec<String>, since: Option<String>) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let gh = armitage_github::require_gh()?;
     let conn = db::open_db(&org_root)?;
     let org = Org::open(&org_root)?;
@@ -95,7 +96,7 @@ pub fn run_fetch(repo: Vec<String>, since: Option<String>) -> Result<()> {
 }
 
 pub fn run_labels_fetch(repo: Vec<String>, org_flag: bool) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let org = Org::open(&org_root)?;
     let gh = armitage_github::require_gh()?;
 
@@ -208,7 +209,7 @@ pub fn run_labels_merge(
     model: Option<String>,
     effort: Option<String>,
 ) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let org = Org::open(&org_root)?;
     let triage_config: TriageConfig = org.domain_config::<TriageDomain>()?;
     let label_schema: LabelSchema = org.domain_config::<LabelsDomain>()?;
@@ -663,7 +664,7 @@ pub fn run_labels_sync(
     dry_run: bool,
     prune: bool,
 ) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let org = Org::open(&org_root)?;
     let gh = armitage_github::require_gh()?;
 
@@ -858,7 +859,7 @@ pub fn run_labels_push(
     dry_run: bool,
     delete_extra: bool,
 ) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let org = Org::open(&org_root)?;
     let local = LabelsFile::read(&org_root)?;
     let gh = armitage_github::require_gh()?;
@@ -960,7 +961,7 @@ pub fn run_classify(
     format: String,
 ) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
     let nodes = walk_nodes(&org_root)?;
     let org = Org::open(&org_root)?;
@@ -1101,7 +1102,7 @@ fn resolve_classify_config(
 }
 
 pub fn run_review(min_confidence: Option<f64>, max_confidence: Option<f64>) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let stats = review_interactive(&conn, &org_root, min_confidence, max_confidence)?;
@@ -1768,7 +1769,7 @@ pub fn run_reset(
     all: bool,
     unreviewed: bool,
 ) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     if let Some(threshold) = below {
@@ -1820,7 +1821,7 @@ pub fn run_reset(
 }
 
 pub fn run_apply(dry_run: bool) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let gh = armitage_github::require_gh()?;
     let conn = db::open_db(&org_root)?;
 
@@ -1840,7 +1841,7 @@ pub fn run_decide(
     note: Option<String>,
     question: Option<String>,
 ) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let decision_type = match decision.as_str() {
@@ -2151,7 +2152,7 @@ pub fn run_label(
         .map(String::from)
         .collect();
 
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
     let now = Utc::now().to_rfc3339();
     let mut errors: Vec<String> = Vec::new();
@@ -2285,7 +2286,7 @@ pub fn run_suggestions(
     body_max: usize,
 ) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let status_filter = status
@@ -2455,7 +2456,7 @@ pub fn run_decisions(
     format: String,
 ) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let filters = db::DecisionFilters {
@@ -2524,7 +2525,7 @@ pub fn run_decisions(
 // ---------------------------------------------------------------------------
 
 pub fn run_examples_list() -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let exs = examples::load_examples(&org_root)?;
     if exs.is_empty() {
         println!("No classification examples found.");
@@ -2555,7 +2556,7 @@ pub fn run_examples_list() -> Result<()> {
 }
 
 pub fn run_examples_export(status: Option<String>, limit: Option<usize>) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let statuses: Vec<&str> = status
@@ -2617,7 +2618,7 @@ pub fn run_examples_export(status: Option<String>, limit: Option<usize>) -> Resu
 }
 
 pub fn run_examples_remove(issue_ref: String) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let mut exs = examples::load_examples(&org_root)?;
     let before = exs.len();
     exs.retain(|e| e.issue_ref != issue_ref);
@@ -2638,7 +2639,7 @@ pub fn run_inactive(
     inquire: Option<String>,
 ) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     // Resolve the effective threshold in days
@@ -2824,7 +2825,7 @@ pub fn run_overdue(
     comment: Option<String>,
 ) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let rows = db::get_overdue_issues(&conn, days, repo.as_deref())?;
@@ -2982,7 +2983,7 @@ pub fn run_overdue(
 
 pub fn run_summary(repo: Option<String>, format: String) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let repo_ref = repo.as_deref();
@@ -3045,7 +3046,7 @@ pub fn run_summary(repo: Option<String>, format: String) -> Result<()> {
 
 pub fn run_categories_list(min_votes: usize, format: String) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let dismissed = categories::read_dismissed(&org_root)?;
@@ -3084,7 +3085,7 @@ pub fn run_categories_list(min_votes: usize, format: String) -> Result<()> {
 }
 
 pub fn run_categories_dismiss(path: String) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let was_new = categories::dismiss(&org_root, &path)?;
     if was_new {
         println!("Dismissed category '{path}'");
@@ -3103,7 +3104,7 @@ pub fn run_categories_apply(
     reclassify_backend: Option<String>,
     reclassify_model: Option<String>,
 ) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     ensure_ancestors_exist(&org_root, &path, false)?;
@@ -3162,7 +3163,7 @@ pub fn run_categories_refine(
     auto_accept: bool,
     min_votes: usize,
 ) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
     let nodes = walk_nodes(&org_root)?;
     let org = Org::open(&org_root)?;
@@ -3455,7 +3456,7 @@ fn print_refine_summary(applied: usize, dismissed: usize, skipped: usize) {
 
 pub fn run_status(format: String) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let counts = db::get_pipeline_counts(&conn)?;
@@ -3679,7 +3680,7 @@ fn parse_yes_no(input: &str, default: bool) -> bool {
 }
 
 pub fn run_watch_add(issue_refs: Vec<String>) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let gh = armitage_github::require_gh()?;
     let conn = db::open_db(&org_root)?;
 
@@ -3743,7 +3744,7 @@ pub fn run_watch_add(issue_refs: Vec<String>) -> Result<()> {
 
 pub fn run_watch_list(status: String, format: String) -> Result<()> {
     let fmt = format.parse::<OutputFormat>()?;
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     let filter_str = match status.as_str() {
@@ -3836,7 +3837,7 @@ pub fn run_watch_list(status: String, format: String) -> Result<()> {
 }
 
 pub fn run_watch_dismiss(issue_refs: Vec<String>) -> Result<()> {
-    let org_root = find_org_root(&std::env::current_dir()?)?;
+    let org_root = util::org_root()?;
     let conn = db::open_db(&org_root)?;
 
     if issue_refs.is_empty() {
