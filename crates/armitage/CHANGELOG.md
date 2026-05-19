@@ -1,6 +1,20 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [0.1.2] - 2026-05-18
+
+### Added
+
+- Add quarterly checkpoints to goals (4890ccd)
+
+### Refactored
+
+- Add TomlFile trait to consolidate TOML read/write (d055222)
+- Add is_open/is_closed/issue_ref helpers to StoredIssue (5a7a42c)
+- Share common IO/TOML error variants across crates (cdad93c)
+- Extract issue-subtree and external-member filtering helpers (63db47f)
+- Extract shared CLI helpers to reduce boilerplate (a949b9e)
+
 ## [0.1.1] - 2026-05-04
 
 ### Added
