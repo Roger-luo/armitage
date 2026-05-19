@@ -43,6 +43,12 @@ jobs:
   release-plz-pr:
     name: Release-plz PR
     runs-on: ubuntu-latest
+    # release-plz's diff step runs `cargo package --allow-dirty --workspace`,
+    # which can't resolve unpublished internal path deps in our workspace and
+    # aborts (release-plz#2595, fix pending in release-plz#2789). Don't fail
+    # the whole workflow on this; the release-plz-release job above is what
+    # actually ships releases.
+    continue-on-error: true
     permissions:
       contents: write
       pull-requests: write
@@ -151,7 +157,10 @@ jobs:
         run: |
           set -eux
           mkdir scratch && cd scratch
-          ion init
+          # `ion init` opens an interactive crossterm TUI when no `--target`
+          # flags are passed, which fails in CI ("Device not configured").
+          # Pass an explicit target to keep it non-interactive.
+          ion init --target claude
           ion add --bin --rev "$TAG" Roger-luo/armitage
           ion run armitage --version
           ion run armitage --help > /dev/null
