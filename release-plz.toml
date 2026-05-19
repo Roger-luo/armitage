@@ -1,6 +1,40 @@
 [workspace]
-# Only the CLI binary is released — library crates are workspace-internal
+# Only the CLI binary is released — library crates are workspace-internal,
+# so use git tags (not crates.io) as the source of truth for the
+# previously-released version and let conventional commits drive bumps.
 publish = false
+git_only = true
+
+# Library crates are workspace-internal; release-plz should only manage the
+# `armitage` binary's release lifecycle.
+[[package]]
+name = "armitage-core"
+release = false
+[[package]]
+name = "armitage-labels"
+release = false
+[[package]]
+name = "armitage-github"
+release = false
+[[package]]
+name = "armitage-sync"
+release = false
+[[package]]
+name = "armitage-triage"
+release = false
+[[package]]
+name = "armitage-chart"
+release = false
+[[package]]
+name = "armitage-project"
+release = false
+
+# Match the existing `armitage-v<version>` tag pattern. (When only one package
+# in the workspace is releasable, release-plz defaults to `v<version>`, which
+# wouldn't match our existing tags.)
+[[package]]
+name = "armitage"
+git_tag_name = "{{ package }}-v{{ version }}"
 
 [changelog]
 header = "# Changelog\n\nAll notable changes to this project will be documented in this file.\n"

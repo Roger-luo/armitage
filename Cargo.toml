@@ -15,14 +15,17 @@ members = [
 edition = "2024"
 
 [workspace.dependencies]
-# Internal crates
-armitage-core = { path = "crates/armitage-core" }
-armitage-labels = { path = "crates/armitage-labels" }
-armitage-github = { path = "crates/armitage-github" }
-armitage-sync = { path = "crates/armitage-sync" }
-armitage-triage = { path = "crates/armitage-triage" }
-armitage-chart = { path = "crates/armitage-chart" }
-armitage-project = { path = "crates/armitage-project" }
+# Internal crates — `version` is included so that once release-plz upstream
+# (release-plz#2789) lands a fallback for unpublished workspace deps, cargo
+# package's diff step can resolve them. The exact pin (`=`) is fine since the
+# entire workspace bumps together.
+armitage-core = { path = "crates/armitage-core", version = "=0.1.2" }
+armitage-labels = { path = "crates/armitage-labels", version = "=0.1.2" }
+armitage-github = { path = "crates/armitage-github", version = "=0.1.2" }
+armitage-sync = { path = "crates/armitage-sync", version = "=0.1.2" }
+armitage-triage = { path = "crates/armitage-triage", version = "=0.1.2" }
+armitage-chart = { path = "crates/armitage-chart", version = "=0.1.2" }
+armitage-project = { path = "crates/armitage-project", version = "=0.1.2" }
 
 # External crates
 askama = "0.14"
